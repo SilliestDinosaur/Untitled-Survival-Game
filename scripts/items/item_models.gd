@@ -170,14 +170,14 @@ static func _handle(k: MeshKit, length: float, tier: int, radius := 0.016, curve
 		var a := t * turns * TAU
 		var y := lerpf(y0, y1, t)
 		var base: Vector3 = path[int(clampf((y + 0.1) / (length + 0.1), 0.0, 1.0) * steps)]
-		var r: float = radius * 1.02
+		var r: float = radius * 1.3 * 1.04   # the haft is thicker than the radius (see above)
 		helix.append(Vector3(base.x + cos(a) * r, y, base.z + sin(a) * r * 0.82))
-		hr.append(0.0042)
-	k.loft(helix, hr, 5, wrap, func(_t: float, a: float) -> Color: return wrap.darkened(0.2) if sin(a * 2.0) > 0.6 else wrap, Callable(), true, true)
+		hr.append(0.0062)
+	k.loft(helix, hr, 6, wrap, func(_t: float, a: float) -> Color: return wrap.darkened(0.2) if sin(a * 2.0) > 0.6 else wrap, Callable(), true, true)
 	var band: Color = _metal(tier, Color.WHITE).fitting if tier != 2 else Color(0.5, 0.42, 0.34)
 	for y in [y1 + 0.004, y0 - 0.006]:
 		var base: Vector3 = path[int(clampf((y + 0.1) / (length + 0.1), 0.0, 1.0) * steps)]
-		k.loft([Vector3(base.x, y - 0.005, base.z), Vector3(base.x, y + 0.005, base.z)], [radius * 1.18, radius * 1.18], 14, band,
+		k.loft([Vector3(base.x, y - 0.005, base.z), Vector3(base.x, y + 0.005, base.z)], [radius * 1.3 * 1.22, radius * 1.3 * 1.22], 14, band,
 			Callable(), func(_t: float, _a: float) -> Vector2: return Vector2(1.0, 0.84), true, true)
 	if tier >= 3:   # pommel cap
 		var pc: Color = GOLD if tier == 4 else (DUSK_GLOW if tier == 5 else Color(0.5, 0.49, 0.52))
@@ -255,54 +255,28 @@ static func _hatchet(k: MeshKit, tier: int, col: Color) -> void:
 	var m := _metal(tier, col)
 	var hr := 0.016
 	_handle(k, top + 0.05, tier, hr, 0.012 if tier > 1 else 0.0)
-	var outline: PackedVector2Array
-	var edge: PackedVector2Array
-	var body := 0.016
-	var falloff := 0.05
-	match tier:
-		1:   # a knapped flint celt jammed through the split handle
-			edge = _arc(Vector2(0.06, 0.0), 0.058, -70, 70, 8)
-			outline = PackedVector2Array([Vector2(-0.03, -0.018), Vector2(0.01, -0.04)])
-			outline.append_array(edge)
-			outline.append_array(PackedVector2Array([Vector2(0.01, 0.04), Vector2(-0.03, 0.018), Vector2(-0.04, 0.0)]))
-			outline = _knap(outline, 11, 0.004)
-			edge = _knap(edge, 11, 0.0)
-			body = 0.03
-			falloff = 0.06
-			k.flat_shading = true
-		2:   # cast bearded axe with a rounded poll
-			edge = PackedVector2Array([Vector2(0.112, -0.074), Vector2(0.13, -0.044), Vector2(0.14, -0.005), Vector2(0.137, 0.03), Vector2(0.122, 0.054)])
-			outline = PackedVector2Array([Vector2(-0.036, 0.024), Vector2(-0.046, 0.0), Vector2(-0.036, -0.024), Vector2(0.022, -0.028), Vector2(0.05, -0.038), Vector2(0.085, -0.066)])
-			outline.append_array(edge)
-			outline.append_array(PackedVector2Array([Vector2(0.09, 0.04), Vector2(0.05, 0.03), Vector2(0.022, 0.028)]))
-		3:   # forged: long hooked beard, flat hammer poll
-			edge = _arc(Vector2(0.07, -0.018), 0.07, -80, 58, 10)
-			outline = PackedVector2Array([Vector2(-0.058, 0.022), Vector2(-0.058, -0.022), Vector2(-0.02, -0.026), Vector2(0.025, -0.028), Vector2(0.045, -0.045), Vector2(0.06, -0.075)])
-			outline.append_array(edge.slice(1))
-			outline.append_array(PackedVector2Array([Vector2(0.11, 0.045), Vector2(0.06, 0.03), Vector2(0.024, 0.028)]))
-			body = 0.014
-		4:   # crystal: an angular faceted wedge set in a gold socket
-			edge = PackedVector2Array([Vector2(0.108, -0.072), Vector2(0.142, -0.02), Vector2(0.15, 0.025), Vector2(0.128, 0.064)])
-			outline = PackedVector2Array([Vector2(-0.03, 0.026), Vector2(-0.03, -0.026), Vector2(0.03, -0.032), Vector2(0.07, -0.062)])
-			outline.append_array(edge)
-			outline.append_array(PackedVector2Array([Vector2(0.07, 0.05), Vector2(0.03, 0.03)]))
-			body = 0.022
-			k.flat_shading = true
-		_:   # dusk: deep crescent with a back spike
-			edge = _arc(Vector2(0.06, 0.0), 0.095, -82, 82, 12)
-			outline = PackedVector2Array([Vector2(-0.098, 0.0), Vector2(-0.03, -0.022), Vector2(0.03, -0.03)])
-			outline.append_array(edge)
-			outline.append_array(PackedVector2Array([Vector2(0.075, 0.03), Vector2(0.03, 0.03), Vector2(-0.03, 0.022)]))
-			body = 0.015
-	var eye := hr * 2.0 + 0.012 if tier > 1 else 0.0
-	# Simpler silhouette: a bigger head, so it reads at a glance.
+	# One clean profile for every tier: a poll behind the eye, and a blade that flares to a bevelled edge.
+	var outline := PackedVector2Array([Vector2(-0.075, 0.022), Vector2(-0.07, -0.024), Vector2(-0.02, -0.032),
+		Vector2(0.035, -0.04), Vector2(0.09, -0.068), Vector2(0.135, -0.045), Vector2(0.158, 0.0),
+		Vector2(0.135, 0.046), Vector2(0.09, 0.066), Vector2(0.035, 0.04), Vector2(-0.02, 0.032)])
+	var size := 1.0 + 0.04 * tier
 	for i in outline.size():
-		outline[i] *= 1.32
-	for i in edge.size():
-		edge[i] *= 1.32
+		outline[i] *= size
+	if tier == 1:
+		outline = _knap(outline, 11, 0.0025)   # knapped flint: a little irregular, but crisp
+	var thick := 0.032 + 0.002 * tier
+	var edge_col: Color = m.edge
+	if tier == 5:
+		edge_col = DUSK_GLOW
 	var xf := Transform3D(FORWARD_PLANE, Vector3(0, top, 0))
-	k.sculpt(outline, xf, _head_thickness(edge, body, falloff, eye, hr + 0.006), _head_color(tier, m, edge, 0.011), 2, 0.007)
-	k.flat_shading = false
+	k.extrude(outline, xf, thick, 0.011, m.base, edge_col, 0.14)
+	# Binding where the head sits on the haft, above and below it.
+	var bind: Color = m.fitting if tier != 2 else m.base.darkened(0.2)
+	if tier == 1:
+		bind = LEATHER
+	for y in [top + 0.05, top - 0.05]:
+		k.loft([Vector3(0, y - 0.008, 0), Vector3(0, y + 0.008, 0)], [hr * 1.9, hr * 1.9], 8, bind,
+			Callable(), Callable(), true, true)
 
 
 # --- Pickaxes ---------------------------------------------------------------------------
@@ -325,31 +299,21 @@ static func _pickaxe(k: MeshKit, tier: int, col: Color) -> void:
 	var block := func(t: float, _a: float) -> Color: return m.base.darkened(0.08) if t < 0.12 or t > 0.88 else m.base
 	k.loft([Vector3(0, top - 0.036, 0), Vector3(0, top - 0.03, 0), Vector3(0, top + 0.03, 0), Vector3(0, top + 0.036, 0)],
 		[0.04, 0.046, 0.046, 0.04], 4 if tier != 4 else 6, m.base, block, func(_t: float, _a: float) -> Vector2: return Vector2(0.85, 1.25))
-	# Two arms curving down from the eye to points (tier 3 has a flat chisel at the back).
-	var sides := 4 if tier != 4 else 6
+	# The head: a flat bar in the swing plane that curves down to a point at each end, so it
+	# reads as a pick from the side. Tier 3's back end is a square chisel instead of a point.
+	var front := 0.17
+	var back := 0.12 if tier == 3 else 0.15
+	var bar := PackedVector2Array([Vector2(-back, -0.05), Vector2(-0.10, -0.014), Vector2(-0.05, 0.012), Vector2(0.0, 0.02),
+		Vector2(0.05, 0.014), Vector2(0.11, -0.012), Vector2(front, -0.05),
+		Vector2(0.11, -0.03), Vector2(0.05, -0.004), Vector2(0.0, -0.001),
+		Vector2(-0.05, -0.004), Vector2(-0.10, -0.03)])
+	if tier == 3:
+		bar[0] = Vector2(-back, -0.02)
+		bar.append(Vector2(-back, -0.055))
+	var thick := 0.022 + 0.002 * tier
 	if tier == 4:
 		k.flat_shading = true
-	for dir in [-1.0, 1.0]:   # -1 = front (-Z), +1 = back
-		var length: float = 0.17 if dir < 0.0 else (0.12 if tier == 3 else 0.15)
-		var path: Array = []
-		var radii: Array = []
-		var steps := 12
-		for i in steps + 1:
-			var t := float(i) / steps
-			var z: float = dir * (0.012 + t * length)
-			path.append(Vector3(0, top - pow(t, 2.0) * 0.05 + 0.004, z))
-			var r := lerpf(0.042, 0.005, pow(t, 1.1))
-			if tier == 3 and dir > 0.0:
-				r = lerpf(0.03, 0.02, t)   # chisel stays wide
-			radii.append(r)
-		var chisel: bool = tier == 3 and dir > 0.0
-		var shape := func(t: float, _a: float) -> Vector2: return Vector2(1.0, lerpf(1.0, 0.25, t)) if chisel else Vector2(0.9, 1.0)
-		var arm_col := func(t: float, a: float) -> Color:
-			var c: Color = m.base.lerp(m.edge, smoothstep(0.62, 1.0, t))   # worn bright points
-			if tier == 5 and absf(sin(a * 2.0)) > 0.92:
-				c = DUSK_GLOW   # glowing ridges
-			return c.lightened(_n2(Vector2(t, a), 6.0) * 0.05)
-		k.loft(path, radii, sides, m.base, arm_col, shape, false, true)
+	k.extrude(bar, Transform3D(FORWARD_PLANE, Vector3(0, top, 0)), thick, 0.004, m.base, DUSK_GLOW if tier == 5 else m.edge, 0.2)
 	k.flat_shading = false
 
 

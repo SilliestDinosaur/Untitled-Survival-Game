@@ -50,7 +50,8 @@ func _report(player, world) -> bool:
 	print("moved: %.1f m" % player.global_position.distance_to(_start_pos))
 	print("chunks: ", world.get_chunk_count(), "  resources: ", counts)
 	print("stamina: %.1f  hunger: %.2f  health: %.1f" % [player.stats.stamina, player.stats.hunger, player.stats.health])
-	var ok: bool = (player.is_on_floor() or player.swimming) and player.global_position.distance_to(_start_pos) > 10.0 and world.get_chunk_count() > 50
+	# The ground under and around the player is loaded at full detail (the total chunk count depends on how far streaming got in the frame budget).
+	var ok: bool = (player.is_on_floor() or player.swimming) and player.global_position.distance_to(_start_pos) > 10.0 and world.is_area_ready(player.global_position, 1)
 	SaveManager.delete(root.get_node("Game").save_id)
 	print("RESULT: ", "PASS" if ok else "FAIL")
 	return true

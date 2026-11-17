@@ -5,6 +5,8 @@ extends SceneTree
 ##   ITEMS=hatchet_t1,pickaxe_t2  tool ids to show (default: a set of tools)
 ##   KEYS=willow_0,palm_0         flora mesh keys to show (default: a set)
 ##   KEYS_ONLY=1       print the flora mesh keys and exit
+##   ROT_Y=90          turn the tools about the vertical axis (degrees), e.g. 90 for a side view
+##   CAM_Z=4.2         camera distance (default 26; items are small at that range)
 
 var _main: Node
 var _f := 0
@@ -56,6 +58,7 @@ func _build() -> void:
 		mi.mesh = items_script.mesh_for(items[i], mat)
 		mi.position = Vector3(i * 1.1 - (items.size() - 1) * 0.55, 1.2, 0.0)
 		mi.scale = Vector3.ONE * 2.2
+		mi.rotation.y = deg_to_rad(float(OS.get_environment("ROT_Y")) if OS.get_environment("ROT_Y") != "" else 0.0)
 		gal.add_child(mi)
 	var keys := OS.get_environment("KEYS").split(",") if OS.get_environment("KEYS") != "" else PackedStringArray(["willow_0", "palm_0", "ore_t2_0", "ore_t3_0", "gem_t4_0"])
 	for i in keys.size():
