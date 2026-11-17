@@ -5,8 +5,8 @@ extends RefCounted
 ## world seed: a winding tunnel with a few rooms, glowing fungus, bats, and a supply chest.
 
 const CAVE_Y := -400.0      ## where the underground lives
-const MIN_SPACING := 170.0  ## entrances are kept apart
-const MAX_ENTRANCES := 4
+const MIN_SPACING := 120.0  ## entrances are kept apart
+const MAX_ENTRANCES := 12
 
 
 ## Hillside spots where an entrance can open: steep faces, between the lowlands and the peaks.
@@ -18,9 +18,9 @@ static func entrances(gen: WorldGen) -> Array:
 		var x := 60.0
 		while x < size - 60.0:
 			var h := gen.get_height(x, z)
-			if h > 14.0 and h < 42.0:
+			if h > 10.0 and h < 55.0:
 				var n := gen.get_normal(x, z)
-				if n.y < 0.72:
+				if n.y < 0.8:
 					cand.append(Vector3(x, h, z))
 			x += 24.0
 		z += 24.0
