@@ -100,6 +100,10 @@ func _process(_delta: float) -> bool:
 			_wood = _player.inventory.count("wood")
 			_next("chop")
 		"chop":
+			# Chunks are rebuilt when the ground near them changes, so look the tree up again by id.
+			var found: Array = _main.get_node("World").find_resource(_target.id)
+			if not found.is_empty():
+				_target = found[0].resources[found[1]]
 			if _frames % 10 == 0 and not _target.get("removed", false):
 				_net.request("hit_resource", {"id": _target.id, "kind": _target.kind, "key": _target.key, "slot": _player.inventory.selected,
 					"pos": _target.transform.origin, "from": _player.global_position})

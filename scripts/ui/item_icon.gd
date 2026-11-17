@@ -112,6 +112,12 @@ func _draw() -> void:
 				draw_circle(c, s * (0.3 - i * 0.08), Color(0.45, 0.25, 0.7, 0.35 + i * 0.25))
 		"tool":
 			_tool(info, c, s)
+		"doorway":
+			draw_rect(Rect2(c + Vector2(-s * 0.3, -s * 0.3), Vector2(s * 0.6, s * 0.6)), Color(0.7, 0.5, 0.38))
+			draw_rect(Rect2(c + Vector2(-s * 0.13, -s * 0.12), Vector2(s * 0.26, s * 0.42)), Color(0.2, 0.14, 0.1))
+		"roof":
+			for i in 3:
+				draw_colored_polygon(PackedVector2Array([c + Vector2(-s * 0.36, -s * 0.12 + i * s * 0.2), c + Vector2(s * 0.36, -s * 0.12 + i * s * 0.2), c + Vector2(s * 0.28, s * 0.06 + i * s * 0.2), c + Vector2(-s * 0.28, s * 0.06 + i * s * 0.2)]), Color(0.62, 0.34, 0.26).lightened(i * 0.06))
 		"brick":
 			draw_rect(Rect2(c + Vector2(-s * 0.34, -s * 0.16), Vector2(s * 0.68, s * 0.32)), info.get("color", Color(0.7, 0.5, 0.38)))
 			draw_line(c + Vector2(-s * 0.34, 0), c + Vector2(s * 0.34, 0), Color(0.35, 0.22, 0.15), 1.5)

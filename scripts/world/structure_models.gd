@@ -23,7 +23,7 @@ static func get_model(kind: String, material: Material, glow_material: Material)
 	var key := kind + str(material.get_instance_id())
 	if _cache.has(key):
 		return _cache[key]
-	if kind == "foundation" or kind == "wall" or kind == "wood_wall":
+	if GameActions.is_building(kind):
 		var bm := _build_piece(kind)
 		var piece := {"body": bm.commit(material), "glow": null, "light": Vector3(0, 1, 0), "radius": 1.0}
 		_cache[kind + str(material.get_instance_id())] = piece
@@ -60,41 +60,122 @@ static func _board(k: MeshKit, size: Vector3, xf: Transform3D, col: Color, wobbl
 	k.extrude(outline, xf, size.z, minf(size.z, size.y) * 0.25, col, col.lightened(0.12), 0.55)
 
 
-## Building pieces: a stone slab (foundation), brick walls and plank walls, sculpted as solids.
+## Building pieces at Rust scale: a 3 m square foundation of cut stone blocks, 3 m walls of
+## individual bricks (a 1.4 m doorway with a timber frame), plank walls between rails, and tiled roofs.
 static func _build_piece(kind: String) -> MeshKit:
 	var k := MeshKit.new(hash(kind))
-	if kind == "foundation":
-		# Rounded square slab, 2 x 2 m and half a metre thick, lying flat (outline y -> world z).
-		var outline := PackedVector2Array()
-		for i in 48:
-			var a := TAU * i / 48.0
-			outline.append(Vector2(signf(cos(a)) * pow(absf(cos(a)), 0.25), signf(sin(a)) * pow(absf(sin(a)), 0.25)) * 1.0)
-		var stone: Color = Game.palette.rock
-		var xf := Transform3D(Basis(Vector3.RIGHT, PI * 0.5), Vector3.ZERO)
-		var slab_col := func(p: Vector2, _t: float) -> Color:
-			var h := fposmod(sin(floorf(p.x * 2.0) * 12.9 + floorf(p.y * 2.0) * 78.2) * 43758.5, 1.0)
-			var seam := fposmod(p.x, 1.0) < 0.03 or fposmod(p.y, 1.0) < 0.03
-			return stone.darkened(0.22) if seam else stone.lightened((h - 0.5) * 0.14)
-		k.sculpt(outline, xf, func(_p: Vector2) -> float: return 0.5, slab_col, 3, 0.05)
-		return k
-	# Walls: 2 m long, 2.4 m tall, 0.3 m thick; the wall runs along local x and stands on y = 0.
-	var rect := PackedVector2Array([Vector2(-1.0, 0.0), Vector2(1.0, 0.0), Vector2(1.0, 2.4), Vector2(-1.0, 2.4)])
 	var brick: Color = ItemDB.info("brick").color
-	if kind == "wall":
-		var brick_col := func(p: Vector2, _t: float) -> Color:
-			var row := floorf(p.y / 0.2)
-			var u := fposmod(p.x + (fposmod(row, 2.0) * 0.2), 0.4)
-			var mortar := u > 0.385 or fposmod(p.y, 0.2) < 0.022
-			return Color(0.66, 0.63, 0.58) if mortar else brick.lightened((fposmod(sin(row * 9.1 + floorf(p.x * 2.5) * 3.7), 1.0) - 0.5) * 0.06)
-		k.sculpt(rect, Transform3D(), func(_p: Vector2) -> float: return 0.3, brick_col, 4, 0.05)
-	else:   # plank wall: vertical boards with dark seams
-		var wood := WOOD.lightened(0.04)
-		var board_col := func(p: Vector2, _t: float) -> Color:
-			var seam := fposmod(p.x + 1.0, 0.25) < 0.02
-			var grain := sin(p.y * 40.0 + floorf((p.x + 1.0) * 4.0) * 2.0) * 0.03
-			return WOOD_DARK if seam else wood.lightened(grain)
-		k.sculpt(rect, Transform3D(), func(_p: Vector2) -> float: return 0.14, board_col, 4, 0.04)
+	var mortar := Color(0.7, 0.67, 0.61)
+	var stone: Color = Game.palette.rock
+	var rng := RandomNumberGenerator.new()
+	rng.seed = hash(kind)
+	var h := GameActions.CELL * 0.5   # half the cell
+	match kind:
+		"foundation":
+			# Mortar bed, then a 3 x 3 grid of cut blocks with real gaps and slight offsets.
+			var bed := PackedVector2Array([Vector2(-h, -h), Vector2(h, -h), Vector2(h, h), Vector2(-h, h)])
+			k.sculpt(bed, Transform3D(Basis(Vector3.RIGHT, PI * 0.5), Vector3.ZERO), func(_p: Vector2) -> float: return 0.42,
+				func(_p: Vector2, _t: float) -> Color: return mortar.darkened(0.12), 0, 0.05)
+			var step := GameActions.CELL / 3.0
+			for iz in 3:
+				for ix in 3:
+					var bx := -h + step * (ix + 0.5) + rng.randf_range(-0.02, 0.02)
+					var bz := -h + step * (iz + 0.5) + rng.randf_range(-0.02, 0.02)
+					var hw := step * 0.5 - 0.035 + rng.randf_range(-0.012, 0.012)
+					var outline := _rounded_rect(hw, hw, 0.07, 3)
+					var xf := Transform3D(Basis(Vector3.RIGHT, PI * 0.5).rotated(Vector3.UP, rng.randf_range(-0.03, 0.03)), Vector3(bx, 0.12, bz))
+					var block := stone.lightened(rng.randf_range(-0.07, 0.07))
+					var face := func(p: Vector2, _t: float) -> Color:
+						return block.darkened(0.1) if fposmod(p.x * 5.0 + p.y * 3.0, 1.0) < 0.04 else block
+					k.sculpt(outline, xf, func(_p: Vector2) -> float: return 0.44 + rng.randf_range(-0.01, 0.01), face, 1, 0.04)
+		"wall", "doorway":
+			# A mortar core and individual bricks in running bond (a doorway leaves the opening clear).
+			var door_w := 0.7
+			var door_h := 2.3
+			var cores := [[Vector2(-h, 0.0), Vector2(h, 0.0), Vector2(h, 3.0), Vector2(-h, 3.0)]]
+			if kind == "doorway":
+				cores = [
+					[Vector2(-h, 0.0), Vector2(-door_w, 0.0), Vector2(-door_w, 3.0), Vector2(-h, 3.0)],
+					[Vector2(door_w, 0.0), Vector2(h, 0.0), Vector2(h, 3.0), Vector2(door_w, 3.0)],
+					[Vector2(-door_w, door_h), Vector2(door_w, door_h), Vector2(door_w, 3.0), Vector2(-door_w, 3.0)],
+				]
+			for core: Array in cores:
+				k.sculpt(PackedVector2Array(core), Transform3D(), func(_p: Vector2) -> float: return 0.2, func(_p: Vector2, _t: float) -> Color: return mortar, 0, 0.05)
+			var bw := 0.5
+			var bh := 0.25
+			for row in 12:
+				var y0 := row * bh
+				var offset := bw * 0.5 if row % 2 == 1 else 0.0
+				var x := -h - offset
+				while x < h:
+					var x0 := maxf(x + 0.015, -h)
+					var x1 := minf(x + bw - 0.015, h)
+					x += bw
+					if x1 - x0 < 0.15:
+						continue
+					var cx := (x0 + x1) * 0.5
+					if kind == "doorway" and absf(cx) < door_w + 0.04 and y0 < door_h:
+						continue
+					var hx := (x1 - x0) * 0.5
+					var outline := _rounded_rect(hx, bh * 0.5 - 0.015, 0.025, 2)
+					var b := brick.lightened(rng.randf_range(-0.07, 0.05))
+					var face := func(p: Vector2, _t: float) -> Color:
+						return b.darkened(0.12) if p.y < -bh * 0.5 + 0.045 or p.y > bh * 0.5 - 0.045 else b
+					var xf := Transform3D(Basis(), Vector3(cx, y0 + bh * 0.5, 0.07))
+					k.sculpt(outline, xf, func(_p: Vector2) -> float: return 0.22, face, 1, 0.03)
+			if kind == "doorway":
+				# Timber frame around the opening.
+				for side in [-1.0, 1.0]:
+					k.add_primitive(_box(Vector3(0.12, door_h, 0.26)), Transform3D(Basis(), Vector3(side * door_w, door_h * 0.5, 0.0)), WOOD_DARK, 0.0, 0.03)
+				k.add_primitive(_box(Vector3(door_w * 2.0 + 0.24, 0.12, 0.26)), Transform3D(Basis(), Vector3(0.0, door_h, 0.0)), WOOD_DARK, 0.0, 0.03)
+		"wood_wall":
+			# Boards between a bottom and a top rail, with dark seams and a little grain.
+			k.add_primitive(_box(Vector3(3.0, 0.2, 0.26)), Transform3D(Basis(), Vector3(0, 0.1, 0)), WOOD_DARK, 0.0, 0.03)
+			k.add_primitive(_box(Vector3(3.0, 0.2, 0.26)), Transform3D(Basis(), Vector3(0, 2.9, 0)), WOOD_DARK, 0.0, 0.03)
+			for i in 15:
+				var bx := -1.4 + i * 0.2
+				var h_off := rng.randf_range(-0.01, 0.01)
+				var outline := _rounded_rect(0.092, 1.36, 0.02, 1)
+				var board := WOOD.lightened(rng.randf_range(-0.05, 0.06))
+				var grain := func(p: Vector2, _t: float) -> Color:
+					return board.darkened(0.08) if fposmod(p.y * 6.0 + sin(p.x * 30.0), 1.0) < 0.08 else board
+				k.sculpt(outline, Transform3D(Basis(), Vector3(bx, 1.5 + h_off, 0.0)), func(_p: Vector2) -> float: return 0.08, grain, 1, 0.02)
+		"roof":
+			# Overlapping clay tiles in staggered rows over a 3 m square, with a timber edge.
+			var clay := Color(0.62, 0.34, 0.26)
+			for row in 10:
+				for col in 6:
+					var tz := -h + 0.15 + row * 0.3
+					var tx := -h + 0.25 + col * 0.5 + (0.25 if row % 2 == 1 else 0.0)
+					if tx > h - 0.1:
+						continue
+					var outline := _rounded_rect(0.24, 0.16, 0.06, 1)
+					var t := clay.lightened(rng.randf_range(-0.07, 0.07))
+					var tile := func(p: Vector2, _t: float) -> Color: return t.darkened(0.15) if p.y < -0.12 else t
+					k.sculpt(outline, Transform3D(Basis(Vector3.RIGHT, PI * 0.5), Vector3(tx, 0.03 + row * 0.004, tz)), func(_p: Vector2) -> float: return 0.06, tile, 1, 0.02)
+			for side in [-1.0, 1.0]:
+				k.add_primitive(_box(Vector3(3.0, 0.16, 0.14)), Transform3D(Basis(), Vector3(0, -0.02, side * h)), WOOD_DARK, 0.0, 0.03)
+				k.add_primitive(_box(Vector3(0.14, 0.16, 3.0)), Transform3D(Basis(), Vector3(side * h, -0.02, 0)), WOOD_DARK, 0.0, 0.03)
 	return k
+
+
+## A rounded rectangle outline (half sizes hx, hy; corner radius r; segments per corner).
+static func _rounded_rect(hx: float, hy: float, r: float, seg: int) -> PackedVector2Array:
+	var out := PackedVector2Array()
+	var corners := [Vector2(hx - r, hy - r), Vector2(-hx + r, hy - r), Vector2(-hx + r, -hy + r), Vector2(hx - r, -hy + r)]
+	for ci in 4:
+		var c: Vector2 = corners[ci]
+		var a0 := ci * PI * 0.5
+		for s in seg + 1:
+			var a := a0 + (PI * 0.5) * s / float(seg)
+			out.append(c + Vector2(cos(a), sin(a)) * r)
+	return out
+
+
+static func _box(size: Vector3) -> BoxMesh:
+	var b := BoxMesh.new()
+	b.size = size
+	return b
 
 
 static func _stone(k: MeshKit, at: Vector3, r: float, col: Color, rng: RandomNumberGenerator) -> void:

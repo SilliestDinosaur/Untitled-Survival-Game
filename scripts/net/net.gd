@@ -478,10 +478,22 @@ func run_action(pid: int, peer: int, action: String, a: Dictionary) -> Dictionar
 			return res
 		"place":
 			var placed := GameActions.place_structure(pid, int(a.slot), a.pos, float(a.yaw))
+			if placed.get("ok", false):
+				# Cut away ground that pokes into the piece, so nothing clips into it.
+				var kind: String = placed.get("kind", "")
+				var rect := Vector2(1.5, 1.5)
+				if kind in GameActions.WALL_KINDS:
+					rect = Vector2(1.5, 0.25)
+				var fill := kind == "foundation" and int(placed.get("level", 0)) == 0
+				var cut := TerrainEdit.clear_rect(a.pos, rect.x, rect.y, float(a.yaw), a.pos.y, fill)
+				if not cut.is_empty():
+					TerrainEdit.commit(cut)
+					if is_host():
+						_terrain_cells.rpc(cut)
 			if placed.get("ok", false) and placed.get("kind", "") == "foundation":
 				# Level the ground under the slab, blending out at the rim, so the ground and
 				# the piece merge instead of clipping into each other.
-				var level := TerrainEdit.apply({"mode": TerrainEdit.Mode.FLATTEN, "x": a.pos.x, "z": a.pos.z, "r": 2.2, "s": 1.0, "target": a.pos.y}, inv)
+				var level := TerrainEdit.apply({"mode": TerrainEdit.Mode.FLATTEN, "x": a.pos.x, "z": a.pos.z, "r": 3.0, "s": 1.0, "target": a.pos.y}, inv)
 				if level.get("ok", false):
 					TerrainEdit.commit(level.cells)
 					if is_host():

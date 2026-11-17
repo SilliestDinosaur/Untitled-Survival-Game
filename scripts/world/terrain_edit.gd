@@ -11,6 +11,44 @@ const MAX_RADIUS := 4.0
 const DIRT_PER_M3 := 1.2   ## dirt you get from a cubic metre dug out
 
 
+## Trees standing in the ground (the chunk generator places them the same way on every machine,
+## so this works even for trees in chunks nobody has loaded here). Cached per chunk.
+static var _tree_cache := {}
+const TREE_CLEARANCE := 1.2   ## a stroke may not come this close to a trunk
+
+
+## Trunk positions in one chunk, gathered trees excluded at query time.
+static func _trees_in_chunk(c: Vector2i) -> Array:
+	var key := "%d_%d_%d" % [Game.world_seed, c.x, c.y]
+	if not _tree_cache.has(key):
+		var origin := Vector3(c.x * Game.CHUNK_SIZE, 0.0, c.y * Game.CHUNK_SIZE)
+		var out := []
+		for r: Dictionary in ChunkGenerator._place_resources(c, origin, Game.world_gen, Game.flora, {}):
+			if FloraLibrary.category_of(r.kind) == "tree":
+				out.append([r.transform.origin, r.id])
+		_tree_cache[key] = out
+	return _tree_cache[key]
+
+
+## The nearest standing tree within `radius` of p (ground distance), or null.
+static func tree_near(p: Vector3, radius: float) -> Variant:
+	var size := float(Game.CHUNK_SIZE)
+	var lo := Vector2i(floori((p.x - radius - 8.0) / size), floori((p.z - radius - 8.0) / size))
+	var hi := Vector2i(floori((p.x + radius + 8.0) / size), floori((p.z + radius + 8.0) / size))
+	var best: Variant = null
+	var best_d := radius + TREE_CLEARANCE
+	for z in range(lo.y, hi.y + 1):
+		for x in range(lo.x, hi.x + 1):
+			for t: Array in _trees_in_chunk(Vector2i(x, z)):
+				if Game.is_removed(t[1]):
+					continue
+				var d := Vector2(t[0].x - p.x, t[0].z - p.z).length()
+				if d < best_d:
+					best_d = d
+					best = t[0]
+	return best
+
+
 ## Work out the change for one shovel stroke. Does not change the world yet (see commit).
 ## op: {mode, x, z, r (metres), s (strength), target (metres, for flatten)}
 ## Returns {ok, cells, dirt, reason}. Piling takes dirt from `inv`; digging adds dirt to it.
@@ -22,6 +60,8 @@ static func apply(op: Dictionary, inv: Inventory) -> Dictionary:
 	var cx := float(op.x)
 	var cz := float(op.z)
 	var target := float(op.get("target", gen.get_height(cx, cz)))
+	if tree_near(Vector3(cx, 0.0, cz), r) != null:
+		return {"ok": false, "reason": "A tree is in the way. Chop it down first."}
 	var stone := bool(op.get("rock", false))   # the pickaxe: only stone can be carved
 	if stone and (mode != Mode.DIG or gen.get_surface(cx, cz) != "rock"):
 		return {"ok": false, "reason": "Too soft to carve. Only stone can be broken with a pickaxe."}
@@ -79,6 +119,25 @@ static func apply(op: Dictionary, inv: Inventory) -> Dictionary:
 		if added <= 0.0:
 			return {"ok": false, "reason": "You're out of dirt"}
 	return {"ok": true, "cells": cells, "dirt": dirt}
+
+
+## For a piece placed at `center` (its base at height y), the ground inside its footprint is
+## cut down to the piece's base wherever it rises above it, like clearing a space for a building.
+## With `fill`, holes inside the footprint are filled up to y as well. Returns cell changes.
+static func clear_rect(center: Vector3, hx: float, hz: float, yaw: float, y: float, fill: bool) -> Array:
+	var gen: WorldGen = Game.world_gen
+	var rot := absf(yaw - PI * 0.5) < 0.01
+	var ex := hz if rot else hx
+	var ez := hx if rot else hz
+	var cells: Array = []
+	for j in range(floori(center.z - ez), ceili(center.z + ez) + 1):
+		for i in range(floori(center.x - ex), ceili(center.x + ex) + 1):
+			if absf(float(i) - center.x) > ex or absf(float(j) - center.z) > ez:
+				continue
+			var cur := gen.get_height(i, j)
+			if cur > y + 0.02 or (fill and cur < y - 0.02):
+				cells.append([i, j, y - gen.get_base_height(i, j)])
+	return cells
 
 
 ## Make a change real on this machine: update the ground and rebuild the chunks it touches.

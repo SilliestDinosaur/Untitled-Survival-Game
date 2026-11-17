@@ -70,6 +70,8 @@ const BASE_ITEMS := {
 	"foundation": {"name": "Foundation", "kind": "placeable", "stack": 10, "icon": "foundation", "station": "foundation", "desc": "A flat stone slab. Placing it levels the ground under it."},
 	"wall": {"name": "Brick Wall", "kind": "placeable", "stack": 10, "icon": "wall", "station": "wall", "desc": "A brick wall. Place it on the edge of a foundation."},
 	"wood_wall": {"name": "Plank Wall", "kind": "placeable", "stack": 10, "icon": "wood_wall", "station": "wood_wall", "desc": "A plank wall. Place it on the edge of a foundation."},
+	"doorway": {"name": "Doorway", "kind": "placeable", "stack": 10, "icon": "doorway", "station": "doorway", "desc": "A brick wall with an opening to walk through."},
+	"roof": {"name": "Roof", "kind": "placeable", "stack": 10, "icon": "roof", "station": "roof", "desc": "A tiled roof. Needs a foundation and at least two walls under it."},
 	"brick": {"name": "Stone Brick", "kind": "material", "stack": 100, "icon": "brick", "color": Color(0.7, 0.5, 0.38), "desc": "Chiseled stone. Brick is for building (coming soon)."},
 	"dirt": {"name": "Dirt", "kind": "resource", "stack": 250, "icon": "dirt", "color": Color(0.42, 0.3, 0.2), "desc": "Earth dug up with a shovel. Pile it back down to build up ground."},
 	"rock": {"name": "Rock", "kind": "tool", "stack": 1, "icon": "tool", "tier": 0, "desc": "A fist-sized flint rock. Better than bare hands.",
