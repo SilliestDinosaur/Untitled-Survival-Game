@@ -145,8 +145,8 @@ func get_height(x: float, z: float) -> float:
 	var bad := badlands_amount(x, z) * (1.0 - range_t * 0.6) * smoothstep(0.35, 0.55, mask)
 	if bad > 0.01 and land > 3.0:
 		# Two tiers of flat-topped mesas with steep sides, then gentle ledges on the slopes.
-		var n := _forest.get_noise_2d(x * 0.22, z * 0.22) + _detail.get_noise_2d(x * 0.5, z * 0.5) * 0.08
-		var raised := land + 13.0 * smoothstep(0.02, 0.1, n) + 9.0 * smoothstep(0.28, 0.34, n)
+		var n := _forest.get_noise_2d(x * 0.7 + 311.0, z * 0.7) + _detail.get_noise_2d(x * 0.5, z * 0.5) * 0.06
+		var raised := land + 11.0 * smoothstep(-0.04, -0.01, n) + 8.0 * smoothstep(0.26, 0.29, n)
 		var step := 3.0
 		var f := raised / step
 		var stepped := (floorf(f) + smoothstep(0.6, 0.95, f - floorf(f))) * step
