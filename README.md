@@ -143,6 +143,8 @@ Sounds and music are synthesized at startup, so there are no audio files.
 | `scripts/world/structure_models.gd` | Campfire, workbench and forge models |
 | `scripts/items/recipes.gd` | Crafting recipes |
 | `scripts/audio/music.gd` | Autoload `Music`: generative mood-based music |
+| `scripts/net/net.gd` | Autoload `Net`: hosting, joining, invite codes, action routing, sync |
+| `scripts/net/remote_player.gd` | Other players' avatars |
 | `scripts/audio/instruments.gd` | Synthesized instrument samples |
 | `scripts/player/` | First-person controller, stats, viewmodel (held item + swing) |
 | `scripts/items/` | Item registry (base + per-world tiers/foods) and slot inventory |
@@ -155,11 +157,24 @@ Sounds and music are synthesized at startup, so there are no audio files.
 | `tests/smoke_test.gd` | `godot --headless --path . -s tests/smoke_test.gd` |
 | `tests/gameplay_test.gd` | Chops, mines, eats, hunts, harvests, then saves and reloads |
 
-## Built for multiplayer later
-World changes go through `scripts/core/game_actions.gd` with a player id, inventories live in
-`Game.inventories` keyed by player, dropped items have stable entity ids, and saves store a map of
-players. A peer-to-peer host can run the same actions for every client; clients regenerate the
-world from the seed and only need the list of changes.
+## Multiplayer (co-op, up to 4)
+- **Host:** switch on *Open to friends* when creating or loading a world, or press *Open to
+  Friends* in the pause menu. The game asks your router to open UDP port 24680 (UPnP) and shows
+  an **invite code** to give your friend. A **same-network code** is shown too.
+- **Join:** title screen -> *Play with Friends*, pick your name and colour, enter the code.
+- If your router doesn't allow UPnP, the menu says so: friends on your Wi-Fi can still use the
+  same-network code; for internet play forward UDP port 24680, or both join a virtual LAN
+  (Tailscale, ZeroTier, Radmin VPN) and type the host's address (e.g. `100.64.1.2`) as the code.
+- It's the host's world: guests' characters (inventory, position, health) are saved in the host's
+  save and restored when they rejoin.
+- Other players appear as simple floating figures (torso, head, held item, name tag).
+
+How it works: the host is the authority. Every world-changing action goes through
+`Net.request()` (`scripts/net/net.gd`): offline and on the host it runs `GameActions` directly;
+a guest sends it to the host, which runs it for that guest's inventory and broadcasts the result
+(trees falling, items dropped, structures, inventories). The host simulates animals for everyone
+and streams their positions; guests show puppets. Players stream their pose to each other.
+Test it with two processes: `tests/net_host_test.gd` and `tests/net_client_test.gd`.
 
 ## Performance notes
 - Chunks are generated on worker threads, so streaming doesn't stutter.

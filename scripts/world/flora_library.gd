@@ -478,14 +478,14 @@ func _add_fruit(kit: MeshKit, rng: RandomNumberGenerator) -> void:
 	var col: Color = ItemDB.info("fruit").get("color", Color(0.9, 0.3, 0.2))
 	var placed := 0
 	var tries := 0
-	while placed < 14 and tries < 400:
+	while placed < 10 and tries < 400:
 		tries += 1
 		var v: Vector3 = kit.verts[rng.randi() % kit.verts.size()]
 		var t := (v.y - bottom) / maxf(top - bottom, 0.01)
 		if t < 0.45 or t > 0.85 or Vector2(v.x, v.z).length() < 0.6:
 			continue
 		var out := Vector3(v.x, 0, v.z).normalized() * 0.06
-		kit.add_primitive(MeshKit.sphere(0.11, 10, 7), Transform3D(Basis.from_scale(Vector3(1, 1.1, 1)), v + out - Vector3(0, 0.06, 0)), col.lightened(rng.randf_range(-0.08, 0.08)), 0.0, 0.04)
+		kit.add_primitive(MeshKit.sphere(0.12, 7, 5), Transform3D(Basis.from_scale(Vector3(1, 1.1, 1)), v + out - Vector3(0, 0.06, 0)), col.lightened(rng.randf_range(-0.08, 0.08)), 0.0, 0.04)
 		placed += 1
 
 
@@ -797,18 +797,18 @@ func _palm(kit: MeshKit, rng: RandomNumberGenerator) -> void:
 ## Flowering shrub: soft leafy mound dotted with five-petal flowers.
 func _flower_bush(kit: MeshKit, rng: RandomNumberGenerator, petal: Color) -> void:
 	_bush(kit, rng, false)
-	for i in rng.randi_range(14, 20):
+	for i in rng.randi_range(10, 14):
 		var a := rng.randf() * TAU
 		var up := rng.randf_range(0.2, 1.0)
 		var dir := Vector3(cos(a) * (1.0 - up * 0.6), up, sin(a) * (1.0 - up * 0.6)).normalized()
 		var at := Vector3(0, 0.45, 0) + dir * rng.randf_range(0.6, 0.8)
 		var flower := PackedVector2Array()
-		for k in 10:
-			var ang := TAU * k / 10.0
-			var rr := 0.12 if k % 2 == 0 else 0.05
+		for k in 8:
+			var ang := TAU * k / 8.0
+			var rr := 0.13 if k % 2 == 0 else 0.05
 			flower.append(Vector2(cos(ang), sin(ang)) * rr)
 		kit.extrude(flower, Transform3D(Basis(Quaternion(Vector3.FORWARD, dir)), at), 0.012, 0.006, _vary(petal, rng, 0.05), petal.lightened(0.3), 0.5)
-		kit.add_primitive(MeshKit.sphere(0.03, 6, 4), Transform3D(Basis(), at + dir * 0.015), Color(0.98, 0.85, 0.35), 0.0, 0.0)
+		kit.add_primitive(MeshKit.sphere(0.035, 5, 3), Transform3D(Basis(), at + dir * 0.015), Color(0.98, 0.85, 0.35), 0.0, 0.0)
 
 
 ## Agave: a rosette of thick, pointed leaves curving outward.
@@ -1069,8 +1069,8 @@ func _glowcap(kit: MeshKit, rng: RandomNumberGenerator, index: int) -> void:
 		if _bare:
 			continue
 		var r := rng.randf_range(0.08, 0.16)
-		kit.add_primitive(MeshKit.sphere(r, 10, 6), Transform3D(Basis().scaled(Vector3(1, 0.55, 1)), top), cap, 0.0, 0.03)
-		kit.add_primitive(MeshKit.sphere(r * 0.45, 7, 4), Transform3D(Basis(), top + Vector3(0, r * 0.25, 0)), cap.lightened(0.4), 0.0, 0.0)
+		kit.add_primitive(MeshKit.sphere(r, 8, 4), Transform3D(Basis().scaled(Vector3(1, 0.55, 1)), top), cap, 0.0, 0.03)
+		kit.add_primitive(MeshKit.sphere(r * 0.45, 5, 3), Transform3D(Basis(), top + Vector3(0, r * 0.25, 0)), cap.lightened(0.4), 0.0, 0.0)
 
 
 ## Frost-shattered boulder with a crust of ice and snow.
