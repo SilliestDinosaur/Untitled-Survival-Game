@@ -1,0 +1,181 @@
+class_name HUD
+extends Control
+## In-game overlay: stat bars, compass, biome name, crosshair + target label,
+## damage / underwater effects, arrival banner and debug readout.
+
+var player: CharacterBody3D
+var world: Node
+
+var _health: StatBar
+var _hunger: StatBar
+var _stamina: StatBar
+var _compass: Compass
+var _biome: Label
+var _crosshair: Control
+var _target_name: Label
+var _target_kind: Label
+var _debug: Label
+var _banner: VBoxContainer
+var _banner_name: Label
+var _damage_fx: ColorRect
+var _water_fx: ColorRect
+var _damage := 0.0
+var _last_biome := -1
+var _biome_timer := 0.0
+var _debug_on := false
+var _crosshair_scale := 1.0
+
+
+func setup(p: CharacterBody3D, w: Node) -> void:
+	player = p
+	world = w
+	player.stats.damaged.connect(func(amount: float) -> void: _damage = minf(_damage + amount / 25.0, 1.0))
+
+
+func _ready() -> void:
+	set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
+	mouse_filter = Control.MOUSE_FILTER_IGNORE
+
+	_water_fx = _overlay(Color(0.05, 0.25, 0.35), 0.0, 0.9)
+	_damage_fx = _overlay(Color(0.65, 0.02, 0.02), 0.0, 0.5)
+
+	# Crosshair: a dot that grows into a ring when you can interact with something.
+	_crosshair = Control.new()
+	UITheme.place(_crosshair, Control.PRESET_CENTER, Vector2.ZERO)
+	_crosshair.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	_crosshair.draw.connect(_draw_crosshair)
+	add_child(_crosshair)
+
+	var target := VBoxContainer.new()
+	UITheme.place(target, Control.PRESET_CENTER, Vector2(-200, 26), Vector2(400, 0))
+	target.add_theme_constant_override("separation", 0)
+	add_child(target)
+	_target_name = UITheme.label("", 19, UITheme.TEXT, 5)
+	_target_kind = UITheme.label("", 13, UITheme.TEXT_DIM, 4)
+	for l in [_target_name, _target_kind]:
+		l.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+		target.add_child(l)
+
+	# Stat bars, bottom-left.
+	var bars := VBoxContainer.new()
+	UITheme.place(bars, Control.PRESET_BOTTOM_LEFT, Vector2(28, -104))
+	bars.add_theme_constant_override("separation", 4)
+	add_child(bars)
+	_health = StatBar.new(Color(0.90, 0.30, 0.30), "HEALTH")
+	_hunger = StatBar.new(Color(0.93, 0.62, 0.25), "FOOD")
+	_stamina = StatBar.new(Color(0.55, 0.85, 0.45), "STAM")
+	_stamina.auto_hide = true
+	_stamina.warn_below = 0.15
+	for b in [_health, _hunger, _stamina]:
+		bars.add_child(b)
+
+	# Compass + biome, top-center.
+	var top := VBoxContainer.new()
+	UITheme.place(top, Control.PRESET_CENTER_TOP, Vector2(-260, 18), Vector2(520, 0))
+	top.add_theme_constant_override("separation", 6)
+	add_child(top)
+	_compass = Compass.new()
+	top.add_child(_compass)
+	_biome = UITheme.label("", 15, UITheme.TEXT_DIM, 4)
+	_biome.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	top.add_child(_biome)
+
+	# "Welcome to ..." banner.
+	_banner = VBoxContainer.new()
+	UITheme.place(_banner, Control.PRESET_CENTER, Vector2(-400, -230), Vector2(800, 0))
+	_banner.modulate.a = 0.0
+	add_child(_banner)
+	var welcome := UITheme.label("YOU HAVE WASHED ASHORE ON", 15, UITheme.TEXT_DIM, 4)
+	_banner_name = UITheme.label("", 46, Color.WHITE, 8)
+	for l in [welcome, _banner_name]:
+		l.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+		_banner.add_child(l)
+
+	_debug = UITheme.label("", 14, UITheme.TEXT, 4)
+	_debug.position = Vector2(14, 10)
+	add_child(_debug)
+
+
+func _overlay(tint: Color, intensity: float, softness: float) -> ColorRect:
+	var r := ColorRect.new()
+	r.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
+	r.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	var mat := ShaderMaterial.new()
+	mat.shader = preload("res://shaders/vignette.gdshader")
+	mat.set_shader_parameter("tint", tint)
+	mat.set_shader_parameter("intensity", intensity)
+	mat.set_shader_parameter("softness", softness)
+	r.material = mat
+	add_child(r)
+	return r
+
+
+func show_arrival(world_name: String) -> void:
+	_banner_name.text = world_name
+	var tw := create_tween()
+	tw.tween_interval(0.6)
+	tw.tween_property(_banner, "modulate:a", 1.0, 1.2)
+	tw.tween_interval(3.0)
+	tw.tween_property(_banner, "modulate:a", 0.0, 1.5)
+
+
+func _unhandled_input(event: InputEvent) -> void:
+	if event.is_action_pressed("toggle_debug"):
+		_debug_on = not _debug_on
+
+
+func _process(delta: float) -> void:
+	if not player:
+		return
+	var s: PlayerStats = player.stats
+	_health.value = s.health / s.max_health
+	_hunger.value = s.hunger / s.max_hunger
+	_stamina.value = s.stamina / s.max_stamina
+
+	_compass.heading = fposmod(-rad_to_deg(player.rotation.y), 360.0)
+	_compass.queue_redraw()
+
+	# Biome name: update a few times a second, flash brighter when it changes.
+	_biome_timer -= delta
+	if _biome_timer <= 0.0:
+		_biome_timer = 0.4
+		var p := player.global_position
+		var b: int = Game.world_gen.get_biome(p.x, p.z)
+		if b != _last_biome:
+			_last_biome = b
+			_biome.text = WorldGen.BIOME_NAMES[b].to_upper()
+			_biome.modulate = Color(1.6, 1.4, 1.1)
+	_biome.modulate = _biome.modulate.lerp(Color.WHITE, 1.0 - exp(-1.5 * delta))
+
+	# Crosshair target.
+	var look: Dictionary = player.looking_at
+	_target_name.text = look.get("name", "")
+	_target_kind.text = String(look.get("label", "")).to_upper()
+	_crosshair_scale = lerpf(_crosshair_scale, 1.0 if look.is_empty() else 2.4, 1.0 - exp(-14.0 * delta))
+	_crosshair.queue_redraw()
+
+	# Screen effects.
+	_damage = maxf(_damage - delta * 0.9, 0.0)
+	var low := 1.0 - clampf(s.health / s.max_health / 0.3, 0.0, 1.0)
+	(_damage_fx.material as ShaderMaterial).set_shader_parameter("intensity", maxf(_damage, low * 0.5))
+	var water_target := 0.85 if player.underwater else 0.0
+	var wm := _water_fx.material as ShaderMaterial
+	wm.set_shader_parameter("intensity", lerpf(float(wm.get_shader_parameter("intensity")), water_target, 1.0 - exp(-10.0 * delta)))
+	wm.set_shader_parameter("softness", 0.95)
+
+	_debug.visible = _debug_on or Settings.show_fps
+	if _debug.visible:
+		var p := player.global_position
+		_debug.text = "%d FPS" % Engine.get_frames_per_second()
+		if _debug_on:
+			_debug.text += "\npos %.0f, %.0f, %.0f\nchunks %d\nseed %d" % [p.x, p.y, p.z, world.get_chunk_count(), Game.world_seed]
+
+
+func _draw_crosshair() -> void:
+	var r := 2.5 * _crosshair_scale
+	if _crosshair_scale > 1.3:
+		_crosshair.draw_arc(Vector2.ZERO, r, 0, TAU, 32, Color(0, 0, 0, 0.4), 3.0, true)
+		_crosshair.draw_arc(Vector2.ZERO, r, 0, TAU, 32, Color(1, 1, 1, 0.9), 1.6, true)
+	else:
+		_crosshair.draw_circle(Vector2.ZERO, r + 1.0, Color(0, 0, 0, 0.45))
+		_crosshair.draw_circle(Vector2.ZERO, r, Color(1, 1, 1, 0.95))

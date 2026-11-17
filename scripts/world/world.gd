@@ -1,0 +1,209 @@
+extends Node3D
+## Streams terrain chunks around a focus point (the player, or the menu camera).
+## Chunk data is generated on worker threads; this node only turns finished data into nodes.
+
+signal world_reset
+
+const TIER_DISTANCE := [1, 3]   ## chunks within 1 -> tier 0 (full detail), within 3 -> tier 1, else tier 2
+const MAX_JOBS := 4             ## worker threads busy at once
+const APPLY_PER_FRAME := 2      ## finished chunks turned into nodes per frame
+
+var focus: Node3D
+var view_radius := 6
+
+var _chunks := {}     # Vector2i -> TerrainChunk
+var _jobs := {}       # Vector2i -> {task, job}
+var _water: MeshInstance3D
+
+
+func _ready() -> void:
+	view_radius = Settings.view_radius()
+	_build_water()
+	Settings.changed.connect(func() -> void: view_radius = Settings.view_radius())
+
+
+func _exit_tree() -> void:
+	_wait_for_jobs()
+
+
+func _process(_delta: float) -> void:
+	_collect_jobs()
+	if focus:
+		_update_chunks(focus.global_position)
+
+
+## Throw away everything and start over with the current Game world (after a new seed).
+func reset() -> void:
+	_wait_for_jobs()
+	for c: Vector2i in _chunks:
+		_chunks[c].queue_free()
+	_chunks.clear()
+	_build_water()
+	world_reset.emit()
+
+
+## True when every chunk within `radius` of pos is loaded at full detail.
+func is_area_ready(pos: Vector3, radius: int) -> bool:
+	var center := world_to_chunk(pos)
+	for z in range(-radius, radius + 1):
+		for x in range(-radius, radius + 1):
+			var c := center + Vector2i(x, z)
+			if not _chunks.has(c) or _chunks[c].tier != 0:
+				return false
+	return true
+
+
+## 0..1 progress for the loading screen.
+func area_progress(pos: Vector3, radius: int) -> float:
+	var center := world_to_chunk(pos)
+	var total := 0
+	var loaded := 0
+	for z in range(-radius, radius + 1):
+		for x in range(-radius, radius + 1):
+			total += 1
+			var c := center + Vector2i(x, z)
+			if _chunks.has(c) and _chunks[c].tier == 0:
+				loaded += 1
+	return float(loaded) / total
+
+
+func world_to_chunk(pos: Vector3) -> Vector2i:
+	return Vector2i(floori(pos.x / Game.CHUNK_SIZE), floori(pos.z / Game.CHUNK_SIZE))
+
+
+func get_chunk(c: Vector2i) -> TerrainChunk:
+	return _chunks.get(c)
+
+
+func get_chunk_count() -> int:
+	return _chunks.size()
+
+
+# --- Streaming -------------------------------------------------------------------
+
+func _tier_for(dist: int) -> int:
+	if dist <= TIER_DISTANCE[0]:
+		return 0
+	if dist <= TIER_DISTANCE[1]:
+		return 1
+	return 2
+
+
+func _update_chunks(pos: Vector3) -> void:
+	var center := world_to_chunk(pos)
+
+	# Unload chunks that are well out of range (+1 so we don't thrash at the border).
+	for c: Vector2i in _chunks.keys():
+		if _cheb(c, center) > view_radius + 1:
+			_chunks[c].queue_free()
+			_chunks.erase(c)
+
+	if _jobs.size() >= MAX_JOBS:
+		return
+
+	# Find what needs (re)building, closest first.
+	var wanted: Array = []
+	for z in range(-view_radius, view_radius + 1):
+		for x in range(-view_radius, view_radius + 1):
+			var c := center + Vector2i(x, z)
+			if _jobs.has(c):
+				continue
+			var d := _cheb(c, center)
+			var want := _tier_for(d)
+			if not _chunks.has(c):
+				wanted.append([d * 2, c, want])        # missing: highest priority
+			else:
+				var have: int = _chunks[c].tier
+				# Upgrade right away; downgrade only once clearly out of range (avoids flicker).
+				if want < have or (want > have and d > TIER_DISTANCE[min(have, 1)] + 1):
+					wanted.append([d * 2 + 1, c, want])
+	if wanted.is_empty():
+		return
+	wanted.sort_custom(func(a: Array, b: Array) -> bool: return a[0] < b[0])
+	for k in mini(MAX_JOBS - _jobs.size(), wanted.size()):
+		_start_job(wanted[k][1], wanted[k][2])
+
+
+func _start_job(c: Vector2i, tier: int) -> void:
+	var job := {
+		"coord": c,
+		"tier": tier,
+		"gen": Game.world_gen,
+		"flora": Game.flora,
+		"removed": Game.removed_resources,
+		"grass_density": Settings.grass_density(),
+	}
+	var task := WorkerThreadPool.add_task(ChunkGenerator.generate.bind(job), false, "chunk")
+	_jobs[c] = {"task": task, "job": job}
+
+
+func _collect_jobs() -> void:
+	var applied := 0
+	for c: Vector2i in _jobs.keys():
+		if applied >= APPLY_PER_FRAME:
+			break
+		var entry: Dictionary = _jobs[c]
+		if not WorkerThreadPool.is_task_completed(entry.task):
+			continue
+		WorkerThreadPool.wait_for_task_completion(entry.task)
+		_jobs.erase(c)
+		var job: Dictionary = entry.job
+		if not job.has("result") or job.gen != Game.world_gen:
+			continue
+		if focus and _cheb(c, world_to_chunk(focus.global_position)) > view_radius + 1:
+			continue
+		var chunk := TerrainChunk.new()
+		chunk.apply(c, job.tier, job.result, Game.flora)
+		if _chunks.has(c):
+			_chunks[c].queue_free()   # swap in the new detail level only once it's ready
+		_chunks[c] = chunk
+		add_child(chunk)
+		applied += 1
+
+
+func _wait_for_jobs() -> void:
+	for c: Vector2i in _jobs:
+		WorkerThreadPool.wait_for_task_completion(_jobs[c].task)
+	_jobs.clear()
+
+
+static func _cheb(a: Vector2i, b: Vector2i) -> int:
+	return maxi(absi(a.x - b.x), absi(a.y - b.y))
+
+
+# --- Ocean ------------------------------------------------------------------
+
+func _build_water() -> void:
+	if not _water:
+		_water = MeshInstance3D.new()
+		_water.name = "Water"
+		var plane := PlaneMesh.new()
+		plane.size = Vector2(Game.WORLD_SIZE * 5.0, Game.WORLD_SIZE * 5.0)
+		var mat := ShaderMaterial.new()
+		mat.shader = preload("res://shaders/water.gdshader")
+		mat.set_shader_parameter("ripple_a", _ripple_texture(1))
+		mat.set_shader_parameter("ripple_b", _ripple_texture(2))
+		plane.material = mat
+		_water.mesh = plane
+		_water.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+		_water.position = Vector3(Game.WORLD_SIZE * 0.5, Game.SEA_LEVEL, Game.WORLD_SIZE * 0.5)
+		add_child(_water)
+	var pal: WorldPalette = Game.palette
+	var m := (_water.mesh as PlaneMesh).material as ShaderMaterial
+	m.set_shader_parameter("shallow_color", pal.water_shallow)
+	m.set_shader_parameter("deep_color", pal.water_deep)
+
+
+func _ripple_texture(seed_offset: int) -> NoiseTexture2D:
+	var noise := FastNoiseLite.new()
+	noise.seed = seed_offset
+	noise.frequency = 0.02
+	noise.fractal_octaves = 3
+	var tex := NoiseTexture2D.new()
+	tex.width = 256
+	tex.height = 256
+	tex.seamless = true
+	tex.as_normal_map = true
+	tex.bump_strength = 6.0
+	tex.noise = noise
+	return tex
