@@ -34,9 +34,28 @@ func _process(_d: float) -> bool:
 			var gen: Object = _game.world_gen
 			var plan: Dictionary = gen.caves
 			var root_p: Vector3 = plan.nodes[plan.roots[0]].p
-			# A centre chunk whose eight neighbours are all cave ground too (see voxel_probe).
-			var cx := 14
-			var cz := 23
+			# A centre chunk whose eight neighbours are all cave ground too, found from the cave plan.
+			var cx := -1
+			var cz := -1
+			for r: int in plan.roots:
+				var rp: Vector3 = plan.nodes[r].p
+				for dz in range(-3, 4):
+					for dx in range(-3, 4):
+						if cx >= 0:
+							break
+						var c := Vector2i(floori(rp.x / _game.CHUNK_SIZE) + dx, floori(rp.z / _game.CHUNK_SIZE) + dz)
+						var all_cave := true
+						for ez in range(-1, 2):
+							for ex in range(-1, 2):
+								var origin := Vector3((c.x + ex) * _game.CHUNK_SIZE, 0.0, (c.y + ez) * _game.CHUNK_SIZE)
+								if _CavesScript.segments_near(plan, origin, _game.CHUNK_SIZE).is_empty():
+									all_cave = false
+						if all_cave:
+							cx = c.x
+							cz = c.y
+				if cx >= 0:
+					break
+			_check(cx >= 0, "there is a cave patch of nine chunks to test (found at %d, %d)" % [cx, cz])
 			# Patch: 3 x 3 chunks around the mouth, all built as cave ground.
 			var tris := {}
 			var open := 0

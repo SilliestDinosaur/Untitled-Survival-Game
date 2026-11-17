@@ -170,7 +170,7 @@ func get_base_height(x: float, z: float) -> float:
 	var c := _continent.get_noise_2d(x, z) * 0.5 + 0.5          # 0..1
 	var lowlands := c * hill_scale
 	# Mountains only where a range runs, rising through foothills to the crest.
-	var range_t := smoothstep(0.42, 0.72, _ranges.get_noise_2d(x, z) * 0.5 + 0.5) * smoothstep(0.15, 0.4, mask)
+	var range_t := smoothstep(0.42, 0.72, _ranges.get_noise_2d(x, z) * 0.5 + 0.5) * smoothstep(0.35, 0.8, mask)
 	var ridge := clampf(_ridge.get_noise_2d(x, z) * 0.5 + 0.5, 0.0, 1.0)
 	var crest := pow(ridge, 2.4)                                   # sharp crest, wide shoulders
 	var mountains := (crest * 0.85 + ridge * 0.15) * range_t * mountain_scale
@@ -219,7 +219,7 @@ func badlands_amount(x: float, z: float) -> float:
 ## Rivers and lakes: channels and basins cut below sea level so the sea plane fills them.
 ## They only form in the lowlands; in hills and mountains they taper out (springs, gorges' ends).
 func _carve_water(x: float, z: float, land: float, range_t: float, mask: float, bumps: float) -> float:
-	var lowland := (1.0 - range_t) * (1.0 - smoothstep(20.0, 34.0, land)) * smoothstep(0.25, 0.5, mask)
+	var lowland := (1.0 - range_t) * (1.0 - smoothstep(6.0, 12.0, land)) * smoothstep(0.25, 0.5, mask)
 	if lowland <= 0.001:
 		return land
 	# Lakes
