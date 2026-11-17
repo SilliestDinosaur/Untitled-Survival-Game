@@ -295,34 +295,14 @@ static func _hatchet(k: MeshKit, tier: int, col: Color) -> void:
 			outline.append_array(PackedVector2Array([Vector2(0.075, 0.03), Vector2(0.03, 0.03), Vector2(-0.03, 0.022)]))
 			body = 0.015
 	var eye := hr * 2.0 + 0.012 if tier > 1 else 0.0
+	# Simpler silhouette: a bigger head, so it reads at a glance.
+	for i in outline.size():
+		outline[i] *= 1.15
+	for i in edge.size():
+		edge[i] *= 1.15
 	var xf := Transform3D(FORWARD_PLANE, Vector3(0, top, 0))
 	k.sculpt(outline, xf, _head_thickness(edge, body, falloff, eye, hr + 0.006), _head_color(tier, m, edge, 0.011), 2, 0.007)
 	k.flat_shading = false
-	match tier:
-		1: _lashing(k, top, 0.03, hr, 0.016)
-		3:
-			_collar(k, top + 0.034, hr * 1.35, 0.008, m.fitting)
-			_collar(k, top - 0.034, hr * 1.35, 0.008, m.fitting)
-		4:
-			_collar(k, top + 0.031, hr * 1.45, 0.012, GOLD)
-			_collar(k, top - 0.031, hr * 1.45, 0.012, GOLD)
-		5:   # glowing inlay along the edge
-			var inlay := PackedVector2Array()
-			for p in _arc(Vector2(0.06, 0.0), 0.075, -60, 60, 8):
-				inlay.append(p)
-			var path: Array = []
-			var rr: Array = []
-			for p in inlay:
-				path.append(xf * Vector3(p.x, p.y, 0.0085))
-				rr.append(0.0022)
-			k.loft(path, rr, 5, DUSK_GLOW, Callable(), Callable(), true, true)
-			path = []
-			for p in inlay:
-				path.append(xf * Vector3(p.x, p.y, -0.0085))
-			k.loft(path, rr, 5, DUSK_GLOW, Callable(), Callable(), true, true)
-	if tier > 1:   # wedge driven into the top of the handle
-		k.loft([Vector3(0, top + 0.038, 0), Vector3(0, top + 0.05, 0)], [hr * 0.95, hr * 0.85], 12, WOOD.lightened(0.1),
-			func(t: float, _a: float) -> Color: return DARK_WOOD if t > 0.9 else WOOD.lightened(0.1))
 
 
 # --- Pickaxes ---------------------------------------------------------------------------
@@ -340,7 +320,6 @@ static func _pickaxe(k: MeshKit, tier: int, col: Color) -> void:
 		k.flat_shading = true
 		k.sculpt(outline, Transform3D(FORWARD_PLANE, Vector3(0, top, 0)), _head_thickness(ridge, 0.03, 0.02, 0.0, 0.0, 0.003), _head_color(1, m, edge, 0.02), 2, 0.008)
 		k.flat_shading = false
-		_lashing(k, top, 0.026, hr, 0.016)
 		return
 	# The eye: a squared block around the handle.
 	var block := func(t: float, _a: float) -> Color: return m.base.darkened(0.08) if t < 0.12 or t > 0.88 else m.base
@@ -372,14 +351,6 @@ static func _pickaxe(k: MeshKit, tier: int, col: Color) -> void:
 			return c.lightened(_n2(Vector2(t, a), 6.0) * 0.05)
 		k.loft(path, radii, sides, m.base, arm_col, shape, false, true)
 	k.flat_shading = false
-	if tier == 4:
-		_collar(k, top + 0.04, hr * 1.4, 0.01, GOLD)
-		_collar(k, top - 0.04, hr * 1.4, 0.01, GOLD)
-	elif tier == 5:   # barb on top of the eye
-		k.loft([Vector3(0, top + 0.03, -0.01), Vector3(0, top + 0.07, 0.006)], [0.012, 0.001], 4, DUSK_GLOW.darkened(0.25))
-	elif tier == 3:
-		_collar(k, top - 0.042, hr * 1.3, 0.008, m.fitting)
-	k.loft([Vector3(0, top + 0.036, 0), Vector3(0, top + 0.045, 0)], [hr * 0.95, hr * 0.85], 12, WOOD.lightened(0.1))
 
 
 # --- Spears -----------------------------------------------------------------------------
@@ -418,14 +389,12 @@ static func _spear(k: MeshKit, tier: int, col: Color) -> void:
 		_head_color(tier, m, rim, 0.008), 2, 0.008)
 	k.flat_shading = false
 	if tier == 1:
-		_lashing(k, head_y - 0.012, 0.012, hr, 0.011)
 		return
 	# Socket: a tapered metal sleeve over the shaft, with rings.
 	var sock: Color = m.fitting if tier != 2 else m.base.darkened(0.12)
 	k.loft([Vector3(0, top - 0.06, 0), Vector3(0, top - 0.02, 0), Vector3(0, head_y + 0.004, 0)], [hr * 1.32, hr * 1.18, hr * 0.85], 14, sock,
 		func(t: float, _a: float) -> Color: return sock.lightened(0.18) if fposmod(t * 4.0, 1.0) < 0.14 else sock)
-	if tier == 5:
-		_collar(k, top - 0.064, hr * 1.5, 0.006, DUSK_GLOW)
+
 
 
 # --- Knives -----------------------------------------------------------------------------
@@ -440,10 +409,6 @@ static func _knife(k: MeshKit, tier: int, col: Color) -> void:
 			return grip.darkened(0.22) if fposmod(t * 9.0 + a / TAU, 1.0) < 0.25 else grip   # wound cord
 		return grip.darkened(0.08 * (sin(a * 3.0 + t * 12.0) * 0.5 + 0.5))
 	k.loft(gp, [0.0125, 0.0145, 0.0145, 0.012], 14, grip, gfn, func(_t: float, _a: float) -> Vector2: return Vector2(0.7, 1.0), true, true)
-	if tier in [2, 3]:   # brass rivets through the grip
-		for y in [-0.025, 0.02]:
-			for side in [-1.0, 1.0]:
-				k.add_primitive(MeshKit.sphere(0.0038, 8, 5), Transform3D(Basis(), Vector3(side * 0.0095, y, 0.0)), GOLD.darkened(0.15), 0.0, 0.0)
 	if tier >= 2:   # guard
 		var gc: Color = m.fitting if tier != 2 else m.base.darkened(0.2)
 		var gw := 0.02 + tier * 0.003

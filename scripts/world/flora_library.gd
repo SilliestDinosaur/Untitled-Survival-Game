@@ -393,21 +393,37 @@ func _birch(kit: MeshKit, rng: RandomNumberGenerator) -> void:
 
 ## Weeping willow: a dome with long curtains of leaves hanging around it.
 func _willow(kit: MeshKit, rng: RandomNumberGenerator) -> void:
-	var h := rng.randf_range(3.2, 4.2)
-	var trunk_r := rng.randf_range(0.38, 0.5)
+	# A weeping willow: a slim, leaning trunk under a low crown of lumps, with long strands of leaves
+	# hanging from the rim down to the ground.
+	var h := rng.randf_range(3.6, 4.6)
+	var trunk_r := rng.randf_range(0.26, 0.34)
 	var bark := _vary(_pal.bark, rng).darkened(0.1)
-	kit.add_primitive(MeshKit.cylinder(trunk_r * 0.7, trunk_r, h + 0.6, 8), Transform3D(Basis(Vector3.FORWARD, rng.randf_range(-0.12, 0.12)), Vector3(0, (h + 0.6) * 0.5, 0)), bark, 0.08)
+	var lean := Basis(Vector3.FORWARD, rng.randf_range(-0.1, 0.1))
+	kit.add_primitive(MeshKit.cylinder(trunk_r * 0.55, trunk_r, h, 8), Transform3D(lean, Vector3(0, h * 0.5, 0)), bark, 0.08)
+	# Two forks near the top, so the crown spreads from a few branches.
+	for side in [-1.0, 1.0]:
+		var fork_dir := Vector3(side * 0.55, 0.8, rng.randf_range(-0.2, 0.2)).normalized()
+		var fork_basis := Basis(Vector3.UP.cross(fork_dir).normalized(), Vector3.UP.angle_to(fork_dir))   # turns the cylinder's up onto the fork
+		kit.add_primitive(MeshKit.cylinder(trunk_r * 0.35, trunk_r * 0.6, 1.4, 6), Transform3D(fork_basis, Vector3(0, h * 0.82, 0) + fork_dir * 0.6), bark, 0.08)
 	var leaf := _vary(_pal.willow_leaves, rng)
-	var center := Vector3(0, h + 1.0, 0)
-	kit.add_primitive(MeshKit.sphere(2.3, 10, 6), Transform3D(Basis().scaled(Vector3(1, 0.6, 1)), center), leaf, 0.35, 0.07, center)
-	var curtains := rng.randi_range(9, 13)
-	for i in curtains:
-		var a := TAU * i / curtains + rng.randf_range(-0.2, 0.2)
-		var d := rng.randf_range(1.6, 2.2)
-		var length := rng.randf_range(2.0, 3.2)
-		var pos := Vector3(cos(a) * d, center.y - length * 0.42, sin(a) * d)
-		kit.add_primitive(MeshKit.sphere(0.5, 7, 5), Transform3D(Basis(Vector3.UP, -a) * Basis.from_scale(Vector3(0.45, length, 0.9)), pos),
-			leaf.lightened(rng.randf_range(-0.03, 0.1)), 0.06, 0.05, center + Vector3(0, -1.0, 0))
+	var crown := Vector3(0, h + 0.2, 0)
+	# Crown: a few lumps, not one blob.
+	for i in 6:
+		var a := TAU * i / 6.0 + rng.randf_range(-0.3, 0.3)
+		var d := rng.randf_range(0.4, 1.2)
+		var at := crown + Vector3(cos(a) * d, rng.randf_range(-0.2, 0.5), sin(a) * d)
+		kit.add_primitive(MeshKit.sphere(rng.randf_range(0.9, 1.25), 9, 6), Transform3D(Basis().scaled(Vector3(1, 0.7, 1)), at), leaf.lightened(rng.randf_range(-0.04, 0.06)), 0.3, 0.07, crown)
+	# Weeping strands: slim tapered leaves hanging from the rim, swaying a little.
+	var strands := rng.randi_range(16, 22)
+	for i in strands:
+		var a := TAU * i / strands + rng.randf_range(-0.12, 0.12)
+		var d := rng.randf_range(1.5, 2.5)
+		var top := crown + Vector3(cos(a) * d, -0.2, sin(a) * d)
+		var length := rng.randf_range(1.8, 3.2) * (1.0 if h < 4.0 else 1.1)
+		var sway := Basis(Vector3.UP, a + rng.randf_range(-0.3, 0.3)) * Basis(Vector3.RIGHT, rng.randf_range(0.12, 0.3))
+		var strand_basis := sway * Basis(Vector3.RIGHT, PI)   # cylinder along -Y: hanging down
+		kit.add_primitive(MeshKit.cylinder(0.012, 0.085, length, 4), Transform3D(strand_basis, top + Vector3(0, -length * 0.5, 0)),
+			leaf.lightened(rng.randf_range(-0.02, 0.1)), 0.02, 0.04, top)
 
 
 ## Savanna tree: leaning trunk splitting into branches with flat, wide canopy layers.
@@ -562,13 +578,14 @@ func _rock(kit: MeshKit, rng: RandomNumberGenerator, ore: bool, ore_color := Col
 	if rng.randf() < 0.4:
 		kit.add_primitive(MeshKit.sphere(0.6, 8, 4), Transform3D(Basis().scaled(Vector3(1.2, 0.25, 1.0)), Vector3(rng.randf_range(-0.3, 0.3), 0.25 + squash.y * 0.78, 0)), _vary(_pal.moss, rng), 0.15, 0.06)
 	if ore:
-		for i in rng.randi_range(4, 7):
-			var dir := Vector3(rng.randf_range(-1, 1), rng.randf_range(0.3, 1.0), rng.randf_range(-1, 1)).normalized()
-			var length := rng.randf_range(0.6, 1.1)
-			var b := Basis(Quaternion(Vector3.UP, dir))
-			var pos := Vector3(dir.x * squash.x, dir.y * squash.y, dir.z * squash.z) * 0.75 + Vector3(0, 0.25, 0)
-			kit.add_primitive(MeshKit.cylinder(0.0, rng.randf_range(0.12, 0.2), length, 5), Transform3D(b, pos + dir * length * 0.4),
-				_vary(ore_color, rng, 0.06), 0.0, 0.05)
+		# Chunky ore nuggets sitting in the rock's top and shoulders, each a little faceted lump.
+		for i in rng.randi_range(5, 7):
+			var dir := Vector3(rng.randf_range(-1, 1), rng.randf_range(0.4, 1.0), rng.randf_range(-1, 1)).normalized()
+			var size := rng.randf_range(0.3, 0.42)
+			var pos := Vector3(dir.x * squash.x, dir.y * squash.y, dir.z * squash.z) * 0.95 + Vector3(0, 0.25, 0)
+			var tilt := Basis(Quaternion(Vector3.UP, dir))
+			kit.add_primitive(MeshKit.sphere(size, 6, 4), Transform3D(tilt.scaled(Vector3(1.0, 0.7, 1.0)), pos),
+				_vary(ore_color, rng, 0.05).lightened(rng.randf_range(0.0, 0.12)), 0.0, 0.05)
 
 
 ## Tier-4 gem: big crystal spikes bursting from a small rock.
@@ -785,30 +802,40 @@ func _palm(kit: MeshKit, rng: RandomNumberGenerator) -> void:
 	kit.loft(path, radii, 9, trunk, bands, Callable(), true, true, 0.01)
 	var top: Vector3 = path[8]
 	var leaf := _vary(_pal.oak_leaves, rng).lightened(0.05)
-	var fronds := rng.randi_range(9, 12)
+	var leaf_dark := leaf.darkened(0.18)
+	# Fronds: broad arching blades, each with a comb of leaflets down both sides.
+	var fronds := rng.randi_range(10, 13)
 	for f in fronds:
 		var a := TAU * f / fronds + rng.randf_range(-0.15, 0.15)
 		var dir := Vector3(cos(a), 0, sin(a))
 		var side := Vector3(-dir.z, 0, dir.x)
-		var length := rng.randf_range(2.2, 3.0)
+		var length := rng.randf_range(2.6, 3.4)
 		var prev := top
-		var segs := 8
+		var segs := 9
 		for sgm in segs:
 			var t := float(sgm + 1) / segs
-			var p := top + dir * length * t + Vector3.UP * (sin(t * PI * 0.7) * 0.9 - t * t * 1.3)
-			var w := (sin(t * PI * 0.9 + 0.2) * 0.42 + 0.08) * (1.0 - t * 0.35) * (0.8 + 0.25 * sin(sgm * 2.7 + f))   # leafy, lobed fringe
+			var p := top + dir * length * t + Vector3.UP * (sin(t * PI * 0.7) * 0.7 - t * t * 1.5)
+			var w := (sin(t * PI * 0.9 + 0.2) * 0.62 + 0.12) * (1.0 - t * 0.3) * (0.85 + 0.2 * sin(sgm * 2.7 + f))
 			var c := leaf.darkened(t * 0.12)
-			# Both faces: the frond is visible from underneath too (a palm seen from below).
-			var lo := prev + side * w + dir * 0.12 - Vector3.UP * 0.12
-			var ro := prev - side * w + dir * 0.12 - Vector3.UP * 0.12
+			var lo := prev + side * w + dir * 0.1 - Vector3.UP * 0.14
+			var ro := prev - side * w + dir * 0.1 - Vector3.UP * 0.14
 			kit.add_tri(prev, p, lo, c)
 			kit.add_tri(prev, ro, p, c)
 			kit.add_tri(prev, lo, p, c)
 			kit.add_tri(prev, p, ro, c)
+			# Leaflets: little slanted blades off the midrib, hanging down the frond's edge.
+			if sgm > 0 and sgm < segs - 1:
+				for sd: float in [-1.0, 1.0]:
+					var tip: Vector3 = p + side * sd * (0.55 + 0.3 * (1.0 - t)) + Vector3.DOWN * (0.25 + 0.25 * t)
+					var base_a := p - dir * 0.05
+					var base_b := p + dir * 0.18
+					kit.add_tri(base_a, tip, base_b, leaf_dark)
+					kit.add_tri(base_a, base_b, tip, leaf_dark)
 			prev = p
-	for i in rng.randi_range(2, 4):
+	# Coconuts clustered under the crown.
+	for i in rng.randi_range(3, 5):
 		var a := rng.randf() * TAU
-		kit.add_primitive(MeshKit.sphere(0.12, 8, 6), Transform3D(Basis(), top + Vector3(cos(a) * 0.2, -0.2, sin(a) * 0.2)), Color(0.42, 0.3, 0.18), 0.02, 0.05)
+		kit.add_primitive(MeshKit.sphere(0.13, 8, 6), Transform3D(Basis(), top + Vector3(cos(a) * 0.22, -0.25, sin(a) * 0.22)), Color(0.42, 0.3, 0.18), 0.02, 0.05)
 
 
 ## Flowering shrub: soft leafy mound dotted with five-petal flowers.
