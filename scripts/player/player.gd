@@ -60,6 +60,7 @@ var placement := {}
 ## Shovel: which terrain mode and how wide a stroke (local to this player).
 var shovel_mode := 0
 var shovel_radius := 1.5
+var _snapped_level := 0   ## storey the building preview is on (for the prompt)
 var _ghost: MeshInstance3D
 var _ghost_kind := ""
 var _ghost_ok_mat: StandardMaterial3D
@@ -625,16 +626,22 @@ func _update_placement() -> void:
 	var kind: String = info.station
 	if GameActions.is_building(kind):
 		# Building pieces snap to the grid (and walls to a foundation edge).
-		var snap := GameActions.snap_piece(kind, pos)
+		var prefer := float(placement.get("yaw", -1.0)) if placement.get("kind", "") == kind else -1.0
+		var snap := GameActions.snap_piece(kind, pos, prefer)
 		pos = snap.pos
 		yaw = snap.yaw
+		_snapped_level = int(snap.get("level", 0))
 	var flat_dist := Vector2(pos.x - global_position.x, pos.z - global_position.z).length()
 	var reason := GameActions.placement_problem(pos, kind, yaw)
 	if reason == "" and flat_dist < 1.2:
 		reason = "Too close to you"
 	if reason == "" and GameActions.is_building(kind) and _overlaps_player(pos, kind, yaw):
 		reason = "You're standing there"
-	placement = {"ok": reason == "", "reason": reason, "pos": pos, "yaw": yaw, "name": info.name}
+	var level := int(_snapped_level)
+	var label: String = info.name
+	if GameActions.is_building(kind) and level > 0:
+		label = "%s (level %d)" % [info.name, level + 1]
+	placement = {"ok": reason == "", "reason": reason, "pos": pos, "yaw": yaw, "name": label, "kind": kind}
 	if not _ghost:
 		_ghost = MeshInstance3D.new()
 		_ghost.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF

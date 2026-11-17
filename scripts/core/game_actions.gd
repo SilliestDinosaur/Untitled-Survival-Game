@@ -304,7 +304,9 @@ static func level_of(kind: String, y: float, base: float) -> int:
 
 ## Where a building piece goes when the player aims at `aim` (a world point, from the ray
 ## when it hits something, or the ground). Returns {pos, yaw, level}.
-static func snap_piece(kind: String, aim: Vector3) -> Dictionary:
+## `prefer_yaw` (walls): the edge the preview was already on. Near a cell corner both edges are
+## about equally close, and keeping the current one stops the ghost flickering between them.
+static func snap_piece(kind: String, aim: Vector3, prefer_yaw := -1.0) -> Dictionary:
 	var cell := cell_of(aim)
 	var c := _cell_center(cell)
 	if kind == "foundation":
@@ -325,7 +327,10 @@ static func snap_piece(kind: String, aim: Vector3) -> Dictionary:
 	var dz := aim.z - c.z
 	var pos: Vector3
 	var yaw := 0.0
-	if absf(dx) > absf(dz):   # runs north-south, on an east or west edge
+	var east_west := absf(dx) > absf(dz)
+	if prefer_yaw >= 0.0 and absf(absf(dx) - absf(dz)) < CELL * 0.1:
+		east_west = absf(prefer_yaw - PI * 0.5) < 0.01   # too close to call: stay on the same edge
+	if east_west:             # runs north-south, on an east or west edge
 		pos = Vector3(c.x + signf(dx) * CELL * 0.5, 0.0, c.z)
 		yaw = PI * 0.5
 	else:                     # runs east-west, on a north or south edge

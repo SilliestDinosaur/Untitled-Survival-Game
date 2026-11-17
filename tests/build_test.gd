@@ -98,6 +98,11 @@ func _process(_d: float) -> bool:
 					break
 			var fellow: String = _GA.removal_problem(wall_st)
 			_check(fellow == "", "a wall with no roof above it can be taken down")
+			# Corners: aiming right at a cell corner keeps the wall on the edge it was already on.
+			var corner: Vector3 = _spot + Vector3(1.45, 0, 1.44)
+			var keep_ew: Dictionary = _GA.snap_piece("wall", corner, PI * 0.5)
+			var keep_ns: Dictionary = _GA.snap_piece("wall", corner, 0.0)
+			_check(absf(keep_ew.yaw - PI * 0.5) < 0.01 and absf(keep_ns.yaw) < 0.01, "a wall aimed at a corner stays on its current edge")
 			# Grid alignment: every piece lands exactly on the grid, whatever part of the cell is aimed at.
 			var cs: float = _GA.CELL
 			var aligned := true
