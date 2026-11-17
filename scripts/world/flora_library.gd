@@ -21,13 +21,13 @@ const BIOME_TREE_DENSITY := {
 	Biome.TAIGA: 0.55, Biome.MARSH: 0.22, Biome.DESERT: 0.06,
 }
 const BIOME_BUSHES := {
-	Biome.MEADOW: [["bush", 0.6], ["berry", 0.4]],
+	Biome.MEADOW: [["bush", 0.4], ["berry", 0.35], ["flower_bush", 0.25]],
 	Biome.FOREST: [["bush", 0.7], ["berry", 0.3]],
-	Biome.AUTUMN: [["bush", 0.6], ["berry", 0.4]],
-	Biome.DRYLANDS: [["bush", 0.5], ["dead_bush", 0.5]],
+	Biome.AUTUMN: [["bush", 0.45], ["berry", 0.35], ["flower_bush", 0.2]],
+	Biome.DRYLANDS: [["bush", 0.35], ["dead_bush", 0.35], ["agave", 0.3]],
 	Biome.TAIGA: [["berry", 0.5], ["bush", 0.5]],
 	Biome.MARSH: [["reeds", 0.75], ["bush", 0.25]],
-	Biome.DESERT: [["dead_bush", 1.0]],
+	Biome.DESERT: [["dead_bush", 0.4], ["agave", 0.35], ["small_cactus", 0.25]],
 }
 const BIOME_BUSH_DENSITY := {
 	Biome.MEADOW: 0.25, Biome.FOREST: 0.35, Biome.AUTUMN: 0.3, Biome.DRYLANDS: 0.4,
@@ -35,13 +35,13 @@ const BIOME_BUSH_DENSITY := {
 }
 ## Small things on the ground that make places feel lived-in.
 const BIOME_CLUTTER := {
-	Biome.MEADOW: [["pebbles", 0.6], ["stump", 0.2], ["mushroom", 0.2], ["herb", 0.12], ["cache", 0.015]],
-	Biome.FOREST: [["log", 0.3], ["stump", 0.25], ["mushroom", 0.3], ["pebbles", 0.15], ["herb", 0.1], ["cache", 0.015]],
-	Biome.AUTUMN: [["log", 0.3], ["mushroom", 0.35], ["stump", 0.2], ["pebbles", 0.15], ["herb", 0.1], ["cache", 0.015]],
-	Biome.DRYLANDS: [["pebbles", 0.6], ["boulder", 0.25], ["log", 0.15], ["cache", 0.02]],
-	Biome.TAIGA: [["log", 0.35], ["stump", 0.25], ["mushroom", 0.2], ["pebbles", 0.2], ["herb", 0.1], ["cache", 0.015]],
+	Biome.MEADOW: [["pebbles", 0.45], ["stump", 0.15], ["mushroom", 0.15], ["herb", 0.12], ["branch", 0.15], ["sapling", 0.12], ["cache", 0.015]],
+	Biome.FOREST: [["log", 0.25], ["stump", 0.2], ["mushroom", 0.25], ["pebbles", 0.1], ["herb", 0.1], ["branch", 0.25], ["sapling", 0.15], ["cache", 0.015]],
+	Biome.AUTUMN: [["log", 0.25], ["mushroom", 0.3], ["stump", 0.15], ["pebbles", 0.1], ["herb", 0.1], ["branch", 0.25], ["cache", 0.015]],
+	Biome.DRYLANDS: [["pebbles", 0.35], ["boulder", 0.2], ["scree", 0.2], ["tumbleweed", 0.15], ["branch", 0.1], ["cache", 0.02]],
+	Biome.TAIGA: [["log", 0.3], ["stump", 0.2], ["mushroom", 0.15], ["pebbles", 0.1], ["herb", 0.1], ["branch", 0.2], ["sapling", 0.12], ["scree", 0.08], ["cache", 0.015]],
 	Biome.MARSH: [["log", 0.4], ["mushroom", 0.45], ["stump", 0.15], ["herb", 0.15], ["cache", 0.015]],
-	Biome.DESERT: [["pebbles", 0.5], ["boulder", 0.5], ["cache", 0.03]],
+	Biome.DESERT: [["pebbles", 0.3], ["boulder", 0.3], ["scree", 0.15], ["tumbleweed", 0.2], ["small_cactus", 0.2], ["cache", 0.03]],
 }
 const BIOME_CLUTTER_DENSITY := {
 	Biome.MEADOW: 0.2, Biome.FOREST: 0.55, Biome.AUTUMN: 0.45, Biome.DRYLANDS: 0.3,
@@ -51,6 +51,14 @@ const BIOME_CLUTTER_DENSITY := {
 const BIOME_GRASS := {
 	Biome.MEADOW: 1.0, Biome.FOREST: 0.7, Biome.AUTUMN: 0.85, Biome.DRYLANDS: 0.8,
 	Biome.TAIGA: 0.45, Biome.MARSH: 0.55, Biome.DESERT: 0.0,
+}
+const BIOME_TALL_GRASS := {
+	Biome.MEADOW: 0.35, Biome.FOREST: 0.05, Biome.AUTUMN: 0.25, Biome.DRYLANDS: 1.0,
+	Biome.TAIGA: 0.1, Biome.MARSH: 0.3, Biome.DESERT: 0.08,
+}
+const BIOME_CLOVER := {
+	Biome.MEADOW: 0.8, Biome.FOREST: 0.6, Biome.AUTUMN: 0.5, Biome.DRYLANDS: 0.0,
+	Biome.TAIGA: 0.3, Biome.MARSH: 0.4, Biome.DESERT: 0.0,
 }
 const BIOME_FERNS := {
 	Biome.MEADOW: 0.0, Biome.FOREST: 0.8, Biome.AUTUMN: 0.3, Biome.DRYLANDS: 0.0,
@@ -91,10 +99,20 @@ const KINDS := {
 	"grass": {"category": "grass", "label": "", "variants": 3, "solid": false, "hp": 0},
 	"flower": {"category": "flower", "label": "", "variants": 3, "solid": false, "hp": 0},
 	"fern": {"category": "fern", "label": "", "variants": 3, "solid": false, "hp": 0},
+	"tall_grass": {"category": "fern", "label": "", "variants": 3, "solid": false, "hp": 0},
+	"clover": {"category": "grass", "label": "", "variants": 2, "solid": false, "hp": 0},
+	"palm": {"category": "tree", "label": "Palm", "variants": 3, "solid": true, "hp": 90, "target": "tree", "yield": "tree", "shape": "tree"},
+	"sapling": {"category": "clutter", "label": "Sapling", "variants": 3, "solid": false, "hp": 20, "target": "tree", "yield": "dead_bush", "shape": "small"},
+	"flower_bush": {"category": "bush", "label": "Flowering shrub", "variants": 3, "solid": false, "hp": 40, "target": "bush", "yield": "bush", "shape": "bush"},
+	"agave": {"category": "bush", "label": "Agave", "variants": 2, "solid": false, "hp": 30, "target": "bush", "yield": "reeds", "shape": "bush"},
+	"small_cactus": {"category": "clutter", "label": "Barrel cactus", "variants": 2, "solid": true, "hp": 30, "target": "bush", "yield": "cactus", "shape": "small"},
+	"tumbleweed": {"category": "clutter", "label": "Tumbleweed", "variants": 2, "solid": false, "hp": 10, "target": "bush", "yield": "dead_bush", "shape": "small"},
+	"branch": {"category": "clutter", "label": "Fallen branch", "variants": 3, "solid": false, "hp": 10, "target": "bush", "yield": "dead_bush", "shape": "small"},
+	"scree": {"category": "clutter", "label": "Scree", "variants": 2, "solid": false, "hp": 20, "target": "rock", "yield": "pebbles", "shape": "small"},
 }
 
 ## Fade-out distance per category (0 = always visible; trees are handled by chunk detail levels).
-const VIS_RANGE := {"tree": 0.0, "bush": 150.0, "rock": 260.0, "clutter": 110.0, "grass": 60.0, "flower": 55.0, "fern": 70.0}
+const VIS_RANGE := {"tree": 0.0, "bush": 150.0, "rock": 260.0, "clutter": 110.0, "grass": 60.0, "flower": 55.0, "fern": 75.0}
 ## Collider height offsets per shape.
 const SHAPE_LIFT := {"tree": 2.0, "rock": 0.25, "bush": 0.6, "log": 0.35, "stump": 0.35, "small": 0.2}
 
@@ -145,7 +163,7 @@ static func kind_of_key(key: String) -> String:
 
 func display_name(kind: String) -> String:
 	match kind:
-		"log", "stump", "pebbles", "boulder", "cache":
+		"log", "stump", "pebbles", "boulder", "cache", "branch", "scree", "tumbleweed":
 			return KINDS[kind].label
 		"ore_t2", "ore_t3":
 			return "%s Deposit" % ItemDB.tier_info(int(kind.right(1))).name
@@ -230,9 +248,19 @@ func _build_mesh(kind: String, index: int, variant_seed: int) -> ArrayMesh:
 		"grass": _grass(kit, rng)
 		"flower": _flower(kit, rng, _pal.flowers[index % _pal.flowers.size()])
 		"fern": _fern(kit, rng)
+		"tall_grass": _tall_grass(kit, rng)
+		"clover": _clover(kit, rng)
+		"palm": _palm(kit, rng)
+		"sapling": _sapling(kit, rng)
+		"flower_bush": _flower_bush(kit, rng, _pal.flowers[index % _pal.flowers.size()])
+		"agave": _agave(kit, rng)
+		"small_cactus": _barrel_cactus(kit, rng)
+		"tumbleweed": _tumbleweed(kit, rng)
+		"branch": _branch(kit, rng)
+		"scree": _scree(kit, rng)
 	var cat: String = KINDS[kind].category
 	var mat: Material = foliage_material
-	if cat == "rock" or kind == "pebbles":
+	if cat == "rock" or kind in ["pebbles", "scree"]:
 		mat = rock_material
 	elif cat in ["grass", "flower", "fern"]:
 		mat = grass_material
@@ -521,53 +549,290 @@ func _boulder(kit: MeshKit, rng: RandomNumberGenerator) -> void:
 		kit.add_primitive(MeshKit.sphere(r, 11, 7), Transform3D(Basis(Vector3.UP, rng.randf() * TAU).scaled(Vector3(rng.randf_range(1.0, 1.5), rng.randf_range(0.6, 0.9), 1.0)), pos), col.lightened(i * 0.03), 0.35, 0.09)
 
 
+## Fallen log: a gnarled lofted trunk with bark ridges, a broken end, moss and shelf fungi.
 func _log(kit: MeshKit, rng: RandomNumberGenerator) -> void:
-	var length := rng.randf_range(2.6, 3.4)
-	var r := rng.randf_range(0.28, 0.36)
+	var length := rng.randf_range(2.6, 3.6)
+	var r := rng.randf_range(0.26, 0.36)
 	var bark := _vary(_pal.bark, rng)
-	var b := Basis(Vector3.FORWARD, PI * 0.5)
-	kit.add_primitive(MeshKit.cylinder(r * 0.9, r, length, 9), Transform3D(b, Vector3(0, r * 0.85, 0)), bark, 0.04)
-	for side in [-1.0, 1.0]:   # cut ends showing pale wood
-		kit.add_primitive(MeshKit.cylinder(r * 0.82, r * 0.82, 0.04, 9), Transform3D(b, Vector3(side * length * 0.5, r * 0.85, 0)), Color(0.82, 0.68, 0.48), 0.0, 0.03)
-	kit.add_primitive(MeshKit.sphere(r * 1.1, 8, 4), Transform3D(Basis().scaled(Vector3(2.2, 0.35, 0.9)), Vector3(rng.randf_range(-0.6, 0.6), r * 1.75, 0)), _vary(_pal.moss, rng), 0.2, 0.06)
-	if rng.randf() < 0.6:
-		_mushroom_cluster(kit, rng, Vector3(rng.randf_range(-1.0, 1.0), r * 0.4, r * 0.9), 0.6, _pal.mushroom_caps[1])
+	var path: Array = []
+	var radii: Array = []
+	var steps := 9
+	for i in steps + 1:
+		var t := float(i) / steps
+		path.append(Vector3(lerpf(-length * 0.5, length * 0.5, t), r * 0.85 + sin(t * 3.0) * 0.03, sin(t * 2.3 + 1.0) * 0.08))
+		radii.append(r * lerpf(1.05, 0.85, t))
+	var ridges := func(t: float, a: float) -> Color:
+		return bark.darkened(0.15) if fposmod(a * 2.2 + t * 1.5, 1.0) < 0.28 else bark
+	kit.loft(path, radii, 10, bark, ridges, Callable(), false, false, r * 0.08)
+	# Clean cut at one end (pale rings), jagged break at the other.
+	var rings := func(t: float, a: float) -> Color:
+		return Color(0.8, 0.66, 0.46).darkened(0.1 * (int(t * 4.0) % 2))
+	kit.loft([path[0] - Vector3(0.02, 0, 0), path[0]], [r * 0.9, r * 1.05], 10, Color(0.8, 0.66, 0.46), rings, Callable(), true, false)
+	var tip: Vector3 = path[steps]
+	for i in 5:
+		var a := TAU * i / 5.0 + rng.randf()
+		var off: Vector3 = Vector3(0, cos(a), sin(a)) * float(radii[steps]) * 0.6
+		kit.loft([tip + off, tip + off + Vector3(rng.randf_range(0.08, 0.2), 0, 0)], [radii[steps] * 0.35, 0.01], 5, Color(0.72, 0.58, 0.4))
+	# Moss on top.
+	var moss := _vary(_pal.moss, rng)
+	kit.loft([path[2] + Vector3(0, r * 0.8, 0), path[5] + Vector3(0, r * 0.82, 0)], [r * 0.45, r * 0.5], 8, moss, Callable(),
+		func(t: float, a: float) -> Vector2: return Vector2(1.0, 0.35), true, true, 0.02)
+	# Shelf fungi on the side.
+	for i in rng.randi_range(2, 4):
+		var at: Vector3 = path[rng.randi_range(2, steps - 2)]
+		var shelf := PackedVector2Array()
+		for j in 9:
+			var a := PI * j / 8.0
+			shelf.append(Vector2(cos(a) * 0.11, sin(a) * 0.08))
+		kit.extrude(shelf, Transform3D(Basis(Vector3.RIGHT, -PI * 0.5) * Basis(Vector3.UP, 0.0), at + Vector3(0, -r * 0.1 + i * 0.05, r * 0.95)), 0.03, 0.012, Color(0.85, 0.72, 0.5), Color(0.95, 0.88, 0.7), 0.4)
 
 
+## Stump: flaring base, pale cut top with rings, roots curving into the ground.
 func _stump(kit: MeshKit, rng: RandomNumberGenerator) -> void:
-	var r := rng.randf_range(0.38, 0.5)
+	var r := rng.randf_range(0.36, 0.48)
 	var h := rng.randf_range(0.45, 0.8)
 	var bark := _vary(_pal.bark, rng)
-	kit.add_primitive(MeshKit.cylinder(r, r * 1.15, h, 9), Transform3D(Basis(), Vector3(0, h * 0.5, 0)), bark, 0.05)
-	var rings := func(p: Vector3) -> Color:
-		return Color(0.8, 0.66, 0.46) if sin(Vector2(p.x, p.z).length() * 55.0) > -0.2 else Color(0.7, 0.55, 0.38)
-	kit.add_primitive(MeshKit.cylinder(r * 0.92, r * 0.92, 0.04, 9), Transform3D(Basis(), Vector3(0, h, 0)), Color(0.8, 0.66, 0.46), 0.0, 0.0, null, rings)
-	for i in rng.randi_range(3, 4):
+	var path: Array = []
+	var radii: Array = []
+	for i in 7:
+		var t := i / 6.0
+		path.append(Vector3(0, t * h, 0))
+		radii.append(r * (1.0 + pow(1.0 - t, 3.0) * 0.45))
+	var ridges := func(t: float, a: float) -> Color:
+		return bark.darkened(0.15) if fposmod(a * 2.5, 1.0) < 0.25 else bark
+	kit.loft(path, radii, 12, bark, ridges, Callable(), false, false, 0.02)
+	var top_rings := func(t: float, a: float) -> Color:
+		return Color(0.8, 0.66, 0.46) if int(t * 5.0) % 2 == 0 else Color(0.7, 0.55, 0.38)
+	var cap: Array = []
+	var cap_r: Array = []
+	for i in 6:
+		var t := i / 5.0
+		cap.append(Vector3(0, h + sin(t * PI * 0.5) * 0.01, 0))
+		cap_r.append(r * 0.95 * (1.0 - t) + 0.001)
+	kit.loft(cap, cap_r, 12, Color(0.8, 0.66, 0.46), top_rings, Callable(), false, true)
+	for i in rng.randi_range(3, 5):
 		var a := TAU * i / 4.0 + rng.randf_range(-0.3, 0.3)
-		var dir := Vector3(cos(a), -0.35, sin(a)).normalized()
-		kit.add_primitive(MeshKit.cylinder(0.04, r * 0.35, 0.7, 6), Transform3D(Basis(Quaternion(Vector3.UP, -dir)), Vector3(cos(a) * r * 0.9, 0.1, sin(a) * r * 0.9)), bark.darkened(0.05))
+		var d := Vector3(cos(a), 0, sin(a))
+		var root := [d * r * 0.7 + Vector3(0, h * 0.25, 0), d * r * 1.3 + Vector3(0, 0.08, 0), d * r * 1.9 + Vector3(0, -0.05, 0)]
+		kit.loft(root, [r * 0.28, r * 0.16, r * 0.05], 7, bark.darkened(0.05), Callable(), Callable(), false, true, 0.01)
 
 
 func _mushrooms(kit: MeshKit, rng: RandomNumberGenerator, index: int) -> void:
 	_mushroom_cluster(kit, rng, Vector3.ZERO, 1.0, _pal.mushroom_caps[index % _pal.mushroom_caps.size()])
 
 
+## Lofted mushrooms: bulging stems and domed caps with spots.
 func _mushroom_cluster(kit: MeshKit, rng: RandomNumberGenerator, at: Vector3, scale: float, cap: Color) -> void:
 	for i in rng.randi_range(3, 6):
 		var p := at + Vector3(rng.randf_range(-0.25, 0.25), 0, rng.randf_range(-0.25, 0.25)) * scale
-		var h := rng.randf_range(0.08, 0.22) * scale
+		var h := rng.randf_range(0.09, 0.24) * scale
 		var r := rng.randf_range(0.05, 0.11) * scale
-		kit.add_primitive(MeshKit.cylinder(r * 0.35, r * 0.45, h, 6), Transform3D(Basis(), p + Vector3(0, h * 0.5, 0)), Color(0.92, 0.88, 0.8), 0.0, 0.02)
-		var spots := func(q: Vector3) -> Color:
-			return Color(0.97, 0.95, 0.9) if fposmod(q.x * 61.0 + q.z * 37.0, 1.0) > 0.82 and q.y > p.y + h + r * 0.15 else cap
-		kit.add_primitive(MeshKit.sphere(r, 8, 5), Transform3D(Basis().scaled(Vector3(1, 0.55, 1)), p + Vector3(0, h, 0)), cap, 0.0, 0.04, null, spots)
+		var lean := Vector3(rng.randf_range(-0.02, 0.02), 0, rng.randf_range(-0.02, 0.02)) * scale
+		kit.loft([p, p + Vector3(0, h * 0.5, 0) + lean * 0.5, p + Vector3(0, h, 0) + lean], [r * 0.45, r * 0.32, r * 0.35], 7, Color(0.93, 0.89, 0.8))
+		var top := p + Vector3(0, h, 0) + lean
+		var path: Array = []
+		var radii: Array = []
+		for k in 7:
+			var t := k / 6.0
+			path.append(top + Vector3(0, -r * 0.15 + sin(t * PI * 0.5) * r * 0.65, 0))
+			radii.append(cos(t * PI * 0.5) * r + 0.002)
+		var seed_f := rng.randf() * 10.0
+		var spots := func(t: float, a: float) -> Color:
+			return Color(0.97, 0.95, 0.9) if t > 0.25 and fposmod(a * 2.9 + t * 5.0 + seed_f, 1.0) < 0.13 else cap
+		kit.loft(path, radii, 12, cap, spots, Callable(), true, true)
 
 
+## Angular, half-buried stones of different sizes.
 func _pebbles(kit: MeshKit, rng: RandomNumberGenerator) -> void:
-	for i in rng.randi_range(3, 6):
-		var r := rng.randf_range(0.06, 0.18)
-		var p := Vector3(rng.randf_range(-0.4, 0.4), r * 0.3, rng.randf_range(-0.4, 0.4))
-		kit.add_primitive(MeshKit.sphere(r, 7, 4), Transform3D(Basis(Vector3.UP, rng.randf() * TAU).scaled(Vector3(1.3, 0.6, 1.0)), p), _vary(_pal.pebble, rng, 0.08), 0.15, 0.05)
+	kit.flat_shading = true
+	for i in rng.randi_range(4, 7):
+		var r := rng.randf_range(0.06, 0.2)
+		var p := Vector3(rng.randf_range(-0.45, 0.45), r * 0.15, rng.randf_range(-0.45, 0.45))
+		kit.add_primitive(MeshKit.sphere(r, 6, 4), Transform3D(Basis(Vector3.UP, rng.randf() * TAU).scaled(Vector3(1.3, 0.55, 1.0)), p), _vary(_pal.pebble, rng, 0.08), r * 0.3, 0.05)
+	kit.flat_shading = false
+
+
+## Scree: a heap of broken, angular rock.
+func _scree(kit: MeshKit, rng: RandomNumberGenerator) -> void:
+	kit.flat_shading = true
+	for i in rng.randi_range(8, 12):
+		var r := rng.randf_range(0.12, 0.3)
+		var d := rng.randf_range(0.0, 0.7)
+		var a := rng.randf() * TAU
+		var p := Vector3(cos(a) * d, r * 0.3 + (0.7 - d) * 0.25, sin(a) * d)
+		kit.add_primitive(MeshKit.sphere(r, 5, 3), Transform3D(Basis(Vector3(rng.randf(), 1, rng.randf()).normalized(), rng.randf() * TAU).scaled(Vector3(1.2, 0.7, 1.0)), p), _vary(_pal.rock, rng, 0.07), r * 0.25, 0.06)
+	kit.flat_shading = false
+
+
+## Fallen branch: a crooked lofted stick with a fork and a few dry leaves.
+func _branch(kit: MeshKit, rng: RandomNumberGenerator) -> void:
+	var wood := _vary(_pal.bark, rng).lightened(0.05)
+	var length := rng.randf_range(1.0, 1.6)
+	var path: Array = []
+	var radii: Array = []
+	for i in 7:
+		var t := i / 6.0
+		path.append(Vector3(lerpf(-length * 0.5, length * 0.5, t), 0.05 + sin(t * 4.0) * 0.02, sin(t * 5.0 + rng.randf()) * 0.08))
+		radii.append(lerpf(0.05, 0.018, t))
+	kit.loft(path, radii, 6, wood, Callable(), Callable(), true, true, 0.006)
+	var fork_at: Vector3 = path[3]
+	var fork_dir := Vector3(0.6, 0.15, rng.randf_range(-0.8, 0.8)).normalized()
+	kit.loft([fork_at, fork_at + fork_dir * length * 0.3, fork_at + fork_dir * length * 0.45 + Vector3(0, -0.04, 0)], [0.025, 0.015, 0.006], 5, wood)
+	for i in rng.randi_range(2, 4):
+		var at: Vector3 = path[rng.randi_range(3, 6)]
+		_flat_leaf(kit, at + Vector3(0, 0.02, 0), Vector3(rng.randf_range(-1, 1), 0.3, rng.randf_range(-1, 1)), 0.09, _pal.autumn_leaves[i % _pal.autumn_leaves.size()].darkened(0.2))
+
+
+## A young tree: thin bent stem and a few soft leaf clusters.
+func _sapling(kit: MeshKit, rng: RandomNumberGenerator) -> void:
+	var h := rng.randf_range(0.8, 1.5)
+	var leaf := _vary(_pal.oak_leaves, rng).lightened(0.08)
+	kit.loft([Vector3.ZERO, Vector3(0.03, h * 0.5, 0.0), Vector3(-0.02, h, 0.03)], [0.025, 0.018, 0.01], 6, _pal.bark.lightened(0.1))
+	var center := Vector3(0, h, 0)
+	for i in rng.randi_range(3, 4):
+		var p := center + Vector3(rng.randf_range(-0.18, 0.18), rng.randf_range(-0.2, 0.1), rng.randf_range(-0.18, 0.18))
+		kit.add_primitive(MeshKit.sphere(rng.randf_range(0.14, 0.22), 7, 5), Transform3D(Basis(), p), leaf.lightened(rng.randf_range(-0.05, 0.05)), 0.04, 0.06, center)
+
+
+## Palm: curved, ringed trunk with arching fronds and coconuts.
+func _palm(kit: MeshKit, rng: RandomNumberGenerator) -> void:
+	var h := rng.randf_range(5.0, 7.5)
+	var lean := Vector3(rng.randf_range(-1.0, 1.0), 0, rng.randf_range(-1.0, 1.0)).normalized() * rng.randf_range(0.8, 1.6)
+	var path: Array = []
+	var radii: Array = []
+	for i in 9:
+		var t := i / 8.0
+		path.append(Vector3(0, t * h, 0) + lean * t * t)
+		radii.append(lerpf(0.26, 0.15, t))
+	var trunk := Color(0.62, 0.5, 0.36)
+	var bands := func(t: float, a: float) -> Color:
+		return trunk.darkened(0.18) if fposmod(t * 22.0, 1.0) < 0.3 else trunk
+	kit.loft(path, radii, 9, trunk, bands, Callable(), false, true, 0.01)
+	var top: Vector3 = path[8]
+	var leaf := _vary(_pal.oak_leaves, rng).lightened(0.05)
+	var fronds := rng.randi_range(9, 12)
+	for f in fronds:
+		var a := TAU * f / fronds + rng.randf_range(-0.15, 0.15)
+		var dir := Vector3(cos(a), 0, sin(a))
+		var side := Vector3(-dir.z, 0, dir.x)
+		var length := rng.randf_range(2.2, 3.0)
+		var prev := top
+		var segs := 8
+		for sgm in segs:
+			var t := float(sgm + 1) / segs
+			var p := top + dir * length * t + Vector3.UP * (sin(t * PI * 0.7) * 0.9 - t * t * 1.3)
+			var w := sin(t * PI * 0.9 + 0.2) * 0.55 + 0.05
+			var c := leaf.darkened(t * 0.12)
+			kit.add_tri(prev, p, prev + side * w + dir * 0.12 - Vector3.UP * 0.12, c)
+			kit.add_tri(prev, prev - side * w + dir * 0.12 - Vector3.UP * 0.12, p, c)
+			prev = p
+	for i in rng.randi_range(2, 4):
+		var a := rng.randf() * TAU
+		kit.add_primitive(MeshKit.sphere(0.12, 8, 6), Transform3D(Basis(), top + Vector3(cos(a) * 0.2, -0.2, sin(a) * 0.2)), Color(0.42, 0.3, 0.18), 0.02, 0.05)
+
+
+## Flowering shrub: soft leafy mound dotted with five-petal flowers.
+func _flower_bush(kit: MeshKit, rng: RandomNumberGenerator, petal: Color) -> void:
+	_bush(kit, rng, false)
+	for i in rng.randi_range(14, 20):
+		var a := rng.randf() * TAU
+		var up := rng.randf_range(0.2, 1.0)
+		var dir := Vector3(cos(a) * (1.0 - up * 0.6), up, sin(a) * (1.0 - up * 0.6)).normalized()
+		var at := Vector3(0, 0.45, 0) + dir * rng.randf_range(0.6, 0.8)
+		var flower := PackedVector2Array()
+		for k in 10:
+			var ang := TAU * k / 10.0
+			var rr := 0.12 if k % 2 == 0 else 0.05
+			flower.append(Vector2(cos(ang), sin(ang)) * rr)
+		kit.extrude(flower, Transform3D(Basis(Quaternion(Vector3.FORWARD, dir)), at), 0.012, 0.006, _vary(petal, rng, 0.05), petal.lightened(0.3), 0.5)
+		kit.add_primitive(MeshKit.sphere(0.03, 6, 4), Transform3D(Basis(), at + dir * 0.015), Color(0.98, 0.85, 0.35), 0.0, 0.0)
+
+
+## Agave: a rosette of thick, pointed leaves curving outward.
+func _agave(kit: MeshKit, rng: RandomNumberGenerator) -> void:
+	var col := Color.from_hsv(fposmod(_pal.cactus.h + 0.05, 1.0), 0.32, 0.62)
+	var leaves := rng.randi_range(10, 14)
+	for i in leaves:
+		var a := TAU * i / leaves + rng.randf_range(-0.1, 0.1)
+		var dir := Vector3(cos(a), 0, sin(a))
+		var length := rng.randf_range(0.6, 1.0) * (1.0 if i % 2 == 0 else 0.8)
+		var rise := rng.randf_range(0.6, 1.1)
+		var path := [Vector3.ZERO + dir * 0.05, dir * length * 0.4 + Vector3.UP * rise * 0.5, dir * length * 0.8 + Vector3.UP * rise * 0.75, dir * length + Vector3.UP * rise * 0.7]
+		kit.loft(path, [0.07, 0.06, 0.035, 0.0], 6, col.lightened(rng.randf_range(-0.05, 0.08)), func(t: float, aa: float) -> Color:
+			return col.lightened(0.25) if absf(sin(aa)) > 0.9 else col,
+			func(t: float, aa: float) -> Vector2: return Vector2(1.0, 0.35), true, false)
+
+
+## Barrel cactus: ribbed squat body with a ring of flowers on top.
+func _barrel_cactus(kit: MeshKit, rng: RandomNumberGenerator) -> void:
+	var col := _vary(_pal.cactus, rng)
+	var h := rng.randf_range(0.35, 0.6)
+	var r := rng.randf_range(0.2, 0.3)
+	var path: Array = []
+	var radii: Array = []
+	for i in 8:
+		var t := i / 7.0
+		path.append(Vector3(0, t * h, 0))
+		radii.append(r * (0.75 + sin(t * PI * 0.85) * 0.3) * (1.0 if t < 0.95 else 0.4))
+	kit.loft(path, radii, 16, col, func(t: float, a: float) -> Color:
+		return col.darkened(0.18) if sin(a * 10.0) < -0.3 else col,
+		func(t: float, a: float) -> Vector2: return Vector2.ONE * (1.0 + sin(a * 10.0) * 0.08), false, true)
+	for i in 5:
+		var a := TAU * i / 5.0
+		kit.add_primitive(MeshKit.sphere(0.04, 6, 4), Transform3D(Basis(), Vector3(cos(a) * r * 0.25, h * 0.98, sin(a) * r * 0.25)), _pal.flowers[1], 0.0, 0.04)
+
+
+## Tumbleweed: a loose ball of dry, curling twigs.
+func _tumbleweed(kit: MeshKit, rng: RandomNumberGenerator) -> void:
+	var col := _vary(_pal.dead_wood, rng).lightened(0.05)
+	var r := rng.randf_range(0.35, 0.5)
+	var center := Vector3(0, r * 0.85, 0)
+	for i in 22:
+		var a1 := Vector3(rng.randf_range(-1, 1), rng.randf_range(-1, 1), rng.randf_range(-1, 1)).normalized()
+		var a2 := (a1 + Vector3(rng.randf_range(-1, 1), rng.randf_range(-1, 1), rng.randf_range(-1, 1)) * 0.9).normalized()
+		var mid := (a1 + a2).normalized() * 1.05
+		kit.loft([center + a1 * r, center + mid * r, center + a2 * r], [0.014, 0.018, 0.008], 4, col.darkened(rng.randf() * 0.15), Callable(), Callable(), false, false)
+
+
+## Tall grass with seed heads (savanna and meadows).
+func _tall_grass(kit: MeshKit, rng: RandomNumberGenerator) -> void:
+	kit.force_up_normals = true
+	var col := _pal.dry_grass.lightened(0.05)
+	for i in rng.randi_range(9, 14):
+		var a := rng.randf() * TAU
+		var d := rng.randf_range(0.0, 0.25)
+		var base := Vector3(cos(a) * d, -0.05, sin(a) * d)
+		var lean := Vector3(cos(a), 0, sin(a)) * rng.randf_range(0.1, 0.3)
+		var h := rng.randf_range(0.8, 1.3)
+		var mid := base + lean * 0.4 + Vector3.UP * h * 0.55
+		var tip := base + lean + Vector3.UP * h
+		var side := Vector3(-sin(a), 0, cos(a)) * 0.025
+		kit.add_tri(base - side, base + side, mid, col.darkened(0.3), col.darkened(0.3), col)
+		kit.add_tri(mid - side * 0.6, mid + side * 0.6, tip, col, col, col.lightened(0.15))
+		if rng.randf() < 0.5:   # seed head
+			var seed_col := col.lightened(0.2)
+			kit.add_tri(tip - side * 1.4 - Vector3.UP * 0.12, tip + side * 1.4 - Vector3.UP * 0.12, tip + Vector3.UP * 0.03, seed_col)
+
+
+## Clover: low trefoil leaves.
+func _clover(kit: MeshKit, rng: RandomNumberGenerator) -> void:
+	kit.force_up_normals = true
+	var col := Color(0.9, 0.9, 0.9)   # tinted by the ground color under it
+	for i in rng.randi_range(5, 8):
+		var base := Vector3(rng.randf_range(-0.2, 0.2), rng.randf_range(0.03, 0.08), rng.randf_range(-0.2, 0.2))
+		for l in 3:
+			var a := TAU * l / 3.0 + rng.randf()
+			var c := base + Vector3(cos(a), 0, sin(a)) * 0.035
+			for k in 6:
+				var a1 := TAU * k / 6.0
+				var a2 := TAU * (k + 1) / 6.0
+				kit.add_tri(c, c + Vector3(cos(a1), 0.0, sin(a1)) * 0.035, c + Vector3(cos(a2), 0.0, sin(a2)) * 0.035, col.lightened(0.05), col, col)
+
+
+## Flat leaf (used on branches).
+func _flat_leaf(kit: MeshKit, base: Vector3, dir: Vector3, length: float, col: Color) -> void:
+	var outline := PackedVector2Array([Vector2(0, 0), Vector2(length * 0.3, length * 0.3), Vector2(0, length), Vector2(-length * 0.3, length * 0.3)])
+	kit.extrude(outline, Transform3D(Basis(Quaternion(Vector3.UP, dir.normalized())), base), 0.004, 0.002, col, col.lightened(0.1), 0.5)
 
 
 func _grass(kit: MeshKit, rng: RandomNumberGenerator) -> void:

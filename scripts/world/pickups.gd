@@ -33,9 +33,10 @@ func _make(p: Dictionary) -> Node3D:
 	var pos: Array = p.pos
 	root.position = Vector3(pos[0], pos[1], pos[2])
 	var mi := MeshInstance3D.new()
-	mi.mesh = _bundle
-	var col: Color = ItemDB.info(p.item).get("color", Color(0.78, 0.66, 0.48))
-	mi.material_override = _tinted(col)
+	# The real item model, lying on its side (a little bigger so it's easy to spot).
+	mi.mesh = ItemModels.mesh_for(p.item, _item_material())
+	mi.scale = Vector3.ONE * (1.6 if ItemDB.info(p.item).kind == "tool" else 2.2)
+	mi.rotation = Vector3(0, 0, PI * 0.5) if ItemDB.info(p.item).kind == "tool" else Vector3.ZERO
 	root.add_child(mi)
 	var body := StaticBody3D.new()
 	body.collision_layer = TerrainChunk.LAYER_INTERACT
@@ -53,6 +54,14 @@ func _make(p: Dictionary) -> Node3D:
 	return root
 
 
+var _item_mat: Material
+
+func _item_material() -> Material:
+	if not _item_mat:
+		_item_mat = ArtStyle.painted({"brush_strength": 0.16, "rim_amount": 0.45, "stroke_scale": 3.0})
+	return _item_mat
+
+
 func _tinted(col: Color) -> Material:
 	var key := col.to_html()
 	if not _materials.has(key):
@@ -67,5 +76,5 @@ func _process(delta: float) -> void:
 	for id: String in _nodes:
 		var n: Node3D = _nodes[id]
 		var mi := n.get_child(0) as Node3D
-		mi.position.y = sin(t * 2.0 + float(n.get_meta("phase"))) * 0.04 + 0.04
-		mi.rotation.y += delta * 0.6
+		mi.position.y = sin(t * 2.0 + float(n.get_meta("phase"))) * 0.03 + 0.12
+		mi.rotate_y(delta * 0.6)

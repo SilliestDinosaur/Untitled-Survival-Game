@@ -282,8 +282,8 @@ func _interact_verb(r: Dictionary) -> String:
 	var key := ItemDB.harvest_key(r.kind)
 	if key == "":
 		return ""
-	if key in ["mushroom", "herb", "pebbles"]:
-		return "Pick up"
+	if key in ItemDB.PICKUP_KEYS:
+		return "Uproot" if key == "sapling" else "Pick up"
 	if Game.is_harvested(r.id):
 		return "(nothing left yet)"
 	match key:
@@ -291,6 +291,7 @@ func _interact_verb(r: Dictionary) -> String:
 		"fruit_tree": return "Shake for fruit"
 		"tree", "conifer": return "Gather sticks"
 		"cactus": return "Cut flesh"
+		"agave", "bush", "reeds": return "Pull fiber"
 	return "Gather"
 
 

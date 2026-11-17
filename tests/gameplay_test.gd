@@ -18,6 +18,7 @@ var _saved_removed := 0
 var _save_id := ""
 var _berries_before := 0
 var _dropped := 0
+var _skip: Array = []
 
 
 # Game classes are loaded at runtime: test scripts compile before autoloads exist.
@@ -98,9 +99,13 @@ func _process(_delta: float) -> bool:
 			elif _frames > 5:
 				_next("eat")
 		"pebbles_wait":
+			# If something blocks the view of this pile, try the next nearest one.
+			if _frames % 40 == 39 and not _target.res.get("removed", false) and _player.looking_at.get("resource", {}) != _target.res:
+				_skip.append(_target.res.id)
+				_aim_at_kind(["pebbles"])
 			if _target.res.get("removed", false) or _frames > 3000:
 				Input.action_release("interact")
-				_check(_target.res.get("removed", false), "picked up loose stones")
+				_check(_target.res.get("removed", false), "picked up loose stones (looking at %s)" % _player.looking_at.get("name", "nothing"))
 				_next("drop")
 		"drop":
 			# Drop the stone and pick it back up.
@@ -215,7 +220,7 @@ func _aim_at_kind(kinds: Array) -> bool:
 		if not ("resources" in c) or c.tier != 0:
 			continue
 		for r in c.resources:
-			if r.kind in kinds and not r.get("removed", false):
+			if r.kind in kinds and not r.get("removed", false) and not _skip.has(r.id):
 				var d: float = r.transform.origin.distance_to(_player.global_position)
 				if d < bd:
 					bd = d

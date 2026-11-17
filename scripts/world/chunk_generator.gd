@@ -17,6 +17,9 @@ const CLUTTER_ATTEMPTS := 22
 const GRASS_ATTEMPTS := 650
 const FLOWER_ATTEMPTS := 70
 const FERN_ATTEMPTS := 90
+const PALM_ATTEMPTS := 10
+const TALL_GRASS_ATTEMPTS := 160
+const CLOVER_ATTEMPTS := 120
 
 
 ## job: {coord, tier, gen, flora, removed (Dictionary of ids), grass_density}
@@ -192,6 +195,15 @@ static func _place_resources(coord: Vector2i, origin: Vector3, gen: WorldGen, fl
 		var kind := "fir" if h > 46.0 else _pick_weighted(FloraLibrary.BIOME_TREES[biome], a.r_kind)
 		add.call(kind, a.variant, Vector3(a.x, h - 0.15, a.z), a.yaw, Vector3.ONE * a.scl)
 
+	# Palms along warm coasts (just above the beach).
+	for i in PALM_ATTEMPTS:
+		var a := _attempt(rng, origin, size)
+		var h := gen.get_height(a.x, a.z)
+		if h < 1.4 or h > 6.0 or gen.get_normal(a.x, a.z).y < 0.85 or gen.get_climate(a.x, a.z, h).x < 0.45 or a.r_place > 0.35:
+			counter[0] += 1
+			continue
+		add.call("palm", a.variant, Vector3(a.x, h - 0.1, a.z), a.yaw, Vector3.ONE * a.scl)
+
 	for i in ROCK_ATTEMPTS:
 		var a := _attempt(rng, origin, size)
 		var h := gen.get_height(a.x, a.z)
@@ -302,6 +314,37 @@ static func _place_ground_cover(coord: Vector2i, origin: Vector3, gen: WorldGen,
 	var grass_keys: Array = flora.variants["grass"]
 	var flower_keys: Array = flora.variants["flower"]
 	var fern_keys: Array = flora.variants["fern"]
+	var tall_keys: Array = flora.variants["tall_grass"]
+	var clover_keys: Array = flora.variants["clover"]
+	# Tall grass and clover: shared pass, weighted by biome.
+	for pass_def: Array in [[TALL_GRASS_ATTEMPTS, tall_keys, FloraLibrary.BIOME_TALL_GRASS, false], [CLOVER_ATTEMPTS, clover_keys, FloraLibrary.BIOME_CLOVER, true]]:
+		for i in int(int(pass_def[0]) * density):
+			var lx := rng.randf() * size
+			var lz := rng.randf() * size
+			var keep := rng.randf()
+			var variant := rng.randi()
+			var yaw := rng.randf() * TAU
+			var scl := rng.randf_range(0.8, 1.3)
+			var wx := origin.x + lx
+			var wz := origin.z + lz
+			var h := gen.get_height(wx, wz)
+			if h < 2.0 or h > 55.0:
+				continue
+			var nrm := gen.get_normal(wx, wz)
+			if nrm.y < 0.82:
+				continue
+			var w := gen.get_biome_weights(gen.get_climate(wx, wz, h))
+			var amount := 0.0
+			var table: Dictionary = pass_def[2]
+			for b: int in w:
+				amount += w[b] * table[b]
+			if keep > amount * 0.7:
+				continue
+			var col := Color(1, 1, 1)
+			if pass_def[3]:   # clover takes the ground color
+				col = gen.get_terrain_color(h, nrm.y, wx, wz).srgb_to_linear()
+			var keys: Array = pass_def[1]
+			_append_instance(buffers, keys[variant % keys.size()], Transform3D(Basis(Vector3.UP, yaw).scaled(Vector3.ONE * scl), Vector3(lx, h, lz)), col)
 
 	for i in int(GRASS_ATTEMPTS * density):
 		var lx := rng.randf() * size

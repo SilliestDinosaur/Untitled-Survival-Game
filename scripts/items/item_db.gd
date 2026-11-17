@@ -102,7 +102,14 @@ const HARVEST := {
 	"mushroom": [["mushroom_%d", 1, 2, 1.0]],
 	"herb": [["herb_%d", 1, 2, 1.0]],
 	"pebbles": [["stone", 1, 2, 1.0], ["flint", 1, 1, 0.45]],
+	"scree": [["stone", 2, 4, 1.0], ["flint", 1, 1, 0.5]],
+	"branch": [["sticks", 2, 4, 1.0]],
+	"tumbleweed": [["sticks", 1, 2, 1.0], ["fiber", 1, 2, 1.0]],
+	"sapling": [["sticks", 1, 3, 1.0], ["fiber", 0, 1, 0.5]],
+	"agave": [["fiber", 2, 3, 1.0]],
 }
+## Hand-harvesting these picks the whole thing up (the node is removed).
+const PICKUP_KEYS := ["mushroom", "herb", "pebbles", "scree", "branch", "tumbleweed", "sapling"]
 ## HP damage per hit at multiplier 1.0 (trees have 100 HP -> 5 hits with a stone hatchet).
 const HIT_DAMAGE := 20.0
 
@@ -131,7 +138,8 @@ static func build(seed_value: int, pal: WorldPalette) -> void:
 		var col: Color
 		match t:
 			2: col = Color.from_hsv(rng.randf_range(0.02, 0.12), rng.randf_range(0.35, 0.55), rng.randf_range(0.6, 0.75))   # coppery
-			3: col = Color.from_hsv(rng.randf(), rng.randf_range(0.2, 0.45), rng.randf_range(0.7, 0.85))                     # odd steel
+			3:   # a distinctly different, cooler metal than tier 2
+				col = Color.from_hsv(fposmod(_tiers[2].color.h + rng.randf_range(0.35, 0.65), 1.0), rng.randf_range(0.38, 0.55), rng.randf_range(0.68, 0.8))
 			_: col = Color.from_hsv(rng.randf(), rng.randf_range(0.55, 0.8), rng.randf_range(0.85, 1.0))                     # gem
 		_tiers.append({"name": name, "color": col, "trait": traits[t - 2]})
 		var raw_id := "gem_t4" if t == 4 else "ore_t%d" % t
@@ -252,8 +260,14 @@ static func yield_key(kind: String) -> String:
 ## Which HARVEST table a node uses when gathered by hand (or "" if it can't be).
 static func harvest_key(kind: String) -> String:
 	match kind:
-		"berry", "bush", "reeds", "dead_bush", "cactus", "mushroom", "herb", "pebbles":
+		"berry", "bush", "reeds", "dead_bush", "cactus", "mushroom", "herb", "pebbles", "scree", "branch", "tumbleweed", "sapling", "agave":
 			return kind
+		"flower_bush":
+			return "bush"
+		"small_cactus":
+			return "cactus"
+		"palm":
+			return "tree"
 		"pine", "fir":
 			return "conifer"
 		"oak", "autumn_oak", "birch", "willow", "acacia", "dead_tree":

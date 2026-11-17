@@ -73,7 +73,7 @@ static func harvest_resource(player_id: int, chunk: TerrainChunk, index: int, rn
 	var key := ItemDB.harvest_key(r.kind)
 	if key == "":
 		return result
-	var pick_up: bool = key in ["mushroom", "herb", "pebbles"]
+	var pick_up: bool = key in ItemDB.PICKUP_KEYS
 	if not pick_up and Game.is_harvested(r.id):
 		result.empty = true
 		return result
