@@ -15,6 +15,7 @@ var _chunks := {}     # Vector2i -> TerrainChunk
 var _jobs := {}       # Vector2i -> {task, job}
 var _dirty := {}      # chunk coords whose ground changed and must be rebuilt
 var _water: MeshInstance3D
+var _rivers: MeshInstance3D
 
 
 func _ready() -> void:
@@ -44,6 +45,7 @@ func reset() -> void:
 		_chunks[c].queue_free()
 	_chunks.clear()
 	_build_water()
+	_build_rivers()
 	world_reset.emit()
 
 
@@ -208,6 +210,72 @@ static func _cheb(a: Vector2i, b: Vector2i) -> int:
 
 
 # --- Ocean ------------------------------------------------------------------
+
+## River surfaces: one quad per hydrology cell where there's water, lying on the carved bed.
+func _build_rivers() -> void:
+	if _rivers:
+		remove_child(_rivers)
+		_rivers.queue_free()
+		_rivers = null
+	var gen: WorldGen = Game.world_gen
+	if not gen or gen.hydro.is_empty():
+		return
+	var n: int = gen.hydro.n
+	var cell: float = Hydrology.CELL
+	# Water fills the cut channel only (not the gentle banks around it): a fixed fraction of the channel's depth.
+	var water: PackedFloat32Array = gen.hydro.channel
+	var level := PackedFloat32Array()
+	level.resize(n * n)
+	for j in n:
+		for i in n:
+			var k := j * n + i
+			level[k] = gen.get_base_height(i * cell, j * cell) + water[k] * 0.35
+	var verts := PackedVector3Array()
+	var indices := PackedInt32Array()
+	var normals := PackedVector3Array()
+	for j in n - 1:
+		for i in n - 1:
+			var k00 := j * n + i
+			var k10 := k00 + 1
+			var k01 := k00 + n
+			var k11 := k01 + 1
+			if water[k00] < 0.3 or water[k10] < 0.3 or water[k01] < 0.3 or water[k11] < 0.3:
+				continue
+			var avg := (level[k00] + level[k10] + level[k01] + level[k11]) * 0.25
+			if avg < Game.SEA_LEVEL + 0.1:
+				continue   # the sea plane covers these
+			var b := verts.size()
+			verts.append(Vector3(i * cell, level[k00], j * cell))
+			verts.append(Vector3((i + 1) * cell, level[k10], j * cell))
+			verts.append(Vector3((i + 1) * cell, level[k11], (j + 1) * cell))
+			verts.append(Vector3(i * cell, level[k01], (j + 1) * cell))
+			for _c in 4:
+				normals.append(Vector3.UP)
+			# Wound so the front faces up (Godot draws the side a triangle's winding points away from).
+			indices.append_array([b, b + 1, b + 2, b, b + 2, b + 3])
+	if verts.is_empty():
+		return
+	var mesh := ArrayMesh.new()
+	var arrays := []
+	arrays.resize(Mesh.ARRAY_MAX)
+	arrays[Mesh.ARRAY_VERTEX] = verts
+	arrays[Mesh.ARRAY_NORMAL] = normals
+	arrays[Mesh.ARRAY_INDEX] = indices
+	mesh.add_surface_from_arrays(Mesh.PRIMITIVE_TRIANGLES, arrays)
+	var pal: WorldPalette = Game.palette
+	var mat := ShaderMaterial.new()
+	mat.shader = preload("res://shaders/water.gdshader")
+	mat.set_shader_parameter("ripple_a", _ripple_texture(1))
+	mat.set_shader_parameter("ripple_b", _ripple_texture(2))
+	mat.set_shader_parameter("shallow_color", pal.water_shallow)
+	mat.set_shader_parameter("deep_color", pal.water_deep)
+	mesh.surface_set_material(0, mat)
+	_rivers = MeshInstance3D.new()
+	_rivers.name = "Rivers"
+	_rivers.mesh = mesh
+	_rivers.add_to_group("water")
+	add_child(_rivers)
+
 
 func _build_water() -> void:
 	if not _water:

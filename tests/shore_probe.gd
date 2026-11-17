@@ -53,6 +53,7 @@ func _land(gen: Object) -> String:
 	var n := 0
 	var s1 := 0
 	var s2 := 0
+	var s_bad := 0
 	for j in range(40, 480, 2):
 		for i in range(40, 480, 2):
 			var x := i * 4.0
@@ -66,9 +67,11 @@ func _land(gen: Object) -> String:
 			var sl := sqrt(gx * gx + gz * gz)
 			if sl > 0.8:
 				s1 += 1
+				if gen.badlands_amount(x, z) > 0.01:
+					s_bad += 1
 			if sl > 1.5:
 				s2 += 1
-	return "land %d cells  steeper than 0.8: %.1f%%  steeper than 1.5: %.1f%%" % [n, 100.0 * s1 / maxf(n, 1), 100.0 * s2 / maxf(n, 1)]
+	return "land %d cells  steeper than 0.8: %.1f%% (%d in badlands)  steeper than 1.5: %.1f%%" % [n, 100.0 * s1 / maxf(n, 1), s_bad, 100.0 * s2 / maxf(n, 1)]
 
 
 func _process(_d: float) -> bool:

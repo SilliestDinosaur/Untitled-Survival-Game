@@ -36,10 +36,19 @@ func _process(_d: float) -> bool:
 			var n := 0
 			var wrong_faces := 0
 			var total_faces := 0
-			for coord: Vector2i in [Vector2i(14, 23), Vector2i(15, 23), Vector2i(13, 24), Vector2i(14, 25)]:
+			# The chunks around the first cave mouth in the current plan (all of them cave ground).
+			var rp: Vector3 = plan.nodes[plan.roots[0]].p
+			var rc := Vector2i(floori(rp.x / csz), floori(rp.z / csz))
+			var picks: Array[Vector2i] = []
+			for dz in range(-1, 2):
+				for dx in range(-1, 2):
+					picks.append(rc + Vector2i(dx, dz))
+			for coord: Vector2i in picks:
 				var job := {"coord": coord, "tier": 0, "gen": gen, "flora": _game.flora, "removed": {}, "grass_density": 0.0}
 				_ChunkScript.generate(job)
 				var res: Dictionary = job.result
+				if not res.has("collision_faces") or res.collision_faces.is_empty():
+					continue   # a heightfield chunk: measured by the terrain tests, not here
 				var verts: PackedVector3Array = res.mesh[0]
 				var nrms: PackedVector3Array = res.mesh[1]
 				var tris: PackedInt32Array = res.mesh[3]

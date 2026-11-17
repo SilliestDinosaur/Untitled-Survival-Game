@@ -96,6 +96,11 @@ static func compute(gen: WorldGen) -> Dictionary:
 					var w := 1.0 if (di == 0 and dj == 0) else 0.45
 					best = maxf(best, raw[nj * n + ni] * w)
 			depth[j * n + i] = best
+	# The river itself: the cut channel before the banks spread out (this is where the water goes).
+	var channel := PackedFloat32Array()
+	channel.resize(total)
+	for k in total:
+		channel[k] = depth[k]
 	# Banks: a cell can't be much shallower than its deepest neighbour, so the channel slopes out
 	# into the land over tens of metres (like a real valley) instead of dropping in one step.
 	depth = _relax_banks(depth, n)
@@ -104,7 +109,7 @@ static func compute(gen: WorldGen) -> Dictionary:
 	water.resize(total)
 	for k in total:
 		water[k] = depth[k] * 0.45 if depth[k] > 0.3 else 0.0
-	return {"n": n, "depth": depth, "water": water, "catchment": catch}
+	return {"n": n, "depth": depth, "water": water, "channel": channel, "catchment": catch}
 
 
 ## Bank slope: metres of depth lost per grid step away from the channel (a 4 m river has banks ~40 m wide).

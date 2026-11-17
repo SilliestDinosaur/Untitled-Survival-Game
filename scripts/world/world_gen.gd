@@ -51,7 +51,7 @@ func _init(seed_value: int, pal: WorldPalette) -> void:
 	var rng := RandomNumberGenerator.new()
 	rng.seed = seed_value
 	# Each world has its own "personality": flatter or more mountainous.
-	mountain_scale = rng.randf_range(60.0, 115.0)
+	mountain_scale = rng.randf_range(38.0, 72.0)
 	hill_scale = rng.randf_range(16.0, 30.0)
 
 	_continent.seed = seed_value
@@ -194,10 +194,10 @@ func get_base_height(x: float, z: float) -> float:
 	if bad > 0.01 and land > 3.0:
 		# Two tiers of flat-topped mesas with steep sides, then gentle ledges on the slopes.
 		var n := _forest.get_noise_2d(x * 0.7 + 311.0, z * 0.7) + _detail.get_noise_2d(x * 0.5, z * 0.5) * 0.06
-		var raised := land + 11.0 * smoothstep(-0.04, -0.01, n) + 8.0 * smoothstep(0.26, 0.29, n)
+		var raised := land + 11.0 * smoothstep(-0.14, 0.0, n) + 8.0 * smoothstep(0.16, 0.32, n)
 		var step := 3.0
 		var f := raised / step
-		var stepped := (floorf(f) + smoothstep(0.6, 0.95, f - floorf(f))) * step
+		var stepped := (floorf(f) + smoothstep(0.15, 1.0, f - floorf(f))) * step
 		land = lerpf(land, lerpf(raised, stepped, 0.6), smoothstep(0.0, 0.5, bad))
 	land = _carve_water(x, z, land, range_t, mask, bumps)
 	# Rivers: cut where the drainage model says water runs (see Hydrology).

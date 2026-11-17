@@ -73,9 +73,37 @@ static func build(gen: WorldGen, origin: Vector3, size: float, step: float, segs
 	corner_v.resize(8)
 	var corner_n := PackedVector3Array()
 	corner_n.resize(8)
+	# Per sample column, the lowest and highest sample that is air. A cell can only cross the surface
+	# between those rows (one below to the top of the range), so the rest of each column is skipped.
+	var snorm := PackedVector3Array()
+	snorm.resize(nx * ny * nz)
+	var sdone := PackedByteArray()
+	sdone.resize(nx * ny * nz)
+	var col_lo := PackedInt32Array()
+	col_lo.resize(nx * nz)
+	var col_hi := PackedInt32Array()
+	col_hi.resize(nx * nz)
+	for k in nz:
+		for i in nx:
+			var lo := ny
+			var hi := -1
+			for j in ny:
+				if d[(k * ny + j) * nx + i] <= 0.0:
+					if j < lo:
+						lo = j
+					hi = j
+			col_lo[k * nx + i] = lo
+			col_hi[k * nx + i] = hi
 	for ck in ncz:
-		for cj in ncy:
-			for ci in ncx:
+		for ci in ncx:
+			# The rows where any of this cell's four columns has air.
+			var span := _span(col_lo, col_hi, ck * nx + ci, ncy)
+			span = _union(span, _span(col_lo, col_hi, ck * nx + ci + 1, ncy))
+			span = _union(span, _span(col_lo, col_hi, (ck + 1) * nx + ci, ncy))
+			span = _union(span, _span(col_lo, col_hi, (ck + 1) * nx + ci + 1, ncy))
+			var j0 := maxi(span.x, 0)
+			var j1 := mini(span.y, ncy - 1)
+			for cj in range(j0, j1 + 1):
 				var base := (ck * ny + cj) * nx + ci
 				var base2 := base + nx * ny
 				corner_v[0] = d[base]
@@ -102,8 +130,16 @@ static func build(gen: WorldGen, origin: Vector3, size: float, step: float, segs
 				for c in 8:
 					corner[c] = Vector3(wx + (c & 1) * step, wy + ((c >> 1) & 1) * step, wz + ((c >> 2) & 1) * step)
 				# Corner normals (pointing out of the rock), for the surface planes at each crossing.
+				# Each sample's gradient is worked out once: a sample is a corner of up to eight cells.
 				for c in 8:
-					corner_n[c] = _corner_normal(d, nx, ny, nz, ci + (c & 1), cj + ((c >> 1) & 1), ck + ((c >> 2) & 1))
+					var si := ci + (c & 1)
+					var sj := cj + ((c >> 1) & 1)
+					var sk := ck + ((c >> 2) & 1)
+					var sidx := (sk * ny + sj) * nx + si
+					if sdone[sidx] == 0:
+						snorm[sidx] = _corner_normal(d, nx, ny, nz, si, sj, sk)
+						sdone[sidx] = 1
+					corner_n[c] = snorm[sidx]
 				# The vertex is the least-squares point of the crossing planes, kept inside its cell. Plain
 				# averaging of the crossings put vertices in mid-air on cliffs, stretching sheets over the ground.
 				var mass := Vector3.ZERO
@@ -150,11 +186,12 @@ static func build(gen: WorldGen, origin: Vector3, size: float, step: float, segs
 				vert = vert.clamp(corner[0], corner[7])
 				# Ground surface (not cave walls): sit exactly on the ground height at this spot, so steep
 				# cliffs can't leave the surface hanging above the ground. Shared vertices agree across chunks.
-				if absf(vert.y - gen.get_height(vert.x, vert.z)) < 6.0 and Caves.void_distance(plan, vert) > 2.5:
-					vert.y = gen.get_height(vert.x, vert.z)
+				var gh: float = gen.get_height(vert.x, vert.z)
+				if absf(vert.y - gh) < 6.0 and Caves.void_distance(plan, vert) > 2.5:
+					vert.y = gh
 				var nrm := nsum.normalized() if nsum.length_squared() > 0.000001 else Vector3.UP
 				var col: Color
-				if vert.y < gen.get_height(vert.x, vert.z) - ROCK_BAND:
+				if vert.y < gh - ROCK_BAND:
 					col = Game.palette.rock.darkened(0.3)
 				else:
 					col = gen.get_terrain_color(vert.y, nrm.y, vert.x, vert.z)
@@ -187,6 +224,22 @@ static func build(gen: WorldGen, origin: Vector3, size: float, step: float, segs
 						k * ncy * ncx + (j - 1) * ncx + (i - 1), k * ncy * ncx + (j - 1) * ncx + i,
 						k * ncy * ncx + j * ncx + i, k * ncy * ncx + j * ncx + (i - 1)])
 	return {"verts": verts, "normals": normals, "colors": colors, "indices": indices, "faces": faces}
+
+
+## Rows (from, to) of a sample column where a cell can cross the surface: one below its first air sample
+## up to its last air sample. An empty column gives (ncy, -1).
+static func _span(col_lo: PackedInt32Array, col_hi: PackedInt32Array, col: int, ncy: int) -> Vector2i:
+	if col_hi[col] < 0:
+		return Vector2i(ncy, -1)
+	return Vector2i(col_lo[col] - 1, col_hi[col])
+
+
+static func _union(a: Vector2i, b: Vector2i) -> Vector2i:
+	if a.x > a.y:
+		return b
+	if b.x > b.y:
+		return a
+	return Vector2i(mini(a.x, b.x), maxi(a.y, b.y))
 
 
 ## The outward surface normal at grid sample (i, j, k), from the density gradient around it.
