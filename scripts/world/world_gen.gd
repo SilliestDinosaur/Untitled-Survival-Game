@@ -200,13 +200,20 @@ func get_base_height(x: float, z: float) -> float:
 		var stepped := (floorf(f) + smoothstep(0.15, 1.0, f - floorf(f))) * step
 		land = lerpf(land, lerpf(raised, stepped, 0.6), smoothstep(0.0, 0.5, bad))
 	land = _carve_water(x, z, land, range_t, mask, bumps)
-	# Rivers: cut where the drainage model says water runs (see Hydrology).
-	if _hydro_ready and land > 0.0:
-		land -= Hydrology.sample(hydro.depth, hydro.n, x, z) * clampf(land / 2.0, 0.0, 1.0)
 	# The seabed: a shallow shelf that drops away gradually offshore.
 	var offshore := smoothstep(0.5, 0.95, coast_raw)
 	var seabed := lerpf(-2.5, -24.0, offshore) + bumps * 0.6 * offshore
-	return lerpf(seabed, land, mask)
+	var ground := lerpf(seabed, land, mask)
+	# Rivers: cut where the drainage model says water runs (see Hydrology). Done last, on the ground the
+	# coast has already shaped, and never below just above the sea, so plains don't turn into lagoons.
+	if _hydro_ready and ground > 0.0:
+		# Low ground (plains by the sea) only gets the channel itself cut: a wide valley there would
+		# drop the banks to the water and flood the plain. Higher ground gets the full valley.
+		var valley := Hydrology.sample(hydro.depth, hydro.n, x, z)
+		var channel := Hydrology.sample(hydro.channel, hydro.n, x, z)
+		var cut := lerpf(channel, valley, smoothstep(2.0, 4.0, ground)) * clampf(ground / 2.0, 0.0, 1.0)
+		ground = maxf(ground - cut, minf(ground, Game.SEA_LEVEL + 0.3))
+	return ground
 
 
 ## How strongly the badlands climate holds here (ignores altitude so terraces stay put).

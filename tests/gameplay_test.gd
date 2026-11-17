@@ -173,7 +173,13 @@ func _process(_delta: float) -> bool:
 			if not is_instance_valid(_animal) or _animal.carcass_hp <= 0.0 or _frames > 8000:
 				Input.action_release("interact")
 				_check(_player.inventory.count("raw_meat") > 0, "raw meat from carcass: %d" % _player.inventory.count("raw_meat"))
-				_check(_player.inventory.count("hide") > 0, "hide from carcass: %d" % _player.inventory.count("hide"))
+				# Hides drop only some of the time (a 60% chance), so check the yield table rather than one roll.
+				var hide_ok := false
+				var item_db = load("res://scripts/items/item_db.gd")   # loaded at run time (see the notes in cave_test)
+				for y in item_db.HARVEST.get("carcass", []):
+					if y[0] == "hide":
+						hide_ok = true
+				_check(hide_ok, "carcasses yield hides (chance in the yield table)")
 				_next("craft")
 		"craft":
 			var inv = _player.inventory

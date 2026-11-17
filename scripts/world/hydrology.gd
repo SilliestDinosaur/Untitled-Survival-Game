@@ -109,32 +109,61 @@ static func compute(gen: WorldGen) -> Dictionary:
 	water.resize(total)
 	for k in total:
 		water[k] = depth[k] * 0.45 if depth[k] > 0.3 else 0.0
-	return {"n": n, "depth": depth, "water": water, "channel": channel, "catchment": catch}
+	# Water level: each river reach has one flat surface, set by the lowest channel bed around it
+	# (bed + the water fraction of the channel depth). Cells near no channel get no level (INF).
+	var level := PackedFloat32Array()
+	level.resize(total)
+	level.fill(INF)
+	for k in total:
+		if channel[k] <= 0.0:
+			continue
+		var surface: float = maxf(h[k] - channel[k] * (1.0 - WATER_FRACTION), Game.SEA_LEVEL + 0.6)   # some water always shows above a sea-level bed
+		var ci := k % n
+		var cj := k / n
+		for dj in range(-REACH, REACH + 1):
+			for di in range(-REACH, REACH + 1):
+				var ni := ci + di
+				var nj := cj + dj
+				if ni < 0 or nj < 0 or ni >= n or nj >= n:
+					continue
+				var nk := nj * n + ni
+				if surface < level[nk]:
+					level[nk] = surface
+	return {"n": n, "depth": depth, "water": water, "channel": channel, "level": level, "catchment": catch}
 
 
 ## Bank slope: metres of depth lost per grid step away from the channel (a 4 m river has banks ~40 m wide).
 const BANK_SLOPE := 0.6
-const BANK_PASSES := 8
+const WATER_FRACTION := 0.35   ## the water surface sits this fraction of the channel depth above the bed
+const REACH := 2               ## grid steps (16 m) over which a river reach shares one water level
 
 
-## Let the depth spread out from the channel, losing BANK_SLOPE per step (forward and backward sweeps).
+## Let the depth spread out from the channel, losing BANK_SLOPE per step. A breadth-first spread from
+## the river cells: each cell hands its depth to its neighbours minus the slope, and only cells that
+## actually improve are visited again. (Same result as repeated full sweeps, far less work.)
 static func _relax_banks(depth: PackedFloat32Array, n: int) -> PackedFloat32Array:
 	var steps := [[-1, -1, 1.414], [0, -1, 1.0], [1, -1, 1.414], [-1, 0, 1.0], [1, 0, 1.0], [-1, 1, 1.414], [0, 1, 1.0], [1, 1, 1.414]]
-	for pass_i in BANK_PASSES:
-		var forward := pass_i % 2 == 0
-		for jj in n:
-			var j: int = jj if forward else n - 1 - jj
-			for ii in n:
-				var i: int = ii if forward else n - 1 - ii
-				var k := j * n + i
-				for st: Array in steps:
-					var ni: int = i + st[0]
-					var nj: int = j + st[1]
-					if ni < 0 or nj < 0 or ni >= n or nj >= n:
-						continue
-					var cand: float = depth[nj * n + ni] - BANK_SLOPE * float(st[2])
-					if cand > depth[k]:
-						depth[k] = cand
+	var queue := PackedInt32Array()
+	for k in n * n:
+		if depth[k] > 0.0:
+			queue.append(k)
+	var head := 0
+	while head < queue.size():
+		var k: int = queue[head]
+		head += 1
+		var i := k % n
+		var j := k / n
+		var dk: float = depth[k]
+		for st: Array in steps:
+			var ni: int = i + st[0]
+			var nj: int = j + st[1]
+			if ni < 0 or nj < 0 or ni >= n or nj >= n:
+				continue
+			var nk := nj * n + ni
+			var cand: float = dk - BANK_SLOPE * float(st[2])
+			if cand > depth[nk] + 0.000001:
+				depth[nk] = cand
+				queue.append(nk)
 	return depth
 
 

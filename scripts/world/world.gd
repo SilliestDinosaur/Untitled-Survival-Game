@@ -32,10 +32,21 @@ func _exit_tree() -> void:
 	_wait_for_jobs()
 
 
-func _process(_delta: float) -> void:
+var _stream_center := Vector2i(1 << 30, 1 << 30)   ## the chunk the streaming last looked at
+var _stream_timer := 0.0
+
+
+func _process(delta: float) -> void:
 	_collect_jobs()
 	if focus:
-		_update_chunks(focus.global_position)
+		# Streaming only needs a look when the player enters another chunk, or now and then (for finished
+		# jobs and ground changes); looking every frame rebuilt the same lists over and over.
+		_stream_timer -= delta
+		var center := world_to_chunk(focus.global_position)
+		if center != _stream_center or _stream_timer <= 0.0:
+			_stream_center = center
+			_stream_timer = 0.25
+			_update_chunks(focus.global_position)
 
 
 ## Throw away everything and start over with the current Game world (after a new seed).
@@ -211,7 +222,8 @@ static func _cheb(a: Vector2i, b: Vector2i) -> int:
 
 # --- Ocean ------------------------------------------------------------------
 
-## River surfaces: one quad per hydrology cell where there's water, lying on the carved bed.
+## River surfaces: a flat water level per river reach (see Hydrology). A cell gets water where the
+## ground is below that level at all four corners, so the banks hold the water in.
 func _build_rivers() -> void:
 	if _rivers:
 		remove_child(_rivers)
@@ -222,14 +234,12 @@ func _build_rivers() -> void:
 		return
 	var n: int = gen.hydro.n
 	var cell: float = Hydrology.CELL
-	# Water fills the cut channel only (not the gentle banks around it): a fixed fraction of the channel's depth.
-	var water: PackedFloat32Array = gen.hydro.channel
-	var level := PackedFloat32Array()
-	level.resize(n * n)
+	var level: PackedFloat32Array = gen.hydro.level
+	var ground := PackedFloat32Array()
+	ground.resize(n * n)
 	for j in n:
 		for i in n:
-			var k := j * n + i
-			level[k] = gen.get_base_height(i * cell, j * cell) + water[k] * 0.35
+			ground[j * n + i] = gen.get_base_height(i * cell, j * cell)
 	var verts := PackedVector3Array()
 	var indices := PackedInt32Array()
 	var normals := PackedVector3Array()
@@ -239,16 +249,21 @@ func _build_rivers() -> void:
 			var k10 := k00 + 1
 			var k01 := k00 + n
 			var k11 := k01 + 1
-			if water[k00] < 0.3 or water[k10] < 0.3 or water[k01] < 0.3 or water[k11] < 0.3:
+			var ks := [k00, k10, k11, k01]
+			var lo := INF
+			var wet := true
+			for k: int in ks:
+				lo = minf(lo, level[k])
+				if ground[k] >= level[k] - 0.02:
+					wet = false
+			if not wet or lo == INF:
 				continue
-			var avg := (level[k00] + level[k10] + level[k01] + level[k11]) * 0.25
-			if avg < Game.SEA_LEVEL + 0.1:
-				continue   # the sea plane covers these
+			var water_y := lo
 			var b := verts.size()
-			verts.append(Vector3(i * cell, level[k00], j * cell))
-			verts.append(Vector3((i + 1) * cell, level[k10], j * cell))
-			verts.append(Vector3((i + 1) * cell, level[k11], (j + 1) * cell))
-			verts.append(Vector3(i * cell, level[k01], (j + 1) * cell))
+			verts.append(Vector3(i * cell, water_y, j * cell))
+			verts.append(Vector3((i + 1) * cell, water_y, j * cell))
+			verts.append(Vector3((i + 1) * cell, water_y, (j + 1) * cell))
+			verts.append(Vector3(i * cell, water_y, (j + 1) * cell))
 			for _c in 4:
 				normals.append(Vector3.UP)
 			# Wound so the front faces up (Godot draws the side a triangle's winding points away from).
