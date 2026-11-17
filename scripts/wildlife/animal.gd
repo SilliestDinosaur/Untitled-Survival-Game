@@ -17,6 +17,15 @@ var state := State.IDLE
 var player: Node3D
 var herd: Array = []          ## other members of this herd (shared array)
 var leader: Animal = null     ## herd leader (null = I lead)
+## Multiplayer: the host's id for this animal; on guests, animals are puppets that follow the
+## host's positions instead of thinking for themselves.
+var net_id := -1
+var species_index := -1
+var puppet := false
+var targets: Array = []       ## players to notice (host with guests); empty = just `player`
+var _net_pos := Vector3.ZERO
+var _net_yaw := 0.0
+var _target_cd := 0.0
 
 var _body: Node3D
 var _head: Node3D
@@ -157,8 +166,22 @@ func _alarm_herd() -> void:
 
 
 func _physics_process(delta: float) -> void:
+	if puppet:
+		_puppet_step(delta)
+		return
 	if dead:
 		return
+	# With several players around, pay attention to whoever is closest.
+	_target_cd -= delta
+	if _target_cd <= 0.0 and targets.size() > 1:
+		_target_cd = 0.5
+		var best := 1e9
+		for t in targets:
+			if is_instance_valid(t):
+				var d: float = (t as Node3D).global_position.distance_squared_to(position)
+				if d < best:
+					best = d
+					player = t
 	_attack_cd = maxf(_attack_cd - delta, 0.0)
 	_call_cd -= delta
 	_timer -= delta
@@ -382,13 +405,19 @@ func _call(pitch := 1.0) -> void:
 
 
 func _bite() -> void:
-	if not player or not player.has_method("respawn"):
+	if not player:
+		return
+	var push := player.global_position - global_position
+	push.y = 0.0
+	var shove := push.normalized() * 6.0 + Vector3.UP * 2.5
+	if player.has_method("hurt"):   # another player (we're the host): tell their game
+		player.hurt(species.damage, shove)
+		return
+	if not player.has_method("respawn"):
 		return
 	player.stats.take_damage(species.damage)
 	Music.combat_ping(1.0)
-	var push := player.global_position - global_position
-	push.y = 0.0
-	player.velocity += push.normalized() * 6.0 + Vector3.UP * 2.5
+	player.velocity += shove
 
 
 ## Hit by the player.
@@ -435,3 +464,53 @@ func consume_carcass() -> void:
 	tw.tween_callback(func() -> void:
 		removed.emit(self)
 		queue_free())
+
+
+# --- Puppets (multiplayer guests) ---------------------------------------------------------
+
+## New position / heading / state from the host.
+func net_update(pos: Vector3, yaw: float, st: int, is_dead: bool) -> void:
+	_net_pos = pos
+	_net_yaw = yaw
+	if st != state and not dead:
+		if st == State.FLEE or st == State.ATTACK:
+			_call(1.05)
+		if st == State.ATTACK and player and position.distance_to(player.global_position) < 30.0:
+			Music.combat_ping(1.0)
+		state = st as State
+	if is_dead and not dead:
+		_die(player.global_position if player else position + Vector3.FORWARD)
+
+
+func _puppet_step(delta: float) -> void:
+	if dead:
+		return
+	var before := position
+	var k := 1.0 - exp(-10.0 * delta)
+	position.x = lerpf(position.x, _net_pos.x, k)
+	position.z = lerpf(position.z, _net_pos.z, k)
+	position.y = lerpf(position.y, Game.world_gen.get_height(position.x, position.z), 1.0 - exp(-14.0 * delta))
+	_yaw = lerp_angle(_yaw, _net_yaw, k)
+	_desired_yaw = _net_yaw
+	rotation = Vector3(0, _yaw, 0)
+	var moved := Vector2(position.x - before.x, position.z - before.z).length()
+	_speed = lerpf(_speed, moved / maxf(delta, 0.001), 1.0 - exp(-6.0 * delta))
+	_gait += moved / maxf(species.leg_len * 1.6, 0.2) * PI
+	var graze := 1.0 if state == State.GRAZE and _speed < 0.3 else 0.0
+	var alert := 1.0 if state in [State.ALERT, State.WARN] else 0.0
+	_call_cd -= delta
+	if _call_cd <= 0.0:
+		_call_cd = _rng.randf_range(10.0, 30.0)
+		if player and position.distance_to(player.global_position) < 60.0:
+			_call()
+	_animate(delta, graze, alert)
+
+
+## A flinch when someone hit it (the host already applied the damage).
+func puppet_hit() -> void:
+	if dead or not _body:
+		return
+	_call(1.15)
+	var tw := create_tween()
+	tw.tween_property(_body, "scale", Vector3(1.06, 0.94, 1.06), 0.06)
+	tw.tween_property(_body, "scale", Vector3.ONE, 0.12)

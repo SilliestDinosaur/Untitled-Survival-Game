@@ -121,6 +121,10 @@ func apply_save_data(d: Dictionary) -> void:
 
 ## Fresh start: just a rock in hand (also used after dying).
 func reset_inventory() -> void:
+	if Net.is_client():
+		Net.request("reset", {})
+		inventory.select(0)
+		return
 	inventory.clear(true)
 	inventory.add("rock", 1, true)
 	inventory.select(0)
@@ -355,30 +359,36 @@ func _update_actions(delta: float) -> void:
 	if item != "" and ItemDB.info(item).kind == "placeable" and looking_at.is_empty():
 		_swing_cooldown = 0.4
 		if placement.get("ok", false):
-			var res := GameActions.place_structure(player_id, inventory.selected, placement.pos, placement.yaw)
-			if res.ok:
-				Audio.play_3d("thud", placement.pos, -2.0, 0.8)
-				Effects.chips(get_parent(), placement.pos + Vector3.UP * 0.2, Game.palette.sand.darkened(0.2), 10, 0.06, 2.0)
+			var at: Vector3 = placement.pos
+			Net.request("place", {"slot": inventory.selected, "pos": at, "yaw": placement.yaw}, func(res: Dictionary) -> void:
+				if res.get("ok", false):
+					Audio.play_3d("thud", at, -2.0, 0.8)
+					Effects.chips(get_parent(), at + Vector3.UP * 0.2, Game.palette.sand.darkened(0.2), 10, 0.06, 2.0)
+				elif res.get("reason", "") != "":
+					hint.emit(res.reason))
 		elif placement.get("reason", "") != "":
 			hint.emit(placement.reason)
 		return
 	if item != "" and ItemDB.info(item).kind == "food":
 		_swing_cooldown = 0.6
 		viewmodel.eat(func() -> void:
-			var res := GameActions.eat(player_id, stats)
-			if res.get("ok", false):
+			Net.request("consume", {"slot": inventory.selected}, func(taken: Dictionary) -> void:
+				if not taken.get("ok", false):
+					return
+				var res := GameActions.apply_food(stats, String(taken.id))
 				Audio.play(Audio.sfx.munch, -4.0)
 				if res.first_time:
 					var e: Dictionary = ItemDB.EFFECTS[res.effect]
 					hint.emit("%s: %s" % [e.name, e.desc])
 				elif ItemDB.info(res.id).get("health", 0.0) < 0.0:
-					hint.emit("That didn't sit well..."))
+					hint.emit("That didn't sit well...")))
 		return
 	if item != "" and ItemDB.info(item).kind != "tool":
 		return   # holding a material: nothing to swing
 	var tool := ItemDB.tool_stats(item)
 	_swing_cooldown = tool.cooldown
 	viewmodel.swing(tool.cooldown, String(tool.type))
+	Net.note_swing()
 	Audio.play("swoosh", -10.0)
 
 
@@ -396,31 +406,37 @@ func _on_strike() -> void:
 			hint.emit("Press %s to butcher" % Settings.code_label(Settings.binding_of("interact")))
 			return
 		hit_landed.emit()
-		var res := GameActions.hit_animal(player_id, animal, global_position)
-		if res.get("ok", false):
-			# Fighting something that fights back is combat; chasing down prey is a hunt.
-			if animal.state in [animal.State.ATTACK, animal.State.WARN] or animal.species.role == "defensive":
-				Music.combat_ping(0.8)
-			else:
-				Music.hunt_ping(0.8)
+		# Fighting something that fights back is combat; chasing down prey is a hunt.
+		if animal.state in [animal.State.ATTACK, animal.State.WARN] or animal.species.role == "defensive":
+			Music.combat_ping(0.8)
+		else:
+			Music.hunt_ping(0.8)
+		Net.request("hit_animal", {"animal": animal.net_id, "slot": inventory.selected, "from": global_position})
 		Audio.play_3d("thud", point)
 		Effects.chips(get_parent(), point, Color(0.65, 0.12, 0.12), 6, 0.05)
 		return
 	if look.has("structure"):
-		var res := GameActions.hit_structure(player_id, look.structure)
-		if res.get("ok", false):
-			hit_landed.emit()
-			Audio.play_3d("chop", point, -2.0, 0.8)
-			Effects.chips(get_parent(), point, Game.palette.bark.lightened(0.2), 6, 0.06)
-			if res.packed:
-				hint.emit("Packed up the %s" % ItemDB.display_name(res.kind))
+		hit_landed.emit()
+		Audio.play_3d("chop", point, -2.0, 0.8)
+		Effects.chips(get_parent(), point, Game.palette.bark.lightened(0.2), 6, 0.06)
+		Net.request("hit_structure", {"structure": look.structure, "slot": inventory.selected}, func(res: Dictionary) -> void:
+			if res.get("packed", false):
+				hint.emit("Packed up the %s" % ItemDB.display_name(res.kind)))
 		return
 	if look.has("resource"):
 		_hit_resource(look.chunk, look.resource, point)
 
 
-func _hit_resource(chunk: TerrainChunk, r: Dictionary, point: Vector3) -> void:
-	var res := GameActions.hit_resource(player_id, chunk, r.index, _rng)
+func _hit_resource(_chunk: TerrainChunk, r: Dictionary, point: Vector3) -> void:
+	var args := {"id": r.id, "kind": r.kind, "key": r.key, "slot": inventory.selected, "pos": point, "from": global_position}
+	Net.request("hit_resource", args, func(res: Dictionary) -> void: _on_hit_resource(res, r, point))
+
+
+## The result of a swing at a tree / rock / plant: sounds, chips and hints. (How the thing
+## itself changes, wobbling or falling, is applied by World for everyone who can see it.)
+func _on_hit_resource(res: Dictionary, r: Dictionary, point: Vector3) -> void:
+	if not res.has("target"):
+		return
 	var target: String = res.target
 	var pal: WorldPalette = Game.palette
 	if res.blocked:
@@ -431,6 +447,8 @@ func _hit_resource(chunk: TerrainChunk, r: Dictionary, point: Vector3) -> void:
 			hint.emit("Needs a %s pickaxe or better" % ItemDB.tier_info(res.need_tier).name)
 		else:
 			hint.emit("Too hard to break by hand. Use a rock or a pickaxe.")
+		return
+	if not res.get("ok", false):
 		return
 	hit_landed.emit()
 	_drop_overflow(res.items, point)
@@ -447,10 +465,6 @@ func _hit_resource(chunk: TerrainChunk, r: Dictionary, point: Vector3) -> void:
 		_:
 			Audio.play_3d("rustle", point)
 			Effects.chips(get_parent(), point, pal.bush_leaves, 10, 0.06, 2.5)
-	if res.destroyed:
-		_remove_visual(chunk, r)
-	else:
-		chunk.wobble(r.index)
 
 
 ## Interact: the viewmodel's hand reached out.
@@ -460,59 +474,39 @@ func _on_grab() -> void:
 		open_crafting.emit()
 		return
 	if look.has("pickup"):
-		if GameActions.pick_up(player_id, look.pickup) > 0:
-			Audio.play(Audio.sfx.pickup, -6.0)
-		else:
-			hint.emit("Your satchel is full")
+		Net.request("pick_up", {"pickup": look.pickup}, func(res: Dictionary) -> void:
+			if int(res.get("got", 0)) > 0:
+				Audio.play(Audio.sfx.pickup, -6.0)
+			else:
+				hint.emit("Your satchel is full"))
 		return
 	if look.has("animal"):
 		if not is_instance_valid(look.animal):
 			return
-		var res := GameActions.harvest_carcass(player_id, look.animal, _rng)
-		if res.get("ok", false):
-			Audio.play_3d("thud", look.animal.global_position, -6.0)
-			_drop_overflow(res.items, look.animal.global_position)
-			if res.destroyed:
-				look.animal.consume_carcass()
+		var animal: Node = look.animal
+		Net.request("carcass", {"animal": animal.net_id, "slot": inventory.selected}, func(res: Dictionary) -> void:
+			if res.get("ok", false) and is_instance_valid(animal):
+				Audio.play_3d("thud", animal.global_position, -6.0)
+				_drop_overflow(res.items, animal.global_position))
 		return
 	if look.has("resource"):
-		var chunk: TerrainChunk = look.chunk
 		var r: Dictionary = look.resource
-		var res := GameActions.harvest_resource(player_id, chunk, r.index, _rng)
-		if res.empty:
-			hint.emit("Nothing to gather here right now")
-			return
-		if not res.ok:
-			return
-		_drop_overflow(res.items, r.transform.origin + Vector3.UP * 0.5)
-		Audio.play_3d("rustle", r.transform.origin + Vector3.UP * 0.5, -4.0, 1.2)
-		if res.picked_up:
-			_remove_visual(chunk, r)
-		else:
-			chunk.set_bare(r.index, true)   # berries gone, fruit picked, reeds cut...
-			chunk.wobble(r.index)
+		var at: Vector3 = r.transform.origin + Vector3.UP * 0.5
+		var args := {"id": r.id, "kind": r.kind, "key": r.key, "pos": at, "from": global_position}
+		Net.request("harvest_resource", args, func(res: Dictionary) -> void:
+			if res.get("empty", false):
+				hint.emit("Nothing to gather here right now")
+			elif res.get("ok", false):
+				_drop_overflow(res.items, at)
+				Audio.play_3d("rustle", at, -4.0, 1.2))
 
 
-func _remove_visual(chunk: TerrainChunk, r: Dictionary) -> void:
-	var mesh := chunk.get_resource_mesh(r.index)
-	var xf: Transform3D = r.transform
-	chunk.remove_resource(r.index)
-	if mesh:
-		if FloraLibrary.category_of(r.kind) == "tree":
-			Effects.fall_tree(get_parent(), mesh, xf, xf.origin - global_position, Game.palette.bark)
-		else:
-			Effects.crumble(get_parent(), mesh, xf)
-
-
-## Whatever didn't fit in the satchel lands on the ground.
-func _drop_overflow(items: Dictionary, at: Vector3) -> void:
-	var dropped := false
+## Whatever didn't fit in the satchel was dropped on the ground (by whoever ran the action).
+func _drop_overflow(items: Dictionary, _at: Vector3) -> void:
 	for k: String in items:
 		if k.begins_with("_overflow_"):
-			GameActions.spawn_pickup(k.trim_prefix("_overflow_"), items[k], -1, at + Vector3(randf_range(-0.4, 0.4), 0.3, randf_range(-0.4, 0.4)))
-			dropped = true
-	if dropped:
-		hint.emit("Satchel full - some items fell on the ground")
+			hint.emit("Satchel full - some items fell on the ground")
+			return
 
 
 ## Q drops one of the held item (Ctrl+Q drops the whole stack).
@@ -528,7 +522,7 @@ func drop_slot(slot: int, whole_stack := true) -> void:
 	var pos := camera.global_position + fwd * 1.2
 	var ground: float = Game.world_gen.get_height(pos.x, pos.z)
 	pos.y = maxf(ground, Game.SEA_LEVEL) + 0.15
-	GameActions.drop(player_id, slot, int(s.count) if whole_stack else 1, pos)
+	Net.request("drop", {"slot": slot, "amount": int(s.count) if whole_stack else 1, "pos": pos})
 	Audio.play(Audio.sfx.click, -8.0, 0.8)
 
 

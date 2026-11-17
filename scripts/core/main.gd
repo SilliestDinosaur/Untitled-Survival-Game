@@ -21,6 +21,7 @@ var _settings: Menus.SettingsPanel
 var _loading: Menus.LoadingScreen
 var _inventory: InventoryUI.InventoryPanel
 var _debug_items: Menus.DebugItems
+var _multiplayer: Menus.MultiplayerPanel
 var _wildlife: Node3D
 var _spawn := Vector3.ZERO
 var _load_pos := Vector3.ZERO       ## where the player will appear once loading finishes
@@ -66,6 +67,13 @@ func _ready() -> void:
 	root.add_child(_settings)
 	_loading = Menus.LoadingScreen.new()
 	root.add_child(_loading)
+	_multiplayer = Menus.MultiplayerPanel.new()
+	root.add_child(_multiplayer)
+	_multiplayer.hide()
+	_multiplayer.back_pressed.connect(_back_to_title_menu)
+	_title.multiplayer_pressed.connect(func() -> void:
+		_title.hide()
+		_multiplayer.open())
 
 	_title.continue_pressed.connect(func() -> void:
 		var saves := SaveManager.list_saves()
@@ -90,9 +98,11 @@ func _ready() -> void:
 	_pause.settings_pressed.connect(func() -> void: _settings.show())
 	_pause.quit_to_title_pressed.connect(func() -> void:
 		save_now()
+		Net.stop()
 		_to_title())
 	_pause.quit_game_pressed.connect(func() -> void:
 		save_now()
+		Net.stop()
 		get_tree().quit())
 	_settings.closed.connect(func() -> void: _settings.hide())
 
@@ -101,6 +111,21 @@ func _ready() -> void:
 		player.reset_inventory()
 		_start_loading(_spawn, "You collapsed... waking up on")
 		save_now())
+
+	# Multiplayer
+	Net.main = self
+	Net.world = world
+	Net.player = player
+	Net.joined.connect(_join_world)
+	Net.session_ended.connect(func(reason: String) -> void:
+		if state != State.TITLE:
+			_to_title()
+		_multiplayer.hide()
+		_title.show()
+		_title.show_message(reason))
+	Net.player_message.connect(func(t: String) -> void:
+		if state in [State.PLAYING, State.PAUSED]:
+			_hud.show_hint(t))
 
 	var pickups := preload("res://scripts/world/pickups.gd").new()
 	pickups.name = "Pickups"
@@ -116,6 +141,7 @@ func _ready() -> void:
 	_wildlife.name = "Wildlife"
 	_wildlife.process_mode = Node.PROCESS_MODE_PAUSABLE
 	_wildlife.player = player
+	Net.wildlife = _wildlife
 	add_child(_wildlife)
 
 	_set_focus(menu_camera)
@@ -127,6 +153,7 @@ func _notification(what: int) -> void:
 	if what == NOTIFICATION_WM_CLOSE_REQUEST:
 		if state in [State.PLAYING, State.PAUSED]:
 			save_now()
+		Net.stop()
 		get_tree().quit()
 
 
@@ -179,9 +206,32 @@ func load_world(save_id: String) -> void:
 	_start_loading(pos, "Loading")
 
 
+func is_playing() -> bool:
+	return state == State.PLAYING or state == State.PAUSED
+
+
+## Guest: the host's world arrived; load it like a save.
+func _join_world(snap: Dictionary) -> void:
+	world.reset()
+	_new_world_loaded()
+	var sp: Array = snap.get("spawn", [])
+	if sp.size() == 3:
+		_spawn = Vector3(sp[0], sp[1], sp[2])
+		player.spawn_point = _spawn
+	_pending_player = snap.get("you", {})
+	player.stats.reset()
+	var p: Array = _pending_player.get("pos", [])
+	var pos := Vector3(p[0], p[1], p[2]) if p.size() == 3 else _spawn
+	_multiplayer.hide()
+	_title.hide()
+	_start_loading(pos, "Joining %s's world:" % Net.host_name())
+
+
 func save_now() -> void:
 	if Game.save_id == "" or state == State.TITLE:
 		return
+	if Net.is_host():
+		Net.store_all_guests()
 	Game.write_save(player.to_save_data())
 	_autosave = AUTOSAVE_SECONDS
 
@@ -191,6 +241,7 @@ func save_now() -> void:
 func _back_to_title_menu() -> void:
 	_new_world.hide()
 	_load.hide()
+	_multiplayer.hide()
 	_title.show()
 	_title.refresh()
 
@@ -212,7 +263,7 @@ func _to_title() -> void:
 
 func _start_loading(at: Vector3, heading := "Generating") -> void:
 	state = State.LOADING
-	Game.time_paused = true
+	Game.time_paused = not Net.is_online()   # with friends, the world keeps going
 	get_tree().paused = false
 	player.set_active(false)
 	for c in [_hud, _title, _pause, _inventory]:
@@ -241,6 +292,8 @@ func _start_playing() -> void:
 	_hud.show()
 	_hud.show_arrival(Game.world_name)
 	_hud.sync_time()
+	if Net.host_on_start and not Net.is_online():
+		Net.host()
 	_autosave = AUTOSAVE_SECONDS
 	var tw := create_tween()
 	tw.tween_property(_loading, "modulate:a", 0.0, 0.8)
@@ -254,7 +307,9 @@ func _toggle_inventory(open: bool) -> void:
 
 func _pause_game() -> void:
 	state = State.PAUSED
-	get_tree().paused = true
+	get_tree().paused = not Net.is_online()   # can't freeze a shared world
+	if Net.is_online():
+		player.set_physics_process(false)   # stand still while the menu is open
 	Input.mouse_mode = Input.MOUSE_MODE_VISIBLE
 	_pause.show()
 	save_now()   # pausing is a natural checkpoint
@@ -263,6 +318,7 @@ func _pause_game() -> void:
 func _resume() -> void:
 	state = State.PLAYING
 	get_tree().paused = false
+	player.set_physics_process(true)
 	_pause.hide()
 	_settings.hide()
 	Input.mouse_mode = Input.MOUSE_MODE_CAPTURED
@@ -287,7 +343,7 @@ func _unhandled_input(event: InputEvent) -> void:
 		Input.mouse_mode = Input.MOUSE_MODE_CAPTURED
 	elif _inventory.visible:
 		_toggle_inventory(false)
-	elif _new_world.visible or _load.visible:
+	elif _new_world.visible or _load.visible or _multiplayer.visible:
 		_back_to_title_menu()
 	elif state == State.PLAYING:
 		_pause_game()

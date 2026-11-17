@@ -62,10 +62,23 @@ var music_volume := 0.6
 var sfx_volume := 1.0
 var show_fps := false
 var bindings := {}               ## action -> Array[String] overrides
+## Multiplayer identity: shown to friends; the id lets a host remember your character.
+var player_name := ""
+var player_uid := ""
+var player_color := 0
+const PLAYER_COLORS := [Color(0.86, 0.42, 0.3), Color(0.32, 0.6, 0.86), Color(0.48, 0.74, 0.36), Color(0.9, 0.72, 0.3),
+	Color(0.66, 0.46, 0.84), Color(0.3, 0.74, 0.7), Color(0.9, 0.5, 0.66), Color(0.55, 0.55, 0.6)]
 
 
 func _ready() -> void:
 	load_settings()
+	if player_uid == "":
+		var rng := RandomNumberGenerator.new()
+		rng.randomize()
+		player_uid = "%08x%08x" % [rng.randi(), rng.randi()]
+		player_name = "Wanderer %d" % rng.randi_range(10, 99)
+		player_color = rng.randi() % PLAYER_COLORS.size()
+		save_settings()
 	apply()
 
 
@@ -105,6 +118,9 @@ func load_settings() -> void:
 	master_volume = cfg.get_value("audio", "master_volume", master_volume)
 	music_volume = cfg.get_value("audio", "music_volume", music_volume)
 	sfx_volume = cfg.get_value("audio", "sfx_volume", sfx_volume)
+	player_name = cfg.get_value("player", "name", player_name)
+	player_uid = cfg.get_value("player", "uid", player_uid)
+	player_color = cfg.get_value("player", "color", player_color)
 
 
 func save_settings() -> void:
@@ -122,6 +138,9 @@ func save_settings() -> void:
 	cfg.set_value("audio", "master_volume", master_volume)
 	cfg.set_value("audio", "music_volume", music_volume)
 	cfg.set_value("audio", "sfx_volume", sfx_volume)
+	cfg.set_value("player", "name", player_name)
+	cfg.set_value("player", "uid", player_uid)
+	cfg.set_value("player", "color", player_color)
 	cfg.save(PATH)
 
 

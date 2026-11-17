@@ -14,6 +14,9 @@ const SIZE := HOTBAR_SIZE + BACKPACK_SIZE
 
 var slots: Array[Dictionary] = []
 var selected := 0
+## Multiplayer guest: the host owns this inventory. Rearranging asks the host (which sends the
+## result back); only the hotbar selection is local.
+var remote := false
 
 
 func _init() -> void:
@@ -160,6 +163,9 @@ func damage_selected(amount := 1) -> bool:
 func move(from: int, to: int) -> void:
 	if from == to or slots[from].is_empty():
 		return
+	if remote:
+		Net.request("inv", {"op": "move", "a": from, "b": to})
+		return
 	var a := slots[from]
 	var b := slots[to]
 	if not b.is_empty() and b.id == a.id and ItemDB.info(a.id).kind != "tool":
@@ -180,6 +186,9 @@ func split(from: int, to: int) -> void:
 	var a := slots[from]
 	if a.is_empty() or int(a.count) < 2 or from == to:
 		return
+	if remote:
+		Net.request("inv", {"op": "split", "a": from, "b": to})
+		return
 	var half := int(a.count) / 2
 	var b := slots[to]
 	if b.is_empty():
@@ -196,6 +205,9 @@ func split(from: int, to: int) -> void:
 func quick_move(from: int) -> void:
 	var s := slots[from]
 	if s.is_empty():
+		return
+	if remote:
+		Net.request("inv", {"op": "quick", "a": from})
 		return
 	var targets: Array = range(HOTBAR_SIZE, SIZE) if is_hotbar(from) else range(HOTBAR_SIZE)
 	for i: int in targets:   # merge first
@@ -218,7 +230,8 @@ func to_data() -> Dictionary:
 	return {"slots": out, "selected": selected}
 
 
-func from_data(d: Dictionary) -> void:
+func from_data(d: Dictionary, keep_selection := false) -> void:
+	var sel := selected
 	clear(true)
 	if d.has("slots"):
 		var list: Array = d.slots
@@ -226,5 +239,5 @@ func from_data(d: Dictionary) -> void:
 			var s: Dictionary = list[i]
 			if not s.is_empty() and ItemDB.exists(String(s.get("id", ""))):
 				slots[i] = {"id": String(s.id), "count": int(s.count), "dur": int(s.get("dur", -1))}
-	selected = clampi(int(d.get("selected", 0)), 0, HOTBAR_SIZE - 1)
+	selected = sel if keep_selection else clampi(int(d.get("selected", 0)), 0, HOTBAR_SIZE - 1)
 	changed.emit()

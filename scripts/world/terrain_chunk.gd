@@ -17,6 +17,7 @@ var _colliders := {}     # resource index -> CollisionShape3D
 var _wobbles := {}       # resource index -> time left
 var _bare := {}          # resource index -> MeshInstance3D showing the harvested look
 var _regrow_check := 0.0
+var _by_id := {}         # resource id -> index
 
 
 func apply(c: Vector2i, t: int, data: Dictionary, flora: FloraLibrary) -> void:
@@ -25,9 +26,11 @@ func apply(c: Vector2i, t: int, data: Dictionary, flora: FloraLibrary) -> void:
 	name = "Chunk_%d_%d" % [c.x, c.y]
 	position = Vector3(c.x * Game.CHUNK_SIZE, 0.0, c.y * Game.CHUNK_SIZE)
 	resources = data.resources
+	_by_id.clear()
 	for k in resources.size():
 		var r := resources[k]
 		r.index = k
+		_by_id[r.id] = k
 		# Damage survives the chunk being rebuilt at a different detail level.
 		if Game.resource_hp.has(r.id):
 			r.hp = Game.resource_hp[r.id]
@@ -162,8 +165,13 @@ func wobble(index: int) -> void:
 	set_process(true)
 
 
+func index_of(id: String) -> int:
+	return _by_id.get(id, -1)
+
+
 ## Hide a gathered resource and remove its collider.
 func remove_resource(index: int) -> void:
+	resources[index].gone = true
 	_wobbles.erase(index)
 	if _bare.has(index):
 		_bare[index].queue_free()

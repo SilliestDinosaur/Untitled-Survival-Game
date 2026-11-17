@@ -222,3 +222,66 @@ func _ripple_texture(seed_offset: int) -> NoiseTexture2D:
 	tex.bump_strength = 6.0
 	tex.noise = noise
 	return tex
+
+
+# --- Shared world changes ---------------------------------------------------------------
+
+## A loaded resource by id: [chunk, index], or [] if that part of the world isn't loaded here.
+func find_resource(id: String) -> Array:
+	var parts := id.split("_")
+	if parts.size() < 3:
+		return []
+	var chunk := get_chunk(Vector2i(int(parts[0]), int(parts[1])))
+	if not chunk:
+		return []
+	var i := chunk.index_of(id)
+	return [] if i < 0 else [chunk, i]
+
+
+## Apply a change to a tree / rock / plant on this machine: the shared record (so chunks
+## built later agree) and, if it's loaded, how it looks. Every machine runs this for every
+## change, whoever caused it. st: {hp, removed, bare, t (host play time), by (peer), fx, pos, from}
+func apply_resource_change(id: String, st: Dictionary) -> void:
+	var t := float(st.get("t", Game.play_time))
+	if st.get("removed", false):
+		Game.removed_resources[id] = t
+		Game.resource_hp.erase(id)
+	elif st.has("hp"):
+		Game.resource_hp[id] = float(st.hp)
+	if st.get("bare", false):
+		Game.harvested[id] = t
+	var found := find_resource(id)
+	var mine: bool = int(st.get("by", -1)) == Net.my_id()
+	# Other players' hits: hear and see them.
+	if not mine and st.has("pos"):
+		var p: Vector3 = st.pos
+		match String(st.get("fx", "")):
+			"tree": Audio.play_3d("chop", p)
+			"rock": Audio.play_3d("clink", p, -2.0)
+			"bush": Audio.play_3d("rustle", p)
+	if found.is_empty():
+		return
+	var chunk: TerrainChunk = found[0]
+	var i: int = found[1]
+	var r := chunk.resources[i]
+	if st.get("removed", false):
+		r.removed = true
+		if not r.get("gone", false):
+			_remove_visual(chunk, r, st.get("from", r.transform.origin + Vector3.FORWARD))
+	elif st.get("bare", false):
+		chunk.set_bare(i, true)
+		chunk.wobble(i)
+	elif st.has("hp"):
+		r.hp = float(st.hp)
+		chunk.wobble(i)
+
+
+func _remove_visual(chunk: TerrainChunk, r: Dictionary, from: Vector3) -> void:
+	var mesh := chunk.get_resource_mesh(r.index)
+	var xf: Transform3D = r.transform
+	chunk.remove_resource(r.index)
+	if mesh:
+		if FloraLibrary.category_of(r.kind) == "tree":
+			Effects.fall_tree(get_parent(), mesh, xf, xf.origin - from, Game.palette.bark)
+		else:
+			Effects.crumble(get_parent(), mesh, xf)

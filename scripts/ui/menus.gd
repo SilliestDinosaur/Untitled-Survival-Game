@@ -33,6 +33,19 @@ static func _row(children: Array, sep := 10) -> HBoxContainer:
 	return h
 
 
+## "Open to friends" switch (shared by New World and Load World).
+static func _host_toggle() -> CheckButton:
+	var c := CheckButton.new()
+	c.text = "Open to friends (multiplayer)"
+	c.button_pressed = Net.host_on_start
+	c.toggled.connect(func(on: bool) -> void: Net.host_on_start = on)
+	c.visibility_changed.connect(func() -> void: c.set_pressed_no_signal(Net.host_on_start))
+	c.add_theme_color_override("font_color", UITheme.INK)
+	c.add_theme_color_override("font_pressed_color", UITheme.INK)
+	c.add_theme_color_override("font_hover_color", UITheme.INK)
+	return c
+
+
 static func _spacer(h := 8, w := 0) -> Control:
 	var c := Control.new()
 	c.custom_minimum_size = Vector2(w, h)
@@ -58,9 +71,11 @@ class TitleScreen extends Control:
 	signal continue_pressed
 	signal new_world_pressed
 	signal load_world_pressed
+	signal multiplayer_pressed
 	signal settings_pressed
 
 	var _continue: Button
+	var _message: Label
 	var _continue_info: Label
 	var _viewing: Label
 
@@ -86,7 +101,7 @@ class TitleScreen extends Control:
 		_continue_info = UITheme.label("", 15, UITheme.INK_DIM)
 		_continue_info.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 		col.add_child(_continue_info)
-		for entry in [["New World", new_world_pressed], ["Load World", load_world_pressed], ["Settings", settings_pressed]]:
+		for entry in [["New World", new_world_pressed], ["Load World", load_world_pressed], ["Play with Friends", multiplayer_pressed], ["Settings", settings_pressed]]:
 			var b := UITheme.button(entry[0], false, 380)
 			var sig: Signal = entry[1]
 			b.pressed.connect(func() -> void: sig.emit())
@@ -94,6 +109,10 @@ class TitleScreen extends Control:
 		var quit := UITheme.button("Quit", false, 380)
 		quit.pressed.connect(func() -> void: get_tree().quit())
 		col.add_child(quit)
+		_message = UITheme.label("", 15, UITheme.ACCENT)
+		_message.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+		_message.custom_minimum_size = Vector2(380, 0)
+		col.add_child(_message)
 
 		_viewing = UITheme.label("", 17, UITheme.TEXT_DIM, 5, true)
 		UITheme.place(_viewing, Control.PRESET_BOTTOM_RIGHT, Vector2(-520, -54), Vector2(490, 30))
@@ -103,6 +122,10 @@ class TitleScreen extends Control:
 		UITheme.place(version, Control.PRESET_BOTTOM_LEFT, Vector2(76, -40))
 		add_child(version)
 		refresh()
+
+	## e.g. why a multiplayer game ended.
+	func show_message(text: String) -> void:
+		_message.text = text
 
 	func refresh() -> void:
 		var saves := SaveManager.list_saves()
@@ -150,7 +173,9 @@ class NewWorldPanel extends Control:
 		col.add_child(_preview_name)
 		_preview_tags = UITheme.label("", 16, UITheme.INK_DIM)
 		col.add_child(_preview_tags)
-		col.add_child(Menus._spacer(8))
+		col.add_child(Menus._spacer(4))
+		col.add_child(Menus._host_toggle())
+		col.add_child(Menus._spacer(4))
 		var back := UITheme.button("Back", false, 160)
 		back.pressed.connect(func() -> void: back_pressed.emit())
 		var create := UITheme.button("Create World", true, 240)
@@ -206,7 +231,7 @@ class LoadPanel extends Control:
 		scroll.add_child(_list)
 		var back := UITheme.button("Back", false, 160)
 		back.pressed.connect(func() -> void: back_pressed.emit())
-		col.add_child(Menus._row([back]))
+		col.add_child(Menus._row([back, Menus._spacer(), Menus._host_toggle()]))
 
 	func open() -> void:
 		refresh()
@@ -285,6 +310,7 @@ class PauseMenu extends Control:
 
 	var _sub: Label
 	var _status: Label
+	var _mp: MultiplayerBox
 
 	func _ready() -> void:
 		set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
@@ -306,10 +332,17 @@ class PauseMenu extends Control:
 		_status = UITheme.label("", 15, UITheme.ACCENT)
 		_status.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 		col.add_child(_status)
+		col.add_child(UITheme.divider())
+		_mp = MultiplayerBox.new()
+		col.add_child(_mp)
 		visibility_changed.connect(func() -> void:
 			if visible:
-				_sub.text = "%s  ·  %s played" % [Game.save_name, SaveManager.format_play_time(Game.play_time)]
-				_status.text = "")
+				if Net.is_client():
+					_sub.text = "Playing in %s's world" % Net.host_name()
+				else:
+					_sub.text = "%s  ·  %s played" % [Game.save_name, SaveManager.format_play_time(Game.play_time)]
+				_status.text = ""
+				_mp.refresh())
 
 	func show_status(text: String) -> void:
 		_status.text = text
@@ -581,5 +614,170 @@ class DebugItems extends Control:
 			b.add_theme_font_size_override("font_size", 15)
 			b.tooltip_text = ItemDB.describe(id)
 			b.pressed.connect(func() -> void:
-				inventory.add(id, ItemDB.stack_size(id) if Input.is_key_pressed(KEY_SHIFT) else 1))
+				Net.request("debug_add", {"item": id, "count": ItemDB.stack_size(id) if Input.is_key_pressed(KEY_SHIFT) else 1}))
 			_grid.add_child(b)
+
+
+
+## Pause menu: open the world to friends, show the invite codes and who's here.
+class MultiplayerBox extends VBoxContainer:
+	var _title: Label
+	var _open: Button
+	var _code_row: HBoxContainer
+	var _code: Label
+	var _lan_row: HBoxContainer
+	var _lan: Label
+	var _info: Label
+	var _who: Label
+
+	func _ready() -> void:
+		add_theme_constant_override("separation", 6)
+		_title = UITheme.label("Multiplayer", 19, UITheme.INK)
+		_title.add_theme_font_override("font", UITheme.BOLD_FONT)
+		add_child(_title)
+		_open = UITheme.button("Open to Friends", false, 340)
+		_open.pressed.connect(func() -> void:
+			Net.host()
+			refresh())
+		add_child(_open)
+		_code = UITheme.label("", 30, UITheme.ACCENT, 0, true)
+		_code_row = _copy_row("Invite code", _code)
+		add_child(_code_row)
+		_lan = UITheme.label("", 20, UITheme.INK)
+		_lan_row = _copy_row("Same network", _lan)
+		add_child(_lan_row)
+		_info = UITheme.label("", 14, UITheme.INK_DIM)
+		_info.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+		_info.custom_minimum_size = Vector2(340, 0)
+		add_child(_info)
+		_who = UITheme.label("", 15, UITheme.INK)
+		_who.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+		_who.custom_minimum_size = Vector2(340, 0)
+		add_child(_who)
+		Net.invite_ready.connect(refresh)
+		Net.roster_changed.connect(refresh)
+		Net.status_changed.connect(func(_t: String) -> void: refresh())
+
+	func _copy_row(caption: String, value: Label) -> HBoxContainer:
+		var v := VBoxContainer.new()
+		v.add_theme_constant_override("separation", -2)
+		v.add_child(UITheme.label(caption, 13, UITheme.INK_DIM))
+		v.add_child(value)
+		v.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+		var copy := UITheme.button("Copy", false, 90)
+		copy.custom_minimum_size = Vector2(90, 36)
+		copy.size_flags_vertical = Control.SIZE_SHRINK_CENTER
+		copy.pressed.connect(func() -> void:
+			DisplayServer.clipboard_set(value.text)
+			copy.text = "Copied"
+			get_tree().create_timer(1.2).timeout.connect(func() -> void: copy.text = "Copy"))
+		return Menus._row([v, copy])
+
+	func refresh() -> void:
+		if not is_inside_tree():
+			return
+		_open.visible = not Net.is_online()
+		_code_row.visible = Net.is_host() and Net.invite_code != ""
+		_lan_row.visible = Net.is_host()
+		_code.text = Net.invite_code
+		_lan.text = Net.lan_code
+		match Net.upnp_state:
+			"working": _info.text = "Setting up your router..."
+			"ok": _info.text = "Give your friend the invite code. They enter it under Play with Friends."
+			"failed": _info.text = "Your router didn't allow automatic setup, so the invite code isn't available. Friends on your Wi-Fi can use the same-network code. For internet play, forward UDP port %d to this computer, or both join a virtual LAN (Tailscale, ZeroTier, Radmin) and share that address." % Net.port
+			_: _info.text = "Let up to %d friends join this world. Their characters are saved here." % (Net.MAX_PLAYERS - 1) if not Net.is_client() else ""
+		var names: Array[String] = []
+		for p: int in Net.players:
+			names.append(String(Net.players[p].name))
+		_who.text = ("Here: " + ", ".join(names)) if not names.is_empty() else ("Waiting for friends..." if Net.is_host() else "")
+
+
+## Title screen: your name and colour, and joining a friend's world by code.
+class MultiplayerPanel extends Control:
+	signal back_pressed
+
+	var _name: LineEdit
+	var _code: LineEdit
+	var _status: Label
+	var _join: Button
+	var _swatches: Array[Button] = []
+
+	func _ready() -> void:
+		set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
+		Menus._dim(self, 0.25)
+		var col := Menus._card(self, Vector2(580, 0), 9)
+		col.add_child(UITheme.heading("Play with Friends", 40))
+		col.add_child(UITheme.divider())
+		col.add_child(UITheme.label("Your name", 16, UITheme.INK_DIM))
+		_name = LineEdit.new()
+		_name.max_length = 20
+		_name.text_changed.connect(func(t: String) -> void:
+			Settings.player_name = t.strip_edges()
+			Settings.save_settings())
+		col.add_child(_name)
+		var swatch_row := HBoxContainer.new()
+		swatch_row.add_theme_constant_override("separation", 6)
+		for i in Settings.PLAYER_COLORS.size():
+			var b := Button.new()
+			b.custom_minimum_size = Vector2(36, 36)
+			b.focus_mode = Control.FOCUS_NONE
+			var sb := UITheme.box(Settings.PLAYER_COLORS[i], 18, Color(0.15, 0.1, 0.08), 0, 0)
+			b.add_theme_stylebox_override("normal", sb)
+			b.add_theme_stylebox_override("hover", sb)
+			b.add_theme_stylebox_override("pressed", sb)
+			b.pressed.connect(func() -> void:
+				Settings.player_color = i
+				Settings.save_settings()
+				_mark_swatch())
+			swatch_row.add_child(b)
+			_swatches.append(b)
+		col.add_child(swatch_row)
+		col.add_child(Menus._spacer(6))
+		col.add_child(UITheme.label("Join a friend: enter their invite code", 16, UITheme.INK_DIM))
+		_code = LineEdit.new()
+		_code.placeholder_text = "e.g. KQ7M-B3X"
+		_code.text_submitted.connect(func(_t: String) -> void: _do_join())
+		_join = UITheme.button("Join", true, 140)
+		_join.pressed.connect(_do_join)
+		_code.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+		col.add_child(Menus._row([_code, _join]))
+		_status = UITheme.label("", 15, UITheme.ACCENT)
+		_status.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+		_status.custom_minimum_size = Vector2(520, 0)
+		col.add_child(_status)
+		col.add_child(Menus._spacer(4))
+		var host_note := UITheme.label("To host: start or load a world with \"Open to friends\" switched on, or open it from the pause menu at any time. You'll get a code to share.", 14, UITheme.INK_DIM)
+		host_note.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+		host_note.custom_minimum_size = Vector2(520, 0)
+		col.add_child(host_note)
+		col.add_child(Menus._spacer(6))
+		var back := UITheme.button("Back", false, 160)
+		back.pressed.connect(func() -> void:
+			if Net.is_client():
+				Net.stop()
+			back_pressed.emit())
+		col.add_child(Menus._row([back]))
+		Net.status_changed.connect(func(t: String) -> void:
+			_status.text = t
+			_join.disabled = Net.is_client())
+
+	func open() -> void:
+		_name.text = Settings.player_name
+		_status.text = ""
+		_join.disabled = false
+		_mark_swatch()
+		show()
+
+	func _mark_swatch() -> void:
+		for i in _swatches.size():
+			_swatches[i].text = "✓" if i == Settings.player_color else ""
+
+	func _do_join() -> void:
+		if _code.text.strip_edges() == "":
+			_status.text = "Enter your friend's code first."
+			return
+		if Settings.player_name.strip_edges() == "":
+			Settings.player_name = "Wanderer"
+		_join.disabled = true
+		if not Net.join(_code.text):
+			_join.disabled = false

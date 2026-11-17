@@ -13,8 +13,13 @@ const REACH := 3.6
 ## Swing at a tree / rock / bush / clutter with the player's held tool.
 ## Result: {ok, target, kind, blocked, need_tier, destroyed, items, broke}
 static func hit_resource(player_id: int, chunk: TerrainChunk, index: int, rng: RandomNumberGenerator) -> Dictionary:
+	return hit_resource_r(player_id, chunk.resources[index], rng)
+
+
+## Same, on a resource record ({id, kind, key, hp, removed}). The host uses this for guests'
+## swings, whether or not it has that part of the world loaded itself.
+static func hit_resource_r(player_id: int, r: Dictionary, rng: RandomNumberGenerator) -> Dictionary:
 	var inv := Game.inventory_of(player_id)
-	var r := chunk.resources[index]
 	var tool_id := inv.selected_item()
 	var tool := ItemDB.tool_stats(tool_id)
 	var result := {"ok": false, "target": ItemDB.target_type(r.kind), "kind": r.kind, "blocked": false,
@@ -44,9 +49,11 @@ static func hit_resource(player_id: int, chunk: TerrainChunk, index: int, rng: R
 		if r.kind == "cache":
 			Game.looted[r.id] = true
 		Game.mark_removed(r.id)
+		r.removed = true
 		result.destroyed = true
 	else:
 		Game.resource_hp[r.id] = r.hp
+	result.hp = r.hp
 	result.broke = inv.damage_selected(1)
 	result.ok = true
 	return result
@@ -55,8 +62,11 @@ static func hit_resource(player_id: int, chunk: TerrainChunk, index: int, rng: R
 ## Gather by hand (Interact): berries, fiber, sticks, fruit, picking up small things, caches.
 ## Result: {ok, kind, items, picked_up (node removed), empty (nothing to take right now)}
 static func harvest_resource(player_id: int, chunk: TerrainChunk, index: int, rng: RandomNumberGenerator) -> Dictionary:
+	return harvest_resource_r(player_id, chunk.resources[index], rng)
+
+
+static func harvest_resource_r(player_id: int, r: Dictionary, rng: RandomNumberGenerator) -> Dictionary:
 	var inv := Game.inventory_of(player_id)
-	var r := chunk.resources[index]
 	var result := {"ok": false, "kind": r.kind, "items": {}, "picked_up": false, "empty": false}
 	if r.get("removed", false):
 		return result
@@ -67,6 +77,7 @@ static func harvest_resource(player_id: int, chunk: TerrainChunk, index: int, rn
 		_loot_cache(inv, r.id, rng, result.items)
 		Game.looted[r.id] = true
 		Game.mark_removed(r.id)
+		r.removed = true
 		result.picked_up = true
 		result.ok = true
 		return result
@@ -85,6 +96,7 @@ static func harvest_resource(player_id: int, chunk: TerrainChunk, index: int, rn
 	_give_chance(inv, table, rng, result.items)
 	if pick_up:
 		Game.mark_removed(r.id)
+		r.removed = true
 		result.picked_up = true
 	else:
 		Game.harvested[r.id] = Game.play_time
@@ -126,11 +138,23 @@ static func hit_animal(player_id: int, animal: Node, from: Vector3) -> Dictionar
 
 ## Eat the selected food. Result: {ok, id, effect, first_time}
 static func eat(player_id: int, stats: PlayerStats) -> Dictionary:
+	var res := consume(player_id)
+	return apply_food(stats, res.id) if res.ok else res
+
+
+## The host's half of eating: take one of the held food from the inventory.
+static func consume(player_id: int) -> Dictionary:
 	var inv := Game.inventory_of(player_id)
 	var id := inv.selected_item()
 	var info := ItemDB.info(id)
 	if id == "" or info.kind != "food" or not inv.remove(id, 1):
 		return {"ok": false}
+	return {"ok": true, "id": id}
+
+
+## The eater's half: apply the food to their own stats. Returns {ok, id, effect, first_time}.
+static func apply_food(stats: PlayerStats, id: String) -> Dictionary:
+	var info := ItemDB.info(id)
 	stats.eat(info.get("food", 0.0))
 	var hp: float = info.get("health", 0.0)
 	if hp > 0.0:

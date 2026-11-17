@@ -11,6 +11,9 @@ var focus: Node3D
 var player: Node3D
 
 var _animals: Array[Node3D] = []
+var _by_net_id := {}           ## host: net id -> Animal; guest: net id -> puppet
+var _next_net_id := 1
+var _puppet_seen := {}         ## guest: net id -> seconds since last update
 var _critters: Array[Node3D] = []
 var _flocks: Array[Node3D] = []
 var _timer := 0.0
@@ -27,6 +30,13 @@ func clear() -> void:
 		for n in list:
 			n.queue_free()
 		list.clear()
+	_by_net_id.clear()
+	_puppet_seen.clear()
+
+
+func find_animal(id: int) -> Node:
+	var a: Node = _by_net_id.get(id)
+	return a if is_instance_valid(a) else null
 
 
 func get_animals() -> Array[Node3D]:
@@ -41,15 +51,100 @@ func _physics_process(delta: float) -> void:
 		return
 	_timer = 0.5
 	var center := focus.global_position
-	_cull(_animals, center, 210.0)
 	_cull(_critters, center, 75.0)
 	_cull(_flocks, center, 320.0)
-	if _animals.size() < max_animals:
-		_spawn_herd(center)
+	if Net.is_client():
+		# Animals are the host's; critters and birds are just scenery, so each game has its own.
+		_age_puppets(0.5)
+	else:
+		# Keep herds around every player (the host simulates them all).
+		var centers: Array = [center]
+		var targets: Array = [player]
+		if Net.is_host():
+			targets = Net.animal_targets()
+			for t in targets:
+				if t != player and t != focus:
+					centers.append((t as Node3D).global_position)
+		_cull_multi(_animals, centers, 210.0)
+		for a in _animals:
+			if is_instance_valid(a):
+				a.targets = targets
+		if _animals.size() < max_animals + (centers.size() - 1) * 8:
+			_spawn_herd(centers[_rng.randi() % centers.size()])
 	if _critters.size() < max_critters:
 		_spawn_critter(center)
 	if _flocks.size() < max_flocks:
 		_spawn_flock(center)
+
+
+func _cull_multi(list: Array[Node3D], centers: Array, max_dist: float) -> void:
+	for i in range(list.size() - 1, -1, -1):
+		var n := list[i]
+		if not is_instance_valid(n):
+			list.remove_at(i)
+			continue
+		var near := false
+		for c: Vector3 in centers:
+			var d := n.global_position - c
+			d.y = 0.0
+			if d.length() <= max_dist:
+				near = true
+				break
+		if not near:
+			_by_net_id.erase(n.get("net_id"))
+			n.queue_free()
+			list.remove_at(i)
+
+
+# --- Guest side: puppets mirroring the host's animals --------------------------------------
+
+## [[net id, species index, position, yaw, state, dead], ...] from the host.
+func apply_puppets(list: Array) -> void:
+	for e: Array in list:
+		var id: int = e[0]
+		var a: Animal = find_animal(id)
+		if not a:
+			var si: int = e[1]
+			if si < 0 or si >= Game.fauna.species.size():
+				continue
+			a = Animal.new()
+			add_child(a)
+			a.setup(Game.fauna.species[si], e[2], player)
+			a.net_id = id
+			a.species_index = si
+			a.puppet = true
+			a.rotation.y = e[3]
+			a._net_pos = e[2]
+			a._net_yaw = e[3]
+			_by_net_id[id] = a
+			_animals.append(a)
+			a.removed.connect(func(x: Animal) -> void:
+				_animals.erase(x)
+				_by_net_id.erase(x.net_id))
+		a.net_update(e[2], e[3], e[4], e[5])
+		_puppet_seen[id] = 0.0
+
+
+func puppet_event(id: int, what: String) -> void:
+	var a: Animal = find_animal(id)
+	if not a:
+		return
+	match what:
+		"hit": a.puppet_hit()
+		"consumed": a.consume_carcass()
+
+
+## Puppets the host stopped sending (despawned, or out of range) fade away.
+func _age_puppets(dt: float) -> void:
+	for id: int in _puppet_seen.keys():
+		_puppet_seen[id] += dt
+		if _puppet_seen[id] > 2.0:
+			_puppet_seen.erase(id)
+			var a: Node = find_animal(id)
+			_by_net_id.erase(id)
+			if a:
+				_animals.erase(a)
+				a.queue_free()
 
 
 func _cull(list: Array[Node3D], center: Vector3, max_dist: float) -> void:
@@ -129,10 +224,16 @@ func _spawn_herd(center: Vector3) -> void:
 		var a := Animal.new()
 		add_child(a)
 		a.setup(sp, Vector3(p.x, h, p.z), player)
+		a.net_id = _next_net_id
+		a.species_index = Game.fauna.species.find(sp)
+		_by_net_id[a.net_id] = a
+		_next_net_id += 1
 		a.herd = herd
 		a.leader = herd[0] if not herd.is_empty() else null
 		herd.append(a)
-		a.removed.connect(func(x: Animal) -> void: _animals.erase(x))
+		a.removed.connect(func(x: Animal) -> void:
+			_animals.erase(x)
+			_by_net_id.erase(x.net_id))
 		_animals.append(a)
 
 

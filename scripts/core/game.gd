@@ -59,6 +59,11 @@ var day := 1
 var time_paused := false   ## title screen keeps a fixed afternoon
 const HARVEST_REGROW := 240.0   ## seconds before a hand-harvested plant can be harvested again
 
+## Guests who have played in this world: their uid -> saved character (inventory, position, stats).
+var guests := {}
+## Playing in someone else's world: time comes from the host and nothing is saved here.
+var net_client := false
+
 ## The save file this session is playing ("" = not saved yet / title preview).
 var save_id := ""
 var save_name := ""
@@ -73,7 +78,7 @@ func _ready() -> void:
 
 
 func _process(delta: float) -> void:
-	if save_id != "" and not get_tree().paused:
+	if (save_id != "" or net_client) and not get_tree().paused:
 		play_time += delta
 		if not time_paused:
 			time_of_day += delta / DAY_SECONDS
@@ -129,6 +134,8 @@ func new_world(seed_value: int) -> void:
 	looted = {}
 	pickups = {}
 	structures = {}
+	guests = {}
+	net_client = false
 	next_entity_id = 1
 	for pid: int in inventories:
 		inventories[pid].clear()
@@ -214,6 +221,9 @@ func load_save(id: String) -> Dictionary:
 	var players: Dictionary = data.get("players", {})
 	if players.is_empty() and data.has("player"):
 		players = {str(LOCAL_PLAYER): data.player}
+	for key: String in players:
+		if key != str(LOCAL_PLAYER):
+			guests[key] = players[key]
 	_prune_regrown()
 	return players.get(str(LOCAL_PLAYER), {})
 
@@ -245,8 +255,42 @@ func write_save(player_data: Dictionary) -> void:
 		"next_entity_id": next_entity_id,
 		"time_of_day": time_of_day,
 		"day": day,
-		"players": {str(LOCAL_PLAYER): player_data},
+		"players": _players_for_save(player_data),
 	})
+
+
+func _players_for_save(host_data: Dictionary) -> Dictionary:
+	var out := guests.duplicate()
+	out[str(LOCAL_PLAYER)] = host_data
+	return out
+
+
+## Everything a guest needs to rebuild the host's world (sent once when they join).
+func snapshot() -> Dictionary:
+	return {
+		"seed": world_seed, "name": save_name if save_name != "" else world_name,
+		"play_time": play_time, "time_of_day": time_of_day, "day": day,
+		"removed": removed_resources, "resource_hp": resource_hp, "harvested": harvested,
+		"looted": looted, "pickups": pickups, "structures": structures,
+	}
+
+
+## Guest side: become a copy of the host's world.
+func apply_snapshot(s: Dictionary) -> void:
+	new_world(int(s.seed))
+	net_client = true
+	save_name = String(s.get("name", world_name))
+	play_time = float(s.play_time)
+	time_of_day = float(s.time_of_day)
+	day = int(s.day)
+	removed_resources = s.removed
+	resource_hp = s.resource_hp
+	harvested = s.harvested
+	looted = s.looted
+	pickups = s.pickups
+	structures = s.structures
+	pickups_changed.emit()
+	structures_changed.emit()
 
 
 func _prune_regrown() -> void:
