@@ -469,35 +469,22 @@ func run_action(pid: int, peer: int, action: String, a: Dictionary) -> Dictionar
 			return {"id": GameActions.drop(pid, int(a.slot), int(a.amount), a.pos)}
 		"craft":
 			return GameActions.craft(pid, String(a.recipe), a.pos, int(a.get("times", 1)))
-		"terrain":
-			var res := TerrainEdit.apply(a, inv)
-			if res.ok:
-				TerrainEdit.commit(res.cells)
-				if is_host():
-					_terrain_cells.rpc(res.cells)
-			return res
 		"place":
 			var placed := GameActions.place_structure(pid, int(a.slot), a.pos, float(a.yaw))
 			if placed.get("ok", false):
-				# Cut away ground that pokes into the piece, so nothing clips into it.
 				var kind: String = placed.get("kind", "")
-				var rect := Vector2(1.5, 1.5)
-				if kind in GameActions.WALL_KINDS:
-					rect = Vector2(1.5, 0.25)
-				var fill := kind == "foundation" and int(placed.get("level", 0)) == 0
-				var cut := TerrainEdit.clear_rect(a.pos, rect.x, rect.y, float(a.yaw), a.pos.y, fill)
-				if not cut.is_empty():
-					TerrainEdit.commit(cut)
+				var cells: Array = []
+				if kind == "foundation":
+					# The slab sits at the height the host worked out (shared with its neighbours),
+					# and the ground under it is levelled to that height.
+					cells = TerrainEdit.level_ground(placed.pos, 1.5, 1.5, 0.0, placed.pos.y)
+				else:
+					var rect := Vector2(1.5, 0.25) if kind in GameActions.WALL_KINDS else Vector2(1.5, 1.5)
+					cells = TerrainEdit.clear_rect(placed.pos, rect.x, rect.y, float(placed.get("yaw", 0.0)), placed.pos.y)
+				if not cells.is_empty():
+					TerrainEdit.commit(cells)
 					if is_host():
-						_terrain_cells.rpc(cut)
-			if placed.get("ok", false) and placed.get("kind", "") == "foundation":
-				# Level the ground under the slab, blending out at the rim, so the ground and
-				# the piece merge instead of clipping into each other.
-				var level := TerrainEdit.apply({"mode": TerrainEdit.Mode.FLATTEN, "x": a.pos.x, "z": a.pos.z, "r": 3.0, "s": 1.0, "target": a.pos.y}, inv)
-				if level.get("ok", false):
-					TerrainEdit.commit(level.cells)
-					if is_host():
-						_terrain_cells.rpc(level.cells)
+						_terrain_cells.rpc(cells)
 			return placed
 		"hit_structure":
 			return GameActions.hit_structure(pid, String(a.structure))

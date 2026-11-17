@@ -46,7 +46,7 @@ const LOCAL_PLAYER := 1
 var inventories := {}
 
 signal pickups_changed
-signal terrain_changed(cells: Array)   ## shovel work changed the ground here (rebuild those chunks)
+signal terrain_changed(cells: Array)   ## a placed piece changed the ground here (rebuild those chunks)
 signal structures_changed
 signal new_day(day: int)
 

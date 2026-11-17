@@ -56,7 +56,6 @@ static func mesh_for(id: String, material: Material) -> ArrayMesh:
 				"pickaxe": _pickaxe(k, tier, col)
 				"spear": _spear(k, tier, col)
 				"knife": _knife(k, tier, col)
-				"shovel": _shovel(k, tier, col)
 	else:
 		_material_item(k, id, info)
 	var mesh := k.commit(material)
@@ -427,25 +426,6 @@ static func _spear(k: MeshKit, tier: int, col: Color) -> void:
 		func(t: float, _a: float) -> Color: return sock.lightened(0.18) if fposmod(t * 4.0, 1.0) < 0.14 else sock)
 	if tier == 5:
 		_collar(k, top - 0.064, hr * 1.5, 0.006, DUSK_GLOW)
-
-
-# --- Shovels ----------------------------------------------------------------------------
-
-## A long handle with a broad spade blade: a cutting lip at the bottom, a socket at the neck.
-static func _shovel(k: MeshKit, tier: int, col: Color) -> void:
-	var top := 0.36
-	var m := _metal(tier, col)
-	var hr := 0.017
-	_handle(k, top + 0.03, tier, hr)
-	var outline := PackedVector2Array([Vector2(-0.04, 0.02), Vector2(-0.046, 0.06), Vector2(-0.05, 0.1), Vector2(-0.05, 0.128), Vector2(0.0, 0.142),
-		Vector2(0.05, 0.128), Vector2(0.05, 0.1), Vector2(0.046, 0.06), Vector2(0.04, 0.02), Vector2(0.0, 0.0)])
-	var big := PackedVector2Array()
-	for p in outline:
-		big.append(p * Vector2(1.25, 1.15))
-	var edge_big := PackedVector2Array([Vector2(-0.062, 0.147), Vector2(0.0, 0.163), Vector2(0.062, 0.147)])
-	var xf := Transform3D(Basis(), Vector3(0, top - 0.05, 0))
-	k.sculpt(big, xf, _head_thickness(edge_big, 0.02 if tier != 1 else 0.026, 0.03, 0.0, 0.0, 0.0012), _head_color(tier, m, edge_big, 0.008), 2, 0.008)
-	_collar(k, top - 0.02, hr * 1.3, 0.012, m.fitting if tier != 2 else m.base.darkened(0.15))
 
 
 # --- Knives -----------------------------------------------------------------------------

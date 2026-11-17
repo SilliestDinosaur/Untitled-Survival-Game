@@ -27,7 +27,6 @@ const TOOL_TYPES := {
 	"hatchet": {"name": "Hatchet", "tree": 1.0, "rock": 0.2, "bush": 1.0, "carcass": 0.5, "damage": 12.0, "cooldown": 0.75, "dur": 1.0},
 	"pickaxe": {"name": "Pickaxe", "tree": 0.3, "rock": 1.0, "bush": 0.6, "carcass": 0.3, "damage": 11.0, "cooldown": 0.85, "dur": 1.0},
 	"spear": {"name": "Spear", "tree": 0.1, "rock": 0.05, "bush": 0.5, "carcass": 0.4, "damage": 22.0, "cooldown": 0.7, "dur": 0.8},
-	"shovel": {"name": "Shovel", "tree": 0.2, "rock": 0.25, "bush": 0.6, "carcass": 0.3, "damage": 9.0, "cooldown": 0.9, "dur": 1.2},
 	"knife": {"name": "Knife", "tree": 0.15, "rock": 0.0, "bush": 1.3, "carcass": 1.6, "damage": 9.0, "cooldown": 0.45, "dur": 0.9},
 }
 
@@ -73,7 +72,6 @@ const BASE_ITEMS := {
 	"doorway": {"name": "Doorway", "kind": "placeable", "stack": 10, "icon": "doorway", "station": "doorway", "desc": "A brick wall with an opening to walk through."},
 	"roof": {"name": "Roof", "kind": "placeable", "stack": 10, "icon": "roof", "station": "roof", "desc": "A tiled roof. Needs a foundation and at least two walls under it."},
 	"brick": {"name": "Stone Brick", "kind": "material", "stack": 100, "icon": "brick", "color": Color(0.7, 0.5, 0.38), "desc": "Chiseled stone. Brick is for building (coming soon)."},
-	"dirt": {"name": "Dirt", "kind": "resource", "stack": 250, "icon": "dirt", "color": Color(0.42, 0.3, 0.2), "desc": "Earth dug up with a shovel. Pile it back down to build up ground."},
 	"rock": {"name": "Rock", "kind": "tool", "stack": 1, "icon": "tool", "tier": 0, "desc": "A fist-sized flint rock. Better than bare hands.",
 		"tool": {"type": "rock", "tier": 0, "tree": 0.6, "rock": 0.6, "bush": 1.0, "carcass": 0.6, "damage": 10.0, "cooldown": 0.7, "durability": 110}},
 }

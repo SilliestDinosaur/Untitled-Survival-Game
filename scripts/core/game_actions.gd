@@ -302,6 +302,27 @@ static func level_of(kind: String, y: float, base: float) -> int:
 	return roundi((y - base - lift) / STACK_H)
 
 
+## The height a new ground-level foundation in `cell` sits at. Every foundation touching this one
+## (edge or corner) shares its height, so a base lines up flush; a lone foundation takes the ground
+## height rounded to half a metre. The ground under the slab is levelled to this height.
+static func ground_slab_y(cell: Vector2i) -> float:
+	var best: Dictionary = {}
+	var best_d := 99
+	for dj in [-1, 0, 1]:
+		for di in [-1, 0, 1]:
+			if di == 0 and dj == 0:
+				continue
+			var f := foundation_at(Vector2i(cell.x + di, cell.y + dj), 0)
+			var d := absi(di) + absi(dj)
+			if not f.is_empty() and d < best_d:
+				best_d = d
+				best = f
+	if not best.is_empty():
+		return _pos(best).y
+	var c := _cell_center(cell)
+	return snappedf(Game.world_gen.get_height(c.x, c.z), 0.5)
+
+
 ## Where a building piece goes when the player aims at `aim` (a world point, from the ray
 ## when it hits something, or the ground). Returns {pos, yaw, level}.
 ## `prefer_yaw` (walls): the edge the preview was already on. Near a cell corner both edges are
@@ -312,7 +333,7 @@ static func snap_piece(kind: String, aim: Vector3, prefer_yaw := -1.0) -> Dictio
 	if kind == "foundation":
 		var stack := foundations_in(cell)
 		var level := 0
-		var y := Game.world_gen.get_height(c.x, c.z)
+		var y := ground_slab_y(cell)
 		if not stack.is_empty():
 			level = int(stack[-1].level) + 1
 			y = _pos(stack[-1]).y + STACK_H
@@ -358,25 +379,25 @@ static func placement_problem(pos: Vector3, kind := "", yaw := 0.0) -> String:
 	if pos.y < Game.SEA_LEVEL + 0.15:
 		return "Can't build in water"
 	if is_building(kind):
+		if kind == "foundation":
+			var sn := snap_piece(kind, pos)
+			pos = sn.pos
+			var cell_f := cell_of(pos)
+			var lvl_f: int = sn.level
+			if lvl_f > MAX_LEVEL:
+				return "Too high to build"
+			if lvl_f > 0 and not roof_in(cell_f, lvl_f - 1).is_empty():
+				return "A roof covers this spot"
+			if lvl_f == 0 and Game.world_gen.get_normal(pos.x, pos.z).y < 0.6:
+				return "Too steep here (the ground would need too much levelling)"
+			if TerrainEdit.tree_near(pos, 3.0) != null:
+				return "A tree is in the way. Chop it down first."
+			return ""
 		var cell := cell_of(pos)
 		if TerrainEdit.tree_near(pos, 2.0) != null:
 			return "A tree is in the way. Chop it down first."
 		var base := wall_base(pos, yaw) if kind in WALL_KINDS else base_y(cell)
 		var level := level_of(kind, pos.y, base)
-		if kind == "foundation":
-			if level < 0 or level > MAX_LEVEL:
-				return "Too high to build"
-			if not roof_in(cell, maxi(level - 1, 0)).is_empty() and level > 0:
-				return "A roof covers this spot"
-			if level == 0 and Game.world_gen.get_normal(pos.x, pos.z).y < 0.6:
-				return "Too steep here (the ground would need too much levelling)"
-			if not foundation_at(cell, level).is_empty():
-				return "There's already a foundation here"
-			if level > 0 and foundation_at(cell, level - 1).is_empty():
-				return "Stack it on a foundation"
-			if TerrainEdit.tree_near(pos, 3.0) != null:
-				return "A tree is in the way. Chop it down first."
-			return ""
 		if kind == "roof":
 			if foundation_at(cell, level).is_empty():
 				return "A roof needs a foundation under it"
@@ -417,14 +438,20 @@ static func place_structure(player_id: int, slot: int, pos: Vector3, yaw: float)
 	if problem != "":
 		return {"ok": false, "reason": problem}
 	var level := 0
-	if is_building(kind):
+	if kind == "foundation":
+		# placement_problem has snapped pos to the shared slab height; take that snap as the truth.
+		var sn := snap_piece(kind, pos)
+		pos = sn.pos
+		level = int(sn.level)
+		yaw = 0.0
+	elif is_building(kind):
 		level = level_of(kind, pos.y, wall_base(pos, yaw) if kind in WALL_KINDS else base_y(cell_of(pos)))
 	inv.take_from_slot(slot, 1)
 	var id := Game.new_entity_id("s")
 	var hp := 8 if is_building(kind) else 3
 	Game.structures[id] = {"id": id, "kind": kind, "pos": [pos.x, pos.y, pos.z], "yaw": yaw, "hp": hp, "level": level}
 	Game.structures_changed.emit()
-	return {"ok": true, "id": id, "kind": kind, "level": level}
+	return {"ok": true, "id": id, "kind": kind, "level": level, "pos": pos, "yaw": yaw}
 
 
 ## Why a building piece can't be taken down yet ("" if it can).

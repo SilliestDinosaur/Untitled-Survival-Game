@@ -122,9 +122,6 @@ func _draw() -> void:
 			draw_rect(Rect2(c + Vector2(-s * 0.34, -s * 0.16), Vector2(s * 0.68, s * 0.32)), info.get("color", Color(0.7, 0.5, 0.38)))
 			draw_line(c + Vector2(-s * 0.34, 0), c + Vector2(s * 0.34, 0), Color(0.35, 0.22, 0.15), 1.5)
 			draw_line(c + Vector2(0, -s * 0.16), c + Vector2(0, 0), Color(0.35, 0.22, 0.15), 1.5)
-		"dirt":
-			_blob(c, s * 0.32, Color(0.42, 0.3, 0.2), 8, 37)
-			draw_circle(c + Vector2(-s * 0.1, -s * 0.08), s * 0.05, Color(0.55, 0.42, 0.3))
 		"rope":
 			for i in 3:
 				draw_arc(c + Vector2(0, (i - 1) * s * 0.06), s * (0.28 - i * 0.03), 0, TAU, 20, Color(0.74, 0.64, 0.42).darkened(i * 0.08), s * 0.07, true)
@@ -206,14 +203,6 @@ func _tool(info: Dictionary, c: Vector2, s: float) -> void:
 	var a := c + Vector2(-s * 0.3, s * 0.32)
 	var b := c + Vector2(s * 0.22, -s * 0.24)
 	match String(t.type):
-		"shovel":
-			_capsule(c + Vector2(-s * 0.16, s * 0.36), c + Vector2(s * 0.08, -s * 0.12), s * 0.04, wood)
-			var spade := PackedVector2Array()
-			for i in 12:
-				var ang := TAU * i / 12.0
-				spade.append(c + Vector2(cos(ang) * s * 0.2 * 0.9 + s * 0.14, sin(ang) * s * 0.26 - s * 0.14))
-			draw_colored_polygon(spade, head)
-			draw_arc(c + Vector2(s * 0.14, -s * 0.14), s * 0.24, 0.6, 2.6, 10, head.lightened(0.3), 1.5)
 		"rock":
 			_blob(c, s * 0.3, Color(0.42, 0.44, 0.48), 6, 4)
 			draw_colored_polygon(PackedVector2Array([c + Vector2(-0.2, -0.15) * s, c + Vector2(0.05, -0.28) * s, c + Vector2(0.0, -0.02) * s]), Color(0.6, 0.62, 0.66))

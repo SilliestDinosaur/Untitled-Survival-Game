@@ -49,7 +49,9 @@ func _process(_d: float) -> bool:
 				_f = 0
 		1:
 			var snap: Dictionary = _GA.snap_piece("foundation", _spot + Vector3(0.4, 0, 0.3))
-			_check(snap.pos.distance_to(_spot) < 0.01, "foundation snaps to the cell centre")
+			var xz_off := Vector2(snap.pos.x - _spot.x, snap.pos.z - _spot.z).length()
+			_check(xz_off < 0.01, "foundation snaps to the cell centre")
+			_check(absf(snap.pos.y - snappedf(_game.world_gen.get_height(_spot.x, _spot.z), 0.5)) < 0.01, "a lone foundation sits at the ground height rounded to half a metre (%.2f)" % snap.pos.y)
 			var problem: String = _GA.placement_problem(snap.pos, "foundation", 0.0)
 			_check(problem == "", "foundation is allowed here (%s)" % problem)
 			var inv: Inventory = _game.inventory_of(1)
@@ -57,8 +59,7 @@ func _process(_d: float) -> bool:
 			var placed: Dictionary = _GA.place_structure(1, slot, snap.pos, 0.0)
 			_check(placed.ok, "foundation placed")
 			if placed.ok:
-				var lev: Dictionary = _Terrain.apply({"mode": _Terrain.Mode.FLATTEN, "x": snap.pos.x, "z": snap.pos.z, "r": 3.0, "s": 1.0, "target": snap.pos.y}, inv)
-				_Terrain.commit(lev.cells)
+				_Terrain.commit(_Terrain.level_ground(placed.pos, 1.5, 1.5, 0.0, placed.pos.y))
 				var h_corner: float = _game.world_gen.get_height(snap.pos.x + 1.4, snap.pos.z + 1.4)
 				_check(absf(h_corner - snap.pos.y) < 0.4, "ground under the slab is levelled (corner %.2f vs %.2f)" % [h_corner, snap.pos.y])
 			_step = 2
@@ -80,8 +81,8 @@ func _process(_d: float) -> bool:
 			# The same spot again is refused.
 			var again: String = _GA.placement_problem(wsnap.pos, "wall", wsnap.yaw)
 			_check(again != "", "a second wall in the same place is refused: %s" % again)
-			var dup: String = _GA.placement_problem(_spot, "foundation", 0.0)
-			_check(dup != "", "a second foundation in the same cell is refused: %s" % dup)
+			var dup: Dictionary = _GA.snap_piece("foundation", _spot)
+			_check(dup.level == 1, "a foundation aimed at a cell that already has one stacks a storey up (level %d)" % dup.level)
 			_step = 3
 		3:
 			_check(_game.structures.size() >= 2, "both pieces are in the world (%d)" % _game.structures.size())
@@ -125,13 +126,13 @@ func _process(_d: float) -> bool:
 					aligned = false
 					print("   misaligned: aim ", aim, " foundation ", f, " wall ", w.pos)
 			_check(aligned, "foundations sit on cell centres and walls on cell edges")
-			# Trees: digging right next to one is refused.
+			# Trees: a foundation right next to one is refused.
 			var tree: Variant = TerrainEditScript.tree_near(_spot + Vector3(40, 0, 0), 60.0)
 			_check(true, "tree search runs (%s)" % str(tree != null))
 			if tree != null:
-				var inv: Inventory = _game.inventory_of(1)
-				var dug: Dictionary = TerrainEditScript.apply({"mode": 0, "x": tree.x, "z": tree.z, "r": 1.0, "s": 0.2}, inv)
-				_check(not dug.ok, "digging next to a tree is refused: %s" % dug.get("reason", ""))
+				var tp: Vector3 = Vector3(tree.x, _game.world_gen.get_height(tree.x, tree.z), tree.z)
+				var refused: String = _GA.placement_problem(tp, "foundation", 0.0)
+				_check(refused.begins_with("A tree"), "foundation next to a tree is refused: %s" % refused)
 			_step = 4
 		4:
 			# A foundation with walls standing on it can't be taken down.
