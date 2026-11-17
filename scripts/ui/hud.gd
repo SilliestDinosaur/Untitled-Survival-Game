@@ -193,6 +193,24 @@ func show_arrival(world_name: String) -> void:
 	tw.tween_property(_banner, "modulate:a", 0.0, 1.5)
 
 
+## Bearings and colours of the other players, for the compass (north = -Z).
+func _friend_markers() -> Array:
+	var out := []
+	if not Net.is_online():
+		return out
+	var here: Vector3 = player.global_position
+	for peer: int in Net.avatars:
+		var a = Net.avatars[peer]
+		if not a.has_pose:
+			continue
+		var d: Vector3 = a.global_position - here
+		if Vector2(d.x, d.z).length() < 1.0:
+			continue
+		var bearing := fposmod(rad_to_deg(atan2(d.x, -d.z)), 360.0)
+		out.append({"bearing": bearing, "name": a.display_name, "color": Settings.PLAYER_COLORS[int(Net.players.get(peer, {}).get("color", 0)) % Settings.PLAYER_COLORS.size()]})
+	return out
+
+
 func _update_clock() -> void:
 	var night := Game.is_night()
 	_clock.text = "%s  Day %d  ·  %s" % ["☾" if night else "☀", Game.day, Game.clock_text()]
@@ -245,6 +263,7 @@ func _process(delta: float) -> void:
 	(_cold_fx.material as ShaderMaterial).set_shader_parameter("intensity", chill * 0.55)
 
 	_compass.heading = fposmod(-rad_to_deg(player.rotation.y), 360.0)
+	_compass.markers = _friend_markers()
 	_compass.queue_redraw()
 	_update_clock()
 

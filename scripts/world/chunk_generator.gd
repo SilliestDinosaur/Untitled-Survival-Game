@@ -204,8 +204,14 @@ static func _place_resources(coord: Vector2i, origin: Vector3, gen: WorldGen, fl
 		if h < 1.4 or h > 6.0 or gen.get_normal(a.x, a.z).y < 0.85 or gen.get_climate(a.x, a.z, h).x < 0.45 or a.r_place > 0.35:
 			counter[0] += 1
 			continue
-		# Palms belong to the jungle: only where it's the dominant climate.
-		if gen.get_biome_weights(gen.get_climate(a.x, a.z, h))[Biome.JUNGLE] < 0.45:
+		# Palms belong on beaches: warm shoreline, with the sea within a few meters.
+		var near_sea := false
+		for k in 4:
+			var ang := TAU * k / 4.0
+			if gen.get_height(a.x + cos(ang) * 9.0, a.z + sin(ang) * 9.0) < 0.0:
+				near_sea = true
+				break
+		if not near_sea:
 			counter[0] += 1
 			continue
 		add.call("palm", a.variant, Vector3(a.x, h - 0.1, a.z), a.yaw, Vector3.ONE * a.scl)

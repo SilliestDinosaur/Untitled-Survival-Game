@@ -3,6 +3,8 @@ extends Control
 ## A parchment ribbon compass with ink bearings. North is -Z.
 
 var heading := 0.0   ## degrees, 0 = north, 90 = east
+## Other players: [{bearing: degrees from north, name, color}] shown as dots on the strip.
+var markers: Array = []
 const SPAN := 150.0  ## degrees visible across the strip
 const LETTERS := {0: "N", 45: "NE", 90: "E", 135: "SE", 180: "S", 225: "SW", 270: "W", 315: "NW"}
 
@@ -33,4 +35,16 @@ func _draw() -> void:
 			draw_string(font, Vector2(x - tw * 0.5, 27), txt, HORIZONTAL_ALIGNMENT_LEFT, -1, fs, col)
 		else:
 			draw_line(Vector2(x, 14), Vector2(x, 24), Color(UITheme.INK, 0.45 * fade), 1.5, true)
+	for m: Dictionary in markers:
+		var diff := wrapf(float(m.bearing) - heading, -180.0, 180.0)
+		if absf(diff) > SPAN * 0.5:
+			continue
+		var x := mid + diff / (SPAN * 0.5) * (w * 0.5 - 30)
+		var at := Vector2(x, 7.0)
+		draw_circle(at, 7.5, Color(0.12, 0.09, 0.07, 0.85))
+		draw_circle(at, 5.8, m.color)
+		var font := UITheme.BOLD_FONT
+		var initial: String = String(m.name).substr(0, 1).to_upper()
+		var iw := font.get_string_size(initial, HORIZONTAL_ALIGNMENT_LEFT, -1, 11).x
+		draw_string(font, at + Vector2(-iw * 0.5, 4.0), initial, HORIZONTAL_ALIGNMENT_LEFT, -1, 11, Color(1, 1, 1))
 	draw_colored_polygon(PackedVector2Array([Vector2(mid - 6, size.y + 4), Vector2(mid + 6, size.y + 4), Vector2(mid, size.y - 4)]), UITheme.ACCENT)
