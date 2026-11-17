@@ -37,6 +37,7 @@ var _continent := FastNoiseLite.new()  # big rolling lowlands
 var _ranges := FastNoiseLite.new()     # where mountain ranges run
 var _ridge := FastNoiseLite.new()      # warped, weighted ridges (range crests + spurs)
 var _detail := FastNoiseLite.new()     # small bumps + coastline wobble
+var _coast := FastNoiseLite.new()      # bays and headlands along the coast
 var _temperature := FastNoiseLite.new()
 var _moisture := FastNoiseLite.new()
 var _forest := FastNoiseLite.new()     # clumping of trees inside a biome
@@ -79,6 +80,10 @@ func _init(seed_value: int, pal: WorldPalette) -> void:
 	_ridge.domain_warp_fractal_type = FastNoiseLite.DOMAIN_WARP_FRACTAL_PROGRESSIVE
 	_ridge.domain_warp_fractal_octaves = 2
 
+	_coast.seed = seed_value + 10
+	_coast.noise_type = FastNoiseLite.TYPE_SIMPLEX_SMOOTH
+	_coast.frequency = rng.randf_range(0.0012, 0.0018)
+	_coast.fractal_octaves = 3
 	_detail.seed = seed_value + 2
 	_detail.frequency = 0.02
 	_detail.fractal_octaves = 2
@@ -147,7 +152,9 @@ func get_base_height(x: float, z: float) -> float:
 	var dx := (x - half) / half
 	var dz := (z - half) / half
 	# Island mask: 1 in the middle, fades to 0 near the map edge, with a wobbly coastline.
-	var coast := sqrt(dx * dx + dz * dz) + _detail.get_noise_2d(x * 0.12, z * 0.12) * 0.12
+	# Bays and headlands: a broad wobble for the big shape, a finer one for the rocky edge.
+	var coast_raw := sqrt(dx * dx + dz * dz) + _coast.get_noise_2d(x, z) * 0.13 + _detail.get_noise_2d(x * 0.12, z * 0.12) * 0.035
+	var coast := coast_raw + _detail.get_noise_2d(x * 0.12, z * 0.12) * 0.09
 	var mask := 1.0 - smoothstep(0.55, 0.92, coast)
 
 	var c := _continent.get_noise_2d(x, z) * 0.5 + 0.5          # 0..1
@@ -166,6 +173,9 @@ func get_base_height(x: float, z: float) -> float:
 	var bumps := _detail.get_noise_2d(x, z) * 0.9
 
 	var land := 3.0 + lowlands + foothills + mountains + bumps
+	# Beaches: the lowest ground by the sea is a gentle, nearly flat strip.
+	var beach := (1.0 - smoothstep(1.2, 5.0, land)) * smoothstep(0.5, 0.8, coast)
+	land = lerpf(land, 1.4 + bumps * 0.18, beach * 0.7)
 	# Marshes sit low and flat.
 	var wet := smoothstep(0.82, 0.95, get_moisture(x, z))
 	land = lerpf(land, 2.4 + bumps * 0.5, wet * (1.0 - range_t) * 0.85)
@@ -180,7 +190,10 @@ func get_base_height(x: float, z: float) -> float:
 		var stepped := (floorf(f) + smoothstep(0.6, 0.95, f - floorf(f))) * step
 		land = lerpf(land, lerpf(raised, stepped, 0.6), smoothstep(0.0, 0.5, bad))
 	land = _carve_water(x, z, land, range_t, mask, bumps)
-	return lerpf(-25.0, land, mask)
+	# The seabed: a shallow shelf that drops away gradually offshore.
+	var offshore := smoothstep(0.5, 0.95, coast_raw)
+	var seabed := lerpf(-2.5, -24.0, offshore) + bumps * 0.6 * offshore
+	return lerpf(seabed, land, mask)
 
 
 ## How strongly the badlands climate holds here (ignores altitude so terraces stay put).

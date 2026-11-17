@@ -34,6 +34,15 @@ func _process(_d: float) -> bool:
 				_spot.x = floorf(_spot.x / 3.0) * 3.0 + 1.5   # centre of a grid cell
 				_spot.z = floorf(_spot.z / 3.0) * 3.0 + 1.5
 				_spot.y = _game.world_gen.get_height(_spot.x, _spot.z)
+				# Find a clear cell: no trees close by (the test needs room to build).
+				for k in 200:
+					var cand := _spot + Vector3((k % 14 - 7) * 3.0, 0, (k / 14 - 7) * 3.0)
+					cand.x = floorf(cand.x / 3.0) * 3.0 + 1.5
+					cand.z = floorf(cand.z / 3.0) * 3.0 + 1.5
+					cand.y = _game.world_gen.get_height(cand.x, cand.z)
+					if TerrainEditScript.tree_near(cand, 6.0) == null and _game.world_gen.get_height(cand.x, cand.z) > 2.0:
+						_spot = cand
+						break
 				_game.inventory_of(1).add("foundation", 2, true)
 				_game.inventory_of(1).add("wall", 2, true)
 				_step = 1
