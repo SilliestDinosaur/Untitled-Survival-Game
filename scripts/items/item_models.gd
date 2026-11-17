@@ -65,61 +65,162 @@ static func mesh_for(id: String, material: Material) -> ArrayMesh:
 
 # --- Shared parts ---------------------------------------------------------------------
 
-## Handle from y = -0.1 (butt) to `length`. Tier changes wood, shape and grip.
-static func _handle(k: MeshKit, length: float, tier: int, radius := 0.016) -> void:
+## Cheap smooth-ish noise for hammered metal and wood grain (deterministic, no textures).
+static func _n2(p: Vector2, f: float) -> float:
+	return sin(p.x * f * 1.7 + sin(p.y * f * 1.3) * 1.5) * cos(p.y * f * 1.1 + sin(p.x * f * 0.9))
+
+
+## Materials per tier: {base, edge (honed / polished), dark (recesses), fitting (bands, collars)}
+static func _metal(tier: int, col: Color) -> Dictionary:
+	match tier:
+		1: return {"base": Color(0.36, 0.38, 0.44), "edge": Color(0.62, 0.64, 0.7), "dark": Color(0.26, 0.27, 0.32), "fitting": CORD}
+		2: return {"base": col, "edge": col.lightened(0.42), "dark": col.darkened(0.35), "fitting": col.darkened(0.25)}
+		3: return {"base": col.darkened(0.08), "edge": col.lightened(0.55), "dark": col.darkened(0.45), "fitting": Color(0.34, 0.33, 0.36)}
+		4: return {"base": col, "edge": col.lightened(0.6), "dark": col.darkened(0.3), "fitting": GOLD}
+		_: return {"base": DUSK, "edge": DUSK_GLOW, "dark": Color(0.1, 0.07, 0.13), "fitting": DUSK_GLOW.darkened(0.35)}
+
+
+## Surface color for a sculpted head: honed edge band, hammered or knapped body, by tier.
+static func _head_color(tier: int, m: Dictionary, edge: PackedVector2Array, band := 0.012) -> Callable:
+	return func(p: Vector2, th: float) -> Color:
+		var c: Color = m.base
+		match tier:
+			1:   # knapped flint: patchy facets
+				var cell := Vector2(floorf(p.x * 70.0 + sin(p.y * 90.0) * 0.8), floorf(p.y * 70.0 + sin(p.x * 80.0) * 0.8))
+				var h := fposmod(sin(cell.x * 12.99 + cell.y * 78.23) * 437.5, 1.0)
+				c = c.lightened(h * 0.18).darkened((1.0 - h) * 0.08)
+			2:   # cast and hammered: soft mottling
+				c = c.lightened(_n2(p, 140.0) * 0.07)
+			3:   # forged: faint fold lines along the head
+				c = c.darkened(0.06 if fposmod(p.y * 160.0 + _n2(p, 40.0) * 0.6, 1.0) < 0.12 else 0.0)
+			4:   # crystal: facets catch the light differently
+				var cell := Vector2i(floori(p.x * 45.0 + p.y * 20.0), floori(p.y * 45.0 - p.x * 15.0))
+				c = c.lightened(fposmod(sin(cell.x * 3.7 + cell.y * 5.1) * 91.3, 1.0) * 0.25)
+			_:   # dusk: dark metal with faint veins
+				c = c.lerp(DUSK_GLOW, 0.25 if absf(_n2(p, 70.0)) < 0.06 else 0.0)
+		if not edge.is_empty():
+			var d := MeshKit.dist_to_polyline(p, edge)
+			# Grind line: a slightly darker bevel band, then the bright honed edge.
+			if tier != 1 and d > band and d < band * 2.4:
+				c = c.darkened(0.08)
+			c = c.lerp(m.edge, 1.0 - smoothstep(band * 0.3, band, d))
+		return c
+
+
+## Thickness for a head: thin at the cutting edge, `body` thick inside, swelling to `eye`
+## around the handle (x within eye_r of 0) so the head visibly wraps it.
+static func _head_thickness(edge: PackedVector2Array, body: float, falloff: float, eye: float, eye_r: float, edge_min := 0.0012) -> Callable:
+	return func(p: Vector2) -> float:
+		var t := lerpf(edge_min, body, smoothstep(0.0, falloff, MeshKit.dist_to_polyline(p, edge)))
+		if eye > 0.0:
+			t = maxf(t, eye * (1.0 - smoothstep(eye_r, eye_r + 0.016, absf(p.x))))
+		return t
+
+
+## A handle from y = -0.1 (butt) to `length`: oval section, swelling knob at the butt, a gentle
+## curve (`curve` > 0 bows it forward like an axe haft), wood grain, and per-tier grip work.
+static func _handle(k: MeshKit, length: float, tier: int, radius := 0.016, curve := 0.0) -> void:
 	var rng := RandomNumberGenerator.new()
 	rng.seed = tier * 31 + int(length * 1000)
 	var path: Array = []
 	var radii: Array = []
-	var steps := 18
+	var steps := 22
 	for i in steps + 1:
 		var t := float(i) / steps
 		var y := lerpf(-0.1, length, t)
-		var bend := Vector3.ZERO
-		if tier == 1:   # crooked branch
-			bend = Vector3(sin(t * 5.0 + rng.randf()) * 0.006, 0, sin(t * 3.0) * 0.008)
-		else:           # gentle ergonomic curve
-			bend = Vector3(0, 0, sin(t * PI) * 0.008)
+		var bend := Vector3(0, 0, -sin(t * PI) * curve + sin(t * PI * 2.0) * curve * 0.25)
+		if tier == 1:   # a crooked branch
+			bend += Vector3(sin(t * 7.0 + rng.randf()) * 0.004, 0, sin(t * 4.0) * 0.006)
 		path.append(Vector3(0, y, 0) + bend)
-		var r := radius * (1.12 - t * 0.18)
-		if tier >= 3 and t < 0.08:
-			r *= 1.25   # flared butt
+		var r := radius * (1.06 - t * 0.12)
+		r *= 1.0 + 0.32 * exp(-pow(t / 0.05, 2.0))   # knob at the butt
 		radii.append(r)
-	var wood := BARK if tier == 1 else (DARK_WOOD if tier >= 4 else WOOD.lightened(0.05 * tier))
-	var grip_to := 0.13
-	var wrap := LEATHER if tier < 5 else Color(0.32, 0.18, 0.42)
+	var wood := BARK if tier == 1 else (DARK_WOOD if tier >= 4 else WOOD.lightened(0.04 * tier))
 	var col_fn := func(t: float, ang: float) -> Color:
 		var y := lerpf(-0.1, length, t)
-		if tier >= 2 and y > -0.07 and y < grip_to:
-			# Spiral leather wrap with dark seams.
-			return wrap.darkened(0.25) if fposmod(y * 90.0 + ang / TAU, 1.0) < 0.18 else wrap
 		if tier == 1:
-			return wood.darkened(0.12) if fposmod(ang * 1.7 + y * 40.0, 1.0) < 0.3 else wood   # bark ridges
-		return wood.darkened(0.06) if fposmod(y * 25.0 + sin(ang) * 0.3, 1.0) < 0.15 else wood   # grain
-	k.loft(path, radii, 16, wood, col_fn, Callable(), true, true, 0.0015 if tier == 1 else 0.0)
-	if tier >= 3:   # pommel
-		var pc := GOLD if tier == 4 else (DUSK_GLOW if tier == 5 else Color(0.62, 0.6, 0.58))
-		k.loft([Vector3(0, -0.118, 0), Vector3(0, -0.1, 0), Vector3(0, -0.085, 0)], [0.012, radius * 1.5, radius * 1.1], 18, pc)
-
-
-## A ring around the handle where the head sits: cord lashing, metal collar or gold band.
-static func _binding(k: MeshKit, y: float, tier: int, radius := 0.02, height := 0.04) -> void:
+			return wood.darkened(0.14) if fposmod(ang * 1.9 + y * 35.0 + sin(y * 60.0), 1.0) < 0.28 else wood   # bark ridges
+		var grain := sin(ang * 3.0 + y * 8.0 + sin(y * 30.0 + ang) * 1.2)
+		var c := wood.darkened(0.08 * (grain * 0.5 + 0.5))
+		if t < 0.03:
+			c = wood.lightened(0.12)   # end grain at the butt
+		return c
+	k.loft(path, radii, 14, wood, col_fn, func(_t: float, _a: float) -> Vector2: return Vector2(1.0, 0.82), true, true, 0.0018 if tier == 1 else 0.0)
 	if tier == 1:
-		# Fiber cord wound in a criss-cross: several tilted rings.
-		for i in 5:
-			var yy := y - height * 0.5 + height * i / 4.0
-			var tilt := 0.35 if i % 2 == 0 else -0.35
-			var ring: Array = []
-			var radii: Array = []
-			for j in 13:
-				var a := TAU * j / 12.0
-				ring.append(Vector3(cos(a) * radius, yy + sin(a) * radius * tilt, sin(a) * radius))
-				radii.append(0.0035)
-			k.loft(ring, radii, 5, CORD.darkened(0.05 * (i % 2)), Callable(), Callable(), false, false)
+		# Knots where twigs were trimmed off.
+		for i in 3:
+			var t := rng.randf_range(0.25, 0.75)
+			var at: Vector3 = path[int(t * steps)]
+			var a := rng.randf() * TAU
+			var d := Vector3(cos(a), 0.2, sin(a)).normalized()
+			k.loft([at, at + d * radius * 1.35], [radius * 0.55, radius * 0.4], 6, BARK.darkened(0.15), Callable(), Callable(), false, true)
 		return
-	var c := Color(0.55, 0.5, 0.45) if tier <= 3 else (GOLD if tier == 4 else DUSK)
-	k.loft([Vector3(0, y - height * 0.5, 0), Vector3(0, y - height * 0.45, 0), Vector3(0, y + height * 0.45, 0), Vector3(0, y + height * 0.5, 0)],
-		[radius * 0.85, radius, radius, radius * 0.85], 20, c)
+	# Grip: a leather thong wound around the lower handle, with a metal or gold end band.
+	var wrap := LEATHER if tier < 5 else Color(0.3, 0.17, 0.4)
+	if tier == 4:
+		wrap = DARK_WOOD.darkened(0.3)
+	var helix: Array = []
+	var hr: Array = []
+	var y0 := -0.075
+	var y1 := 0.09
+	var turns := (y1 - y0) / 0.0105
+	var count := int(turns * 10)
+	for i in count + 1:
+		var t := float(i) / count
+		var a := t * turns * TAU
+		var y := lerpf(y0, y1, t)
+		var base: Vector3 = path[int(clampf((y + 0.1) / (length + 0.1), 0.0, 1.0) * steps)]
+		var r: float = radius * 1.02
+		helix.append(Vector3(base.x + cos(a) * r, y, base.z + sin(a) * r * 0.82))
+		hr.append(0.0042)
+	k.loft(helix, hr, 5, wrap, func(_t: float, a: float) -> Color: return wrap.darkened(0.2) if sin(a * 2.0) > 0.6 else wrap, Callable(), true, true)
+	var band: Color = _metal(tier, Color.WHITE).fitting if tier != 2 else Color(0.5, 0.42, 0.34)
+	for y in [y1 + 0.004, y0 - 0.006]:
+		var base: Vector3 = path[int(clampf((y + 0.1) / (length + 0.1), 0.0, 1.0) * steps)]
+		k.loft([Vector3(base.x, y - 0.005, base.z), Vector3(base.x, y + 0.005, base.z)], [radius * 1.18, radius * 1.18], 14, band,
+			Callable(), func(_t: float, _a: float) -> Vector2: return Vector2(1.0, 0.84), true, true)
+	if tier >= 3:   # pommel cap
+		var pc: Color = GOLD if tier == 4 else (DUSK_GLOW if tier == 5 else Color(0.5, 0.49, 0.52))
+		k.loft([Vector3(0, -0.122, 0), Vector3(0, -0.112, 0), Vector3(0, -0.098, 0)], [0.008, radius * 1.45, radius * 1.3], 16, pc)
+
+
+## Cord lashing: a few tight wraps around the handle above and below the head, and an X of
+## cord over the head itself. `half` = half the head's thickness at the handle.
+static func _lashing(k: MeshKit, y: float, half_h: float, radius: float, half: float) -> void:
+	for band in [y - half_h - 0.012, y + half_h + 0.004]:
+		for i in 4:
+			var yy: float = band + i * 0.0042
+			var ring: Array = []
+			var rr: Array = []
+			for j in 15:
+				var a := TAU * j / 14.0
+				ring.append(Vector3(cos(a) * (radius + 0.002), yy + sin(a * 2.0) * 0.0012, sin(a) * (radius + 0.002)))
+				rr.append(0.0028)
+			k.loft(ring, rr, 5, CORD.darkened(0.04 * (i % 2)), Callable(), Callable(), false, false)
+	for side in [-1.0, 1.0]:
+		var x: float = side * (half + 0.002)
+		for d in [-1.0, 1.0]:
+			k.loft([Vector3(x, y - half_h - 0.008, d * 0.016), Vector3(x * 1.08, y, 0.0), Vector3(x, y + half_h + 0.008, -d * 0.016)],
+				[0.0028, 0.003, 0.0028], 5, CORD.lightened(0.05))
+
+
+## A few turns of cord around the handle (torch head).
+static func _binding(k: MeshKit, y: float, _tier: int, radius := 0.02, height := 0.04) -> void:
+	for i in 5:
+		var yy := y - height * 0.5 + height * i / 4.0
+		var ring: Array = []
+		var rr: Array = []
+		for j in 15:
+			var a := TAU * j / 14.0
+			ring.append(Vector3(cos(a) * radius, yy + sin(a * 2.0) * 0.0012, sin(a) * radius))
+			rr.append(0.0032)
+		k.loft(ring, rr, 5, CORD.darkened(0.05 * (i % 2)), Callable(), Callable(), false, false)
+
+
+## A metal ring around the handle (collars on forged heads).
+static func _collar(k: MeshKit, y: float, radius: float, h: float, col: Color) -> void:
+	k.loft([Vector3(0, y - h * 0.5, 0), Vector3(0, y - h * 0.4, 0), Vector3(0, y + h * 0.4, 0), Vector3(0, y + h * 0.5, 0)],
+		[radius * 0.9, radius, radius, radius * 0.9], 16, col, Callable(), func(_t: float, _a: float) -> Vector2: return Vector2(1.0, 0.84))
 
 
 static func _knap(outline: PackedVector2Array, seed_value: int, amount: float) -> PackedVector2Array:
@@ -141,169 +242,244 @@ static func _arc(center: Vector2, radius: float, from_deg: float, to_deg: float,
 
 
 static func _head_colors(tier: int, col: Color) -> Array:
-	# [face color, edge color]
-	match tier:
-		1: return [STONE, STONE.lightened(0.28)]
-		2: return [col, col.lightened(0.22)]
-		3: return [col.darkened(0.05), col.lightened(0.45)]
-		4: return [col, col.lightened(0.5)]
-		_: return [DUSK, DUSK_GLOW]
+	var m := _metal(tier, col)
+	return [m.base, m.edge]
 
 
 # --- Hatchets ---------------------------------------------------------------------------
+# Head outlines are drawn with x = forward (the blade side) and y = up; the handle passes
+# through x = 0. FORWARD_PLANE turns that into the model's -Z forward.
 
 static func _hatchet(k: MeshKit, tier: int, col: Color) -> void:
-	var top := 0.32
-	_handle(k, top + 0.045, tier, 0.017)
-	var c := _head_colors(tier, col)
+	var top := 0.34
+	var m := _metal(tier, col)
+	var hr := 0.016
+	_handle(k, top + 0.05, tier, hr, 0.012 if tier > 1 else 0.0)
 	var outline: PackedVector2Array
-	var thick := 0.026
-	var bevel := 0.014
+	var edge: PackedVector2Array
+	var body := 0.016
+	var falloff := 0.05
 	match tier:
-		1:
-			outline = _knap(PackedVector2Array([Vector2(0.0, 0.03), Vector2(0.05, 0.045), Vector2(0.105, 0.035), Vector2(0.12, -0.005), Vector2(0.1, -0.04), Vector2(0.05, -0.04), Vector2(0.0, -0.028)]), 11, 0.006)
-			thick = 0.032
+		1:   # a knapped flint celt jammed through the split handle
+			edge = _arc(Vector2(0.06, 0.0), 0.058, -70, 70, 8)
+			outline = PackedVector2Array([Vector2(-0.03, -0.018), Vector2(0.01, -0.04)])
+			outline.append_array(edge)
+			outline.append_array(PackedVector2Array([Vector2(0.01, 0.04), Vector2(-0.03, 0.018), Vector2(-0.04, 0.0)]))
+			outline = _knap(outline, 11, 0.004)
+			edge = _knap(edge, 11, 0.0)
+			body = 0.03
+			falloff = 0.06
 			k.flat_shading = true
-		2:
-			outline = PackedVector2Array([Vector2(-0.02, 0.022), Vector2(0.05, 0.026), Vector2(0.09, 0.05), Vector2(0.105, 0.02), Vector2(0.108, -0.02), Vector2(0.09, -0.055), Vector2(0.055, -0.03), Vector2(-0.02, -0.022)])
-		3:
-			outline = PackedVector2Array([Vector2(-0.03, 0.02), Vector2(0.045, 0.022)])
-			outline.append_array(_arc(Vector2(0.055, -0.005), 0.07, 70, -80, 8))
-			outline.append_array(PackedVector2Array([Vector2(0.05, -0.035), Vector2(-0.03, -0.02)]))
-			thick = 0.022
-			bevel = 0.02
-		4:
-			outline = PackedVector2Array([Vector2(-0.015, 0.024), Vector2(0.05, 0.065), Vector2(0.125, 0.045), Vector2(0.14, -0.01), Vector2(0.11, -0.07), Vector2(0.04, -0.035), Vector2(-0.015, -0.024)])
+		2:   # cast bearded axe with a rounded poll
+			edge = PackedVector2Array([Vector2(0.112, -0.074), Vector2(0.13, -0.044), Vector2(0.14, -0.005), Vector2(0.137, 0.03), Vector2(0.122, 0.054)])
+			outline = PackedVector2Array([Vector2(-0.036, 0.024), Vector2(-0.046, 0.0), Vector2(-0.036, -0.024), Vector2(0.022, -0.028), Vector2(0.05, -0.038), Vector2(0.085, -0.066)])
+			outline.append_array(edge)
+			outline.append_array(PackedVector2Array([Vector2(0.09, 0.04), Vector2(0.05, 0.03), Vector2(0.022, 0.028)]))
+		3:   # forged: long hooked beard, flat hammer poll
+			edge = _arc(Vector2(0.07, -0.018), 0.07, -80, 58, 10)
+			outline = PackedVector2Array([Vector2(-0.058, 0.022), Vector2(-0.058, -0.022), Vector2(-0.02, -0.026), Vector2(0.025, -0.028), Vector2(0.045, -0.045), Vector2(0.06, -0.075)])
+			outline.append_array(edge.slice(1))
+			outline.append_array(PackedVector2Array([Vector2(0.11, 0.045), Vector2(0.06, 0.03), Vector2(0.024, 0.028)]))
+			body = 0.014
+		4:   # crystal: an angular faceted wedge set in a gold socket
+			edge = PackedVector2Array([Vector2(0.108, -0.072), Vector2(0.142, -0.02), Vector2(0.15, 0.025), Vector2(0.128, 0.064)])
+			outline = PackedVector2Array([Vector2(-0.03, 0.026), Vector2(-0.03, -0.026), Vector2(0.03, -0.032), Vector2(0.07, -0.062)])
+			outline.append_array(edge)
+			outline.append_array(PackedVector2Array([Vector2(0.07, 0.05), Vector2(0.03, 0.03)]))
+			body = 0.022
 			k.flat_shading = true
-			bevel = 0.022
-		_:
-			outline = PackedVector2Array([Vector2(-0.065, 0.0), Vector2(-0.03, 0.02), Vector2(0.03, 0.025)])
-			outline.append_array(_arc(Vector2(0.06, 0.0), 0.08, 85, -95, 9))
-			outline.append_array(PackedVector2Array([Vector2(0.075, -0.045), Vector2(0.03, -0.025), Vector2(-0.03, -0.02)]))
-			thick = 0.024
-			bevel = 0.022
-	var scaled := PackedVector2Array()
-	for p in outline:
-		scaled.append(p * 1.4)
-	k.extrude(scaled, Transform3D(FORWARD_PLANE, Vector3(0, top, 0)), thick * 1.25, bevel * 1.3, c[0], c[1])
+		_:   # dusk: deep crescent with a back spike
+			edge = _arc(Vector2(0.06, 0.0), 0.095, -82, 82, 12)
+			outline = PackedVector2Array([Vector2(-0.098, 0.0), Vector2(-0.03, -0.022), Vector2(0.03, -0.03)])
+			outline.append_array(edge)
+			outline.append_array(PackedVector2Array([Vector2(0.075, 0.03), Vector2(0.03, 0.03), Vector2(-0.03, 0.022)]))
+			body = 0.015
+	var eye := hr * 2.0 + 0.012 if tier > 1 else 0.0
+	var xf := Transform3D(FORWARD_PLANE, Vector3(0, top, 0))
+	k.sculpt(outline, xf, _head_thickness(edge, body, falloff, eye, hr + 0.006), _head_color(tier, m, edge, 0.011), 2, 0.007)
 	k.flat_shading = false
-	_binding(k, top, tier, 0.022, 0.055 if tier == 1 else 0.04)
-	if tier == 5:   # glowing inlay line along the blade
-		k.loft([Vector3(0, top + 0.01, -0.03), Vector3(0, top + 0.015, -0.08), Vector3(0, top - 0.01, -0.11)], [0.004, 0.004, 0.003], 5, DUSK_GLOW, Callable(), Callable(), true, true)
+	match tier:
+		1: _lashing(k, top, 0.03, hr, 0.016)
+		3:
+			_collar(k, top + 0.034, hr * 1.35, 0.008, m.fitting)
+			_collar(k, top - 0.034, hr * 1.35, 0.008, m.fitting)
+		4:
+			_collar(k, top + 0.031, hr * 1.45, 0.012, GOLD)
+			_collar(k, top - 0.031, hr * 1.45, 0.012, GOLD)
+		5:   # glowing inlay along the edge
+			var inlay := PackedVector2Array()
+			for p in _arc(Vector2(0.06, 0.0), 0.075, -60, 60, 8):
+				inlay.append(p)
+			var path: Array = []
+			var rr: Array = []
+			for p in inlay:
+				path.append(xf * Vector3(p.x, p.y, 0.0085))
+				rr.append(0.0022)
+			k.loft(path, rr, 5, DUSK_GLOW, Callable(), Callable(), true, true)
+			path = []
+			for p in inlay:
+				path.append(xf * Vector3(p.x, p.y, -0.0085))
+			k.loft(path, rr, 5, DUSK_GLOW, Callable(), Callable(), true, true)
+	if tier > 1:   # wedge driven into the top of the handle
+		k.loft([Vector3(0, top + 0.038, 0), Vector3(0, top + 0.05, 0)], [hr * 0.95, hr * 0.85], 12, WOOD.lightened(0.1),
+			func(t: float, _a: float) -> Color: return DARK_WOOD if t > 0.9 else WOOD.lightened(0.1))
 
 
 # --- Pickaxes ---------------------------------------------------------------------------
 
 static func _pickaxe(k: MeshKit, tier: int, col: Color) -> void:
-	var top := 0.34
-	_handle(k, top + 0.035, tier, 0.017)
-	var c := _head_colors(tier, col)
-	var sides := 14
-	if tier in [1, 4]:
-		k.flat_shading = true
-		sides = 5
-	var head_r := 0.028 + tier * 0.003
-	# The head is one lofted curve through the handle: tapered spikes on both ends.
-	var front_len := 0.15 + tier * 0.012
-	var back_len := 0.04 if tier == 1 else (0.13 if tier != 3 else 0.11)
-	var droop := 0.05
-	var path: Array = []
-	var radii: Array = []
-	var steps := 22
-	for i in steps + 1:
-		var t := float(i) / steps
-		var x := lerpf(back_len, -front_len, t)        # +z back, -z front
-		var y := top - droop * pow(x / (front_len if x < 0.0 else maxf(back_len, 0.01)), 2.0)
-		path.append(Vector3(0, y, x))
-		var to_tip := 1.0 - absf(lerpf(-1.0, 1.0, t))   # 1 at the middle, 0 at tips
-		radii.append(lerpf(0.004, head_r, pow(to_tip, 0.4)))
-	var shape := func(t: float, a: float) -> Vector2:
-		# Diamond-ish cross-section; the back end of tier-3 heads flattens into a chisel.
-		if tier == 3 and t < 0.25:
-			return Vector2(1.6, 0.45)
-		return Vector2(1.0, 0.75)
-	var head_col := func(t: float, a: float) -> Color:
-		var tip := absf(lerpf(-1.0, 1.0, t))
-		return c[0].lerp(c[1], smoothstep(0.65, 1.0, tip))   # brighter worn points
+	var top := 0.35
+	var m := _metal(tier, col)
+	var hr := 0.017
+	_handle(k, top + 0.04, tier, hr)
 	if tier == 1:
-		# A single knapped stone point lashed on, no back spike.
-		path = path.slice(steps / 3, steps + 1)
-		radii = radii.slice(steps / 3, steps + 1)
-	k.loft(path, radii, sides, c[0], head_col, shape, true, true)
+		# A long flint point lashed across the top of the handle.
+		var edge := PackedVector2Array([Vector2(0.17, 0.0)])
+		var outline := _knap(PackedVector2Array([Vector2(-0.045, 0.0), Vector2(-0.02, -0.026), Vector2(0.06, -0.024), Vector2(0.17, 0.0), Vector2(0.06, 0.026), Vector2(-0.02, 0.026)]), 41, 0.004)
+		var ridge := PackedVector2Array([outline[0], outline[1], outline[2], outline[3], outline[4], outline[5], outline[0]])
+		k.flat_shading = true
+		k.sculpt(outline, Transform3D(FORWARD_PLANE, Vector3(0, top, 0)), _head_thickness(ridge, 0.03, 0.02, 0.0, 0.0, 0.003), _head_color(1, m, edge, 0.02), 2, 0.008)
+		k.flat_shading = false
+		_lashing(k, top, 0.026, hr, 0.016)
+		return
+	# The eye: a squared block around the handle.
+	var block := func(t: float, _a: float) -> Color: return m.base.darkened(0.08) if t < 0.12 or t > 0.88 else m.base
+	k.loft([Vector3(0, top - 0.036, 0), Vector3(0, top - 0.03, 0), Vector3(0, top + 0.03, 0), Vector3(0, top + 0.036, 0)],
+		[0.03, 0.035, 0.035, 0.03], 4 if tier != 4 else 6, m.base, block, func(_t: float, _a: float) -> Vector2: return Vector2(0.85, 1.25))
+	# Two arms curving down from the eye to points (tier 3 has a flat chisel at the back).
+	var sides := 4 if tier != 4 else 6
+	if tier == 4:
+		k.flat_shading = true
+	for dir in [-1.0, 1.0]:   # -1 = front (-Z), +1 = back
+		var length: float = 0.17 if dir < 0.0 else (0.12 if tier == 3 else 0.15)
+		var path: Array = []
+		var radii: Array = []
+		var steps := 12
+		for i in steps + 1:
+			var t := float(i) / steps
+			var z: float = dir * (0.012 + t * length)
+			path.append(Vector3(0, top - pow(t, 2.0) * 0.05 + 0.004, z))
+			var r := lerpf(0.031, 0.004, pow(t, 1.1))
+			if tier == 3 and dir > 0.0:
+				r = lerpf(0.03, 0.02, t)   # chisel stays wide
+			radii.append(r)
+		var chisel: bool = tier == 3 and dir > 0.0
+		var shape := func(t: float, _a: float) -> Vector2: return Vector2(1.0, lerpf(1.0, 0.25, t)) if chisel else Vector2(0.9, 1.0)
+		var arm_col := func(t: float, a: float) -> Color:
+			var c: Color = m.base.lerp(m.edge, smoothstep(0.62, 1.0, t))   # worn bright points
+			if tier == 5 and absf(sin(a * 2.0)) > 0.92:
+				c = DUSK_GLOW   # glowing ridges
+			return c.lightened(_n2(Vector2(t, a), 6.0) * 0.05)
+		k.loft(path, radii, sides, m.base, arm_col, shape, false, true)
 	k.flat_shading = false
-	if tier == 5:   # barbs along the top of the pick
-		for i in 3:
-			var p: Vector3 = path[3 + i * 2]
-			k.loft([p, p + Vector3(0, 0.03, 0.012)], [0.007, 0.001], 4, DUSK_GLOW.darkened(0.3))
-	_binding(k, top, tier, 0.022, 0.045)
+	if tier == 4:
+		_collar(k, top + 0.04, hr * 1.4, 0.01, GOLD)
+		_collar(k, top - 0.04, hr * 1.4, 0.01, GOLD)
+	elif tier == 5:   # barb on top of the eye
+		k.loft([Vector3(0, top + 0.03, -0.01), Vector3(0, top + 0.07, 0.006)], [0.012, 0.001], 4, DUSK_GLOW.darkened(0.25))
+	elif tier == 3:
+		_collar(k, top - 0.042, hr * 1.3, 0.008, m.fitting)
+	k.loft([Vector3(0, top + 0.036, 0), Vector3(0, top + 0.045, 0)], [hr * 0.95, hr * 0.85], 12, WOOD.lightened(0.1))
 
 
 # --- Spears -----------------------------------------------------------------------------
 
 static func _spear(k: MeshKit, tier: int, col: Color) -> void:
 	var top := 0.85
-	_handle(k, top, tier, 0.014)
-	var c := _head_colors(tier, col)
+	var m := _metal(tier, col)
+	var hr := 0.015
+	_handle(k, top, tier, hr)
+	var L := 0.17 + tier * 0.012
 	var outline: PackedVector2Array
-	var thick := 0.018
-	var length := 0.13 + tier * 0.012
 	match tier:
-		1:
-			outline = _knap(PackedVector2Array([Vector2(0.0, 0.0), Vector2(0.022, 0.03), Vector2(0.026, 0.07), Vector2(0.0, length), Vector2(-0.026, 0.07), Vector2(-0.022, 0.03)]), 21, 0.004)
-			thick = 0.022
-			k.flat_shading = true
-		2:
-			outline = PackedVector2Array([Vector2(0.0, 0.0), Vector2(0.02, 0.02), Vector2(0.03, 0.06), Vector2(0.0, length), Vector2(-0.03, 0.06), Vector2(-0.02, 0.02)])
-		3:
-			outline = PackedVector2Array([Vector2(0.0, 0.0), Vector2(0.018, 0.015), Vector2(0.028, 0.05), Vector2(0.02, 0.11), Vector2(0.0, length), Vector2(-0.02, 0.11), Vector2(-0.028, 0.05), Vector2(-0.018, 0.015)])
-			thick = 0.022
-		4:
-			outline = PackedVector2Array([Vector2(0.0, 0.0), Vector2(0.03, 0.05), Vector2(0.012, 0.12), Vector2(0.0, length), Vector2(-0.012, 0.12), Vector2(-0.03, 0.05)])
-			k.flat_shading = true
-			thick = 0.026
-		_:
-			outline = PackedVector2Array([Vector2(0.0, 0.0), Vector2(0.045, 0.01), Vector2(0.02, 0.035), Vector2(0.03, 0.08), Vector2(0.0, length), Vector2(-0.03, 0.08), Vector2(-0.02, 0.035), Vector2(-0.045, 0.01)])
+		1:   # knapped leaf point
+			outline = _knap(PackedVector2Array([Vector2(0.0, -0.01), Vector2(0.018, 0.0), Vector2(0.03, 0.05), Vector2(0.024, 0.1), Vector2(0.0, L), Vector2(-0.024, 0.1), Vector2(-0.03, 0.05), Vector2(-0.018, 0.0)]), 21, 0.0035)
+		2:   # broad leaf blade
+			outline = PackedVector2Array([Vector2(0.0, -0.01), Vector2(0.016, 0.004), Vector2(0.034, 0.05), Vector2(0.03, 0.11), Vector2(0.0, L), Vector2(-0.03, 0.11), Vector2(-0.034, 0.05), Vector2(-0.016, 0.004)])
+		3:   # long narrow blade with waisted base
+			outline = PackedVector2Array([Vector2(0.0, -0.01), Vector2(0.012, 0.004), Vector2(0.03, 0.04), Vector2(0.022, 0.08), Vector2(0.026, 0.13), Vector2(0.0, L), Vector2(-0.026, 0.13), Vector2(-0.022, 0.08), Vector2(-0.03, 0.04), Vector2(-0.012, 0.004)])
+		4:   # crystal shard
+			outline = PackedVector2Array([Vector2(0.0, -0.01), Vector2(0.03, 0.06), Vector2(0.014, 0.14), Vector2(0.0, L), Vector2(-0.014, 0.14), Vector2(-0.03, 0.06)])
+		_:   # dusk: barbed head
+			outline = PackedVector2Array([Vector2(0.0, -0.01), Vector2(0.05, 0.004), Vector2(0.026, 0.04), Vector2(0.034, 0.1), Vector2(0.0, L), Vector2(-0.034, 0.1), Vector2(-0.026, 0.04), Vector2(-0.05, 0.004)])
+	# Every side is an edge: a central ridge, thin all round (a diamond cross-section).
+	var rim := PackedVector2Array(outline)
+	rim.append(outline[0])
+	var head_y := top + 0.02
+	if tier == 4:
+		k.flat_shading = true
 	var big := PackedVector2Array()
 	for p in outline:
-		big.append(p * 1.45)
-	k.extrude(big, Transform3D(Basis(), Vector3(0, top - 0.01, 0)), thick * 1.3, 0.016, c[0], c[1], 0.12)
+		big.append(Vector2(p.x * 1.45, p.y * 1.35))
+	outline = big
+	rim = PackedVector2Array(outline)
+	rim.append(outline[0])
+	k.sculpt(outline, Transform3D(Basis(), Vector3(0, head_y, 0)), _head_thickness(rim, 0.024 if tier != 1 else 0.03, 0.034, 0.0, 0.0, 0.0012),
+		_head_color(tier, m, rim, 0.008), 2, 0.008)
 	k.flat_shading = false
-	if tier == 3:   # crossbar lugs below the head
-		k.loft([Vector3(-0.04, top - 0.02, 0), Vector3(0, top - 0.015, 0), Vector3(0.04, top - 0.02, 0)], [0.005, 0.008, 0.005], 12, c[0].darkened(0.15))
-	_binding(k, top - 0.02, tier, 0.018, 0.05 if tier == 1 else 0.035)
+	if tier == 1:
+		_lashing(k, head_y - 0.012, 0.012, hr, 0.011)
+		return
+	# Socket: a tapered metal sleeve over the shaft, with rings.
+	var sock: Color = m.fitting if tier != 2 else m.base.darkened(0.12)
+	k.loft([Vector3(0, top - 0.06, 0), Vector3(0, top - 0.02, 0), Vector3(0, head_y + 0.004, 0)], [hr * 1.32, hr * 1.18, hr * 0.85], 14, sock,
+		func(t: float, _a: float) -> Color: return sock.lightened(0.18) if fposmod(t * 4.0, 1.0) < 0.14 else sock)
+	if tier == 5:
+		_collar(k, top - 0.064, hr * 1.5, 0.006, DUSK_GLOW)
 
 
 # --- Knives -----------------------------------------------------------------------------
 
 static func _knife(k: MeshKit, tier: int, col: Color) -> void:
-	var c := _head_colors(tier, col)
-	# Short handle, then blade from y = 0.06 upward, edge facing forward.
-	var hpath := [Vector3(0, -0.04, 0), Vector3(0, -0.01, 0.002), Vector3(0, 0.03, 0.001), Vector3(0, 0.06, 0)]
-	var wrap := CORD if tier == 1 else (LEATHER if tier < 4 else (DARK_WOOD if tier == 4 else Color(0.32, 0.18, 0.42)))
-	k.loft(hpath, [0.014, 0.016, 0.015, 0.013], 16, wrap, func(t: float, a: float) -> Color:
-		return wrap.darkened(0.25) if fposmod(t * 6.0 + a / TAU, 1.0) < 0.2 else wrap)
+	var m := _metal(tier, col)
+	# Grip from y = -0.05 to 0.055: oval, slightly swollen in the palm.
+	var gp := [Vector3(0, -0.05, 0), Vector3(0, -0.02, 0.001), Vector3(0, 0.015, 0.0015), Vector3(0, 0.055, 0)]
+	var grip := CORD if tier == 1 else (WOOD.darkened(0.1) if tier <= 3 else (DARK_WOOD if tier == 4 else Color(0.28, 0.16, 0.36)))
+	var gfn := func(t: float, a: float) -> Color:
+		if tier == 1:
+			return grip.darkened(0.22) if fposmod(t * 9.0 + a / TAU, 1.0) < 0.25 else grip   # wound cord
+		return grip.darkened(0.08 * (sin(a * 3.0 + t * 12.0) * 0.5 + 0.5))
+	k.loft(gp, [0.0125, 0.0145, 0.0145, 0.012], 14, grip, gfn, func(_t: float, _a: float) -> Vector2: return Vector2(0.7, 1.0), true, true)
+	if tier in [2, 3]:   # brass rivets through the grip
+		for y in [-0.025, 0.02]:
+			for side in [-1.0, 1.0]:
+				k.add_primitive(MeshKit.sphere(0.0038, 8, 5), Transform3D(Basis(), Vector3(side * 0.0095, y, 0.0)), GOLD.darkened(0.15), 0.0, 0.0)
 	if tier >= 2:   # guard
-		var gc: Color = c[0].darkened(0.2) if tier < 4 else (GOLD if tier == 4 else DUSK_GLOW.darkened(0.2))
-		var gw := 0.022 + tier * 0.004
-		k.loft([Vector3(0, 0.062, gw), Vector3(0, 0.066, 0), Vector3(0, 0.062, -gw)], [0.006, 0.009, 0.006], 12, gc)
+		var gc: Color = m.fitting if tier != 2 else m.base.darkened(0.2)
+		var gw := 0.02 + tier * 0.003
+		k.loft([Vector3(0, 0.058, gw * 0.4), Vector3(0, 0.061, 0), Vector3(0, 0.058, -gw)], [0.006, 0.0085, 0.005], 12, gc)
 	if tier >= 3:   # pommel
-		k.loft([Vector3(0, -0.055, 0), Vector3(0, -0.042, 0)], [0.008, 0.017], 16, GOLD if tier == 4 else c[0].darkened(0.1))
+		var pc: Color = GOLD if tier == 4 else (DUSK_GLOW if tier == 5 else m.fitting)
+		k.loft([Vector3(0, -0.062, 0), Vector3(0, -0.055, 0), Vector3(0, -0.047, 0)], [0.007, 0.014, 0.012], 14, pc)
+	var L := 0.13 + tier * 0.01
 	var outline: PackedVector2Array
-	var L := 0.12 + tier * 0.01
+	var edge: PackedVector2Array
 	match tier:
 		1:
-			outline = _knap(PackedVector2Array([Vector2(0.0, 0.0), Vector2(0.026, 0.01), Vector2(0.022, 0.07), Vector2(0.006, L), Vector2(-0.008, 0.06), Vector2(-0.006, 0.0)]), 31, 0.004)
-			k.flat_shading = true
+			edge = PackedVector2Array([Vector2(0.022, 0.008), Vector2(0.024, 0.06), Vector2(0.004, L)])
+			outline = _knap(PackedVector2Array([Vector2(-0.008, 0.0), Vector2(0.022, 0.008), Vector2(0.024, 0.06), Vector2(0.004, L), Vector2(-0.01, 0.06)]), 31, 0.003)
 		2:
-			outline = PackedVector2Array([Vector2(-0.004, 0.0), Vector2(0.022, 0.0), Vector2(0.02, 0.09), Vector2(0.0, L), Vector2(-0.006, 0.09), Vector2(-0.006, 0.0)])
-		3:
-			outline = PackedVector2Array([Vector2(-0.006, 0.0), Vector2(0.024, 0.0), Vector2(0.026, 0.07), Vector2(0.012, 0.115), Vector2(0.0, L), Vector2(-0.004, 0.11), Vector2(-0.008, 0.06), Vector2(-0.006, 0.0)])
+			edge = PackedVector2Array([Vector2(0.021, 0.0), Vector2(0.021, 0.085), Vector2(0.0, L)])
+			outline = PackedVector2Array([Vector2(-0.007, 0.0), Vector2(0.021, 0.0), Vector2(0.021, 0.085), Vector2(0.0, L), Vector2(-0.007, 0.09)])
+		3:   # clip point
+			edge = PackedVector2Array([Vector2(0.024, 0.0), Vector2(0.026, 0.07), Vector2(0.014, 0.115), Vector2(0.0, L)])
+			outline = PackedVector2Array([Vector2(-0.008, 0.0), Vector2(0.024, 0.0), Vector2(0.026, 0.07), Vector2(0.014, 0.115), Vector2(0.0, L), Vector2(-0.003, 0.12), Vector2(-0.009, 0.1)])
 		4:
-			outline = PackedVector2Array([Vector2(-0.01, 0.0), Vector2(0.024, 0.0), Vector2(0.018, 0.08), Vector2(0.0, L), Vector2(-0.016, 0.07)])
-			k.flat_shading = true
-		_:
-			outline = PackedVector2Array([Vector2(-0.006, 0.0), Vector2(0.024, 0.0), Vector2(0.03, 0.04), Vector2(0.018, 0.08), Vector2(0.028, 0.11), Vector2(0.0, L), Vector2(-0.01, 0.1), Vector2(-0.004, 0.05), Vector2(-0.012, 0.03)])
-	k.extrude(outline, Transform3D(FORWARD_PLANE, Vector3(0, 0.066, 0)), 0.01 + (0.006 if tier in [1, 4] else 0.0), 0.012, c[0], c[1], 0.1)
+			edge = PackedVector2Array([Vector2(0.024, 0.0), Vector2(0.018, 0.085), Vector2(0.0, L)])
+			outline = PackedVector2Array([Vector2(-0.012, 0.0), Vector2(0.024, 0.0), Vector2(0.018, 0.085), Vector2(0.0, L), Vector2(-0.016, 0.075)])
+		_:   # dusk: serrated back, swept tip
+			edge = PackedVector2Array([Vector2(0.024, 0.0), Vector2(0.03, 0.05), Vector2(0.026, 0.1), Vector2(0.0, L)])
+			outline = PackedVector2Array([Vector2(-0.008, 0.0), Vector2(0.024, 0.0), Vector2(0.03, 0.05), Vector2(0.026, 0.1), Vector2(0.0, L),
+				Vector2(-0.008, 0.12), Vector2(-0.004, 0.105), Vector2(-0.012, 0.09), Vector2(-0.006, 0.075), Vector2(-0.014, 0.06), Vector2(-0.008, 0.04)])
+	if tier in [1, 4]:
+		k.flat_shading = true
+	var base_col := _head_color(tier, m, edge, 0.007)
+	var fuller := func(p: Vector2, th: float) -> Color:
+		var c: Color = base_col.call(p, th)
+		if tier in [2, 3, 5] and absf(p.x - 0.002) < 0.0025 and p.y > 0.012 and p.y < L * 0.62:
+			c = c.darkened(0.22)   # fuller groove
+		return c
+	k.sculpt(outline, Transform3D(FORWARD_PLANE, Vector3(0, 0.062, 0)), _head_thickness(edge, 0.008 if tier != 1 else 0.011, 0.026, 0.0, 0.0, 0.0009), fuller, 2, 0.006)
 	k.flat_shading = false
 
 

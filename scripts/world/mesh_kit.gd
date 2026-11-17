@@ -234,6 +234,109 @@ func extrude(outline: PackedVector2Array, xf: Transform3D, thickness: float, bev
 		_emit(a, c, d, out, out, out, edge_color, edge_color, edge_color, out)
 
 
+## A solid cut from a 2D outline (x, y in the plane of `xf`) whose thickness varies across it:
+## thick_fn(p: Vector2) -> full thickness there. Blades can be thick at the spine and come to a
+## real edge; axe heads swell around the handle. The faces are subdivided `levels` times so the
+## surface curves smoothly, with smooth normals. col_fn(p: Vector2, thickness: float) -> Color.
+func sculpt(outline: PackedVector2Array, xf: Transform3D, thick_fn: Callable, col_fn: Callable, levels := 2, max_seg := 0.008) -> void:
+	var ring := _resample(outline, max_seg)
+	var n := ring.size()
+	if n < 3:
+		return
+	var tri := Geometry2D.triangulate_polygon(ring)
+	if tri.is_empty():
+		return
+	var pts: Array[Vector2] = []
+	for p in ring:
+		pts.append(p)
+	var faces: Array = []
+	for i in range(0, tri.size(), 3):
+		faces.append([tri[i], tri[i + 1], tri[i + 2]])
+	var cache := {}
+	var mid := func(a: int, b: int) -> int:
+		var key := Vector2i(mini(a, b), maxi(a, b))
+		if cache.has(key):
+			return cache[key]
+		pts.append((pts[a] + pts[b]) * 0.5)
+		cache[key] = pts.size() - 1
+		return pts.size() - 1
+	for l in levels:
+		var next: Array = []
+		for f: Array in faces:
+			var ab: int = mid.call(f[0], f[1])
+			var bc: int = mid.call(f[1], f[2])
+			var ca: int = mid.call(f[2], f[0])
+			next.append([f[0], ab, ca])
+			next.append([ab, f[1], bc])
+			next.append([ca, bc, f[2]])
+			next.append([ab, bc, ca])
+		faces = next
+	var th := PackedFloat32Array()
+	var cols: Array[Color] = []
+	for p in pts:
+		var t: float = maxf(thick_fn.call(p), 0.0004)
+		th.append(t)
+		cols.append(col_fn.call(p, t))
+	var zdir := xf.basis.z.normalized()
+	for side in [1.0, -1.0]:
+		var pos := PackedVector3Array()
+		var nrm: Array[Vector3] = []
+		for i in pts.size():
+			pos.append(xf * Vector3(pts[i].x, pts[i].y, th[i] * 0.5 * side))
+			nrm.append(Vector3.ZERO)
+		var out_dir: Vector3 = zdir * side
+		for f: Array in faces:
+			var fn := (pos[f[2]] - pos[f[0]]).cross(pos[f[1]] - pos[f[0]])
+			if fn.dot(out_dir) < 0.0:
+				fn = -fn
+			for v: int in f:
+				nrm[v] += fn
+		for f: Array in faces:
+			var a: int = f[0]
+			var b: int = f[1]
+			var c: int = f[2]
+			_emit(pos[a], pos[b], pos[c], nrm[a].normalized(), nrm[b].normalized(), nrm[c].normalized(), cols[a], cols[b], cols[c], out_dir)
+	# The rim: walls between the two faces, as thick as the shape is at its edge.
+	var cw := Geometry2D.is_polygon_clockwise(ring)
+	var edge_n: Array[Vector2] = []
+	for i in n:
+		var e := ring[(i + 1) % n] - ring[i]
+		var en := Vector2(e.y, -e.x).normalized()
+		edge_n.append(-en if cw else en)
+	for i in n:
+		var j := (i + 1) % n
+		var vn_i := (edge_n[i] + edge_n[(i - 1 + n) % n]).normalized()
+		var vn_j := (edge_n[j] + edge_n[i]).normalized()
+		var a := xf * Vector3(ring[i].x, ring[i].y, th[i] * 0.5)
+		var b := xf * Vector3(ring[j].x, ring[j].y, th[j] * 0.5)
+		var c := xf * Vector3(ring[j].x, ring[j].y, -th[j] * 0.5)
+		var d := xf * Vector3(ring[i].x, ring[i].y, -th[i] * 0.5)
+		var ni := (xf.basis * Vector3(vn_i.x, vn_i.y, 0.0)).normalized()
+		var nj := (xf.basis * Vector3(vn_j.x, vn_j.y, 0.0)).normalized()
+		var out := xf.basis * Vector3(edge_n[i].x, edge_n[i].y, 0.0)
+		_emit(a, b, c, ni, nj, nj, cols[i], cols[j], cols[j], out)
+		_emit(a, c, d, ni, nj, ni, cols[i], cols[j], cols[i], out)
+
+
+static func _resample(o: PackedVector2Array, max_seg: float) -> PackedVector2Array:
+	var out := PackedVector2Array()
+	for i in o.size():
+		var a := o[i]
+		var b := o[(i + 1) % o.size()]
+		var steps := maxi(1, ceili(a.distance_to(b) / max_seg))
+		for s in steps:
+			out.append(a.lerp(b, float(s) / steps))
+	return out
+
+
+## Distance from p to a polyline (used for "how far from the cutting edge").
+static func dist_to_polyline(p: Vector2, line: PackedVector2Array) -> float:
+	var best := 1e9
+	for i in line.size() - 1:
+		best = minf(best, p.distance_to(Geometry2D.get_closest_point_to_segment(p, line[i], line[i + 1])))
+	return best
+
+
 func commit(material: Material) -> ArrayMesh:
 	var arrays := []
 	arrays.resize(Mesh.ARRAY_MAX)

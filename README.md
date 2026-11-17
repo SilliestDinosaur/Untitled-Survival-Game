@@ -48,8 +48,12 @@ Each seed produces its own:
   colors), so no two worlds share the same animals. Bodies, necks and heads are lofted surfaces.
 
 ## Items & tiers
-Held items float in view (no hands). Every model is built from lofts, bevelled outlines and
-faceted surfaces in `scripts/items/item_models.gd`, and the same models lie in the world when dropped.
+Held items float in view (no hands). Tool heads are sculpted (`MeshKit.sculpt`): thickness varies
+across each head, so axes swell into a socket that wraps the handle and taper to a real edge with a
+grind line and a bright honed band, spear heads have a central ridge, knives a spine and fuller.
+Handles are oval with grain, a knob at the butt and a wound leather grip; stone tools are knapped
+flint lashed on with crossed cord. All in `scripts/items/item_models.gd`; the same models lie in
+the world when dropped and float beside other players.
 
 Tools come in tiers: **Rock → Stone → three materials generated per world → Duskforged**.
 Every island invents its own metals and gem (name, color, trait like *Swift*, *Keen*, *Sturdy*,

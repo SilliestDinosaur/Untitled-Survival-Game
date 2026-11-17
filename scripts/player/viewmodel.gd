@@ -50,12 +50,17 @@ func hold(item_id: String) -> void:
 		_item.rotation = Vector3(0.35, 0.6, 0.0)
 		return
 	# Long tools lean in toward the middle of the screen; small things sit a little higher.
-	if _held_type in ["hatchet", "pickaxe", "knife", "torch"]:
+	if _held_type in ["hatchet", "knife", "torch"]:
+		# Turned so you see the face of the head, not just its edge.
 		_item.position = Vector3(0, -0.06, 0)
-		_item.rotation = Vector3(-0.15, 0.25, 0.32)
+		_item.rotation = Vector3(-0.15, 0.9, 0.3)
+	elif _held_type == "pickaxe":
+		_item.position = Vector3(0, -0.06, 0)
+		_item.rotation = Vector3(-0.15, 0.3, 0.32)
 	elif _held_type == "spear":
-		_item.position = Vector3(0.02, -0.28, 0.1)
-		_item.rotation = Vector3(-0.35, 0.2, 0.18)
+		# Leaning forward so the head is in view.
+		_item.position = Vector3(0.0, -0.36, 0.12)
+		_item.rotation = Vector3(-0.85, 0.25, 0.12)
 	else:
 		_item.position = Vector3(0, 0.03, 0)
 		_item.rotation = Vector3(0.2, 0.5, 0.0)
