@@ -32,6 +32,8 @@ var _ocean_level := 0.0
 var _autosave := AUTOSAVE_SECONDS
 var _cave_features: CaveFeatures
 var _cave_check := 0.0            ## counts down to the next look at whether the player is underground
+var _map: WorldMap
+var _reveal_timer := 0.0          ## counts down to the next uncovering of the map around the player
 
 
 func _ready() -> void:
@@ -54,6 +56,9 @@ func _ready() -> void:
 	_inventory = InventoryUI.InventoryPanel.new()
 	root.add_child(_inventory)
 	_inventory.setup(player.inventory, player)
+	_map = WorldMap.new()
+	root.add_child(_map)
+	_map.player = player
 	_debug_items = Menus.DebugItems.new()
 	root.add_child(_debug_items)
 	_debug_items.setup(player.inventory)
@@ -184,6 +189,7 @@ func _new_world_loaded() -> void:
 	_spawn = Game.world_gen.find_spawn_point()
 	player.spawn_point = _spawn
 	_build_cave_features()
+	_map.reset_for_world()
 
 
 ## Chests, glowing fungus and bats in the caves of this island (the caves themselves are ground).
@@ -210,7 +216,8 @@ func _update_cave_state(delta: float) -> void:
 	Game.in_cave = Caves.void_distance(Game.world_gen.caves, p) < 0.0
 
 
-func create_world(display_name: String, seed_value: int) -> void:
+func create_world(display_name: String, seed_value: int, difficulty := Difficulty.NORMAL) -> void:
+	Game.difficulty = difficulty
 	_switch_world(seed_value)
 	Game.start_new_save(display_name)
 	player.reset_inventory()
@@ -326,6 +333,7 @@ func _start_loading(at: Vector3, heading := "Generating") -> void:
 func _start_playing() -> void:
 	state = State.PLAYING
 	Game.time_paused = false
+	player.stats.apply_difficulty(Game.difficulty)
 	if not _pending_player.is_empty():
 		player.apply_save_data(_pending_player)
 		_pending_player = {}
@@ -341,6 +349,11 @@ func _start_playing() -> void:
 	var tw := create_tween()
 	tw.tween_property(_loading, "modulate:a", 0.0, 0.8)
 	tw.tween_callback(_loading.hide)
+
+
+func _toggle_map(open: bool) -> void:
+	_map.visible = open
+	Input.mouse_mode = Input.MOUSE_MODE_VISIBLE if open else Input.MOUSE_MODE_CAPTURED
 
 
 func _toggle_inventory(open: bool) -> void:
@@ -377,6 +390,10 @@ func _unhandled_input(event: InputEvent) -> void:
 		_toggle_inventory(not _inventory.visible)
 		get_viewport().set_input_as_handled()
 		return
+	if event.is_action_pressed("map") and state == State.PLAYING and not _inventory.visible:
+		_toggle_map(not _map.visible)
+		get_viewport().set_input_as_handled()
+		return
 	if not event.is_action_pressed("pause"):
 		return
 	if _settings.visible:
@@ -386,6 +403,8 @@ func _unhandled_input(event: InputEvent) -> void:
 		Input.mouse_mode = Input.MOUSE_MODE_CAPTURED
 	elif _inventory.visible:
 		_toggle_inventory(false)
+	elif _map.visible:
+		_toggle_map(false)
 	elif _new_world.visible or _load.visible or _multiplayer.visible:
 		_back_to_title_menu()
 	elif state == State.PLAYING:
@@ -398,6 +417,11 @@ func _unhandled_input(event: InputEvent) -> void:
 func _process(delta: float) -> void:
 	if state == State.PLAYING:
 		_update_cave_state(delta)
+		_reveal_timer -= delta
+		if _reveal_timer <= 0.0:
+			_reveal_timer = 0.5
+			if Game.reveal(player.global_position):
+				_map.mark_dirty()
 	match state:
 		State.TITLE:
 			_fly_menu_camera(delta)

@@ -30,6 +30,19 @@ var is_dead := false
 ## Active status effects: id -> seconds left (see ItemDB.EFFECTS).
 var effects := {}
 var _regen_timer := 0.0
+## Difficulty multipliers, set by apply_difficulty (see Difficulty).
+var mult_hunger := 1.0
+var mult_cold := 1.0
+var mult_damage := 1.0
+var mult_regen := 1.0
+
+
+func apply_difficulty(level: int) -> void:
+	var p := Difficulty.preset(level)
+	mult_hunger = float(p.hunger)
+	mult_cold = float(p.cold)
+	mult_damage = float(p.damage)
+	mult_regen = float(p.regen)
 
 
 func _ready() -> void:
@@ -51,7 +64,7 @@ func tick(delta: float, sprinting: bool, cold_now := 0.0, heat_now := 0.0) -> vo
 	cold = cold_now
 	heat = heat_now
 	# Warmth: night, cold biomes and water drain it; fires and torches restore it.
-	var net := heat_now - cold_now * cold_rate
+	var net := heat_now - cold_now * cold_rate * mult_cold
 	if cold_now <= 0.05 and net >= 0.0:
 		net = maxf(net, warm_up_rate)
 	warmth = clampf(warmth + net * delta, 0.0, max_warmth)
@@ -65,12 +78,12 @@ func tick(delta: float, sprinting: bool, cold_now := 0.0, heat_now := 0.0) -> vo
 		health = minf(max_health, health + 2.5 * delta)
 	if effects.has("poison"):
 		take_damage(1.6 * delta, false)
-	var drain := hunger_drain * (1.6 if sprinting else 1.0) * (0.35 if effects.has("satiate") else 1.0)
+	var drain := hunger_drain * mult_hunger * (1.6 if sprinting else 1.0) * (0.35 if effects.has("satiate") else 1.0)
 	hunger = maxf(0.0, hunger - drain * delta)
 	if hunger <= 0.0:
 		take_damage(starve_damage * delta, false)
 	elif hunger > max_hunger * 0.7 and warmth > max_warmth * 0.25 and health < max_health:
-		health = minf(max_health, health + health_regen * delta)
+		health = minf(max_health, health + health_regen * mult_regen * delta)
 
 	if sprinting:
 		stamina = maxf(0.0, stamina - stamina_drain * delta)
@@ -85,6 +98,7 @@ func tick(delta: float, sprinting: bool, cold_now := 0.0, heat_now := 0.0) -> vo
 func take_damage(amount: float, notify := true) -> void:
 	if is_dead or amount <= 0.0:
 		return
+	amount *= mult_damage
 	health = maxf(0.0, health - amount)
 	if notify:
 		damaged.emit(amount)

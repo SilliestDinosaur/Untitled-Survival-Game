@@ -139,7 +139,7 @@ class TitleScreen extends Control:
 
 ## "A New World": name it, pick or roll a seed, preview what it will be.
 class NewWorldPanel extends Control:
-	signal create_pressed(world_label: String, seed_value: int)
+	signal create_pressed(world_label: String, seed_value: int, difficulty: int)
 	signal seed_previewed(seed_value: int)
 	signal back_pressed
 
@@ -148,6 +148,8 @@ class NewWorldPanel extends Control:
 	var _preview_name: Label
 	var _preview_tags: Label
 	var _seed_value := 0
+	var _difficulty: OptionButton
+	var _difficulty_hint: Label
 
 	func _ready() -> void:
 		set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
@@ -174,6 +176,17 @@ class NewWorldPanel extends Control:
 		_preview_tags = UITheme.label("", 16, UITheme.INK_DIM)
 		col.add_child(_preview_tags)
 		col.add_child(Menus._spacer(4))
+		col.add_child(UITheme.label("Difficulty", 16, UITheme.INK_DIM))
+		_difficulty = OptionButton.new()
+		for dname: String in Difficulty.NAMES:
+			_difficulty.add_item(dname)
+		_difficulty.select(Difficulty.NORMAL)
+		_difficulty.item_selected.connect(func(i: int) -> void: _difficulty_hint.text = Difficulty.DESCRIPTIONS[i])
+		col.add_child(_difficulty)
+		_difficulty_hint = UITheme.label(Difficulty.DESCRIPTIONS[Difficulty.NORMAL], 15, UITheme.INK_DIM)
+		_difficulty_hint.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+		col.add_child(_difficulty_hint)
+		col.add_child(Menus._spacer(4))
 		col.add_child(Menus._host_toggle())
 		col.add_child(Menus._spacer(4))
 		var back := UITheme.button("Back", false, 160)
@@ -181,11 +194,13 @@ class NewWorldPanel extends Control:
 		var create := UITheme.button("Create World", true, 240)
 		create.pressed.connect(func() -> void:
 			_apply_seed_text()
-			create_pressed.emit(_name.text.strip_edges(), _seed_value))
+			create_pressed.emit(_name.text.strip_edges(), _seed_value, _difficulty.selected))
 		col.add_child(Menus._row([back, Menus._spacer(), create]))
 
 	func open() -> void:
 		_name.text = ""
+		_difficulty.select(Difficulty.NORMAL)
+		_difficulty_hint.text = Difficulty.DESCRIPTIONS[Difficulty.NORMAL]
 		set_seed(Game.random_seed())
 		show()
 

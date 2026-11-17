@@ -43,7 +43,7 @@ static func hit_resource_r(player_id: int, r: Dictionary, rng: RandomNumberGener
 		return result
 	var key := ItemDB.yield_key(r.kind)
 	r.hp = float(r.hp) - ItemDB.HIT_DAMAGE * mult
-	_give(inv, ItemDB.YIELDS.get(key, []), mult * ItemDB.GATHER_RATE, rng, result.items)
+	_give(inv, ItemDB.YIELDS.get(key, []), mult * ItemDB.GATHER_RATE * float(Difficulty.preset(Game.difficulty).yield), rng, result.items)
 	if r.hp <= 0.0:
 		_give(inv, ItemDB.BONUS.get(key, []), 1.0, rng, result.items)
 		if r.kind == "cache":

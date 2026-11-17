@@ -29,6 +29,7 @@ const ACTIONS := [
 	["interact", "Harvest / pick up / open", ["key:%d" % KEY_E]],
 	["drop", "Drop held item", ["key:%d" % KEY_Q]],
 	["inventory", "Satchel", ["key:%d" % KEY_TAB]],
+	["map", "Map", ["key:%d" % KEY_M]],
 	["slot_1", "Hotbar 1", ["key:%d" % KEY_1]],
 	["slot_2", "Hotbar 2", ["key:%d" % KEY_2]],
 	["slot_3", "Hotbar 3", ["key:%d" % KEY_3]],

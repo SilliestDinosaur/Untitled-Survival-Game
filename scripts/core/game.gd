@@ -18,6 +18,7 @@ const REGROW_SECONDS := 900.0   ## gathered trees/rocks grow back after 15 minut
 var world_seed: int = 0
 var world_name := ""
 var palette: WorldPalette
+var difficulty := 1   ## the chosen Difficulty level of this world (see Difficulty)
 var world_gen: WorldGen
 var flora: FloraLibrary
 var fauna: FaunaLibrary
@@ -33,6 +34,9 @@ var harvested := {}
 var known_items := {}
 ## Supply caches already looted (permanent).
 var looted := {}
+## What the player has walked near, one byte per 8 m cell of the island (1 = explored). See reveal().
+const EXPLORE_CELL := 8.0
+var explored := PackedByteArray()
 ## Items lying in the world: entity id -> {id, item, count, dur, pos: [x, y, z]}.
 var pickups := {}
 ## Placed structures (campfires, workbenches, forges): id -> {id, kind, pos [x,y,z], yaw, hp}.
@@ -138,6 +142,8 @@ func new_world(seed_value: int) -> void:
 	pickups = {}
 	structures = {}
 	guests = {}
+	explored = PackedByteArray()
+	explored.resize(explore_size() * explore_size())
 	net_client = false
 	in_cave = false
 	next_entity_id = 1
@@ -214,6 +220,11 @@ func load_save(id: String) -> Dictionary:
 	harvested = data.get("harvested", {})
 	known_items = data.get("known_items", {})
 	looted = data.get("looted", {})
+	explored = Marshalls.base64_to_raw(String(data.get("explored", "")))
+	difficulty = int(data.get("difficulty", Difficulty.NORMAL))
+	if explored.size() != explore_size() * explore_size():
+		explored = PackedByteArray()
+		explored.resize(explore_size() * explore_size())
 	pickups = data.get("pickups", {})
 	structures = data.get("structures", {})
 	if world_gen:
@@ -256,6 +267,8 @@ func write_save(player_data: Dictionary) -> void:
 		"harvested": harvested,
 		"known_items": known_items,
 		"looted": looted,
+		"explored": Marshalls.raw_to_base64(explored),
+		"difficulty": difficulty,
 		"pickups": pickups,
 		"structures": structures,
 		"terrain": TerrainEdit.to_list(world_gen.edits) if world_gen else [],
@@ -273,12 +286,53 @@ func _players_for_save(host_data: Dictionary) -> Dictionary:
 
 
 ## Everything a guest needs to rebuild the host's world (sent once when they join).
+## Cells per side of the explored grid.
+static func explore_size() -> int:
+	return int(WORLD_SIZE / EXPLORE_CELL)
+
+
+## Mark the ground within `radius` metres of p as explored. True if anything new was seen.
+func reveal(p: Vector3, radius := 40.0) -> bool:
+	var n := explore_size()
+	if explored.size() != n * n:
+		explored = PackedByteArray()
+		explored.resize(n * n)
+	var c := int(radius / EXPLORE_CELL) + 1
+	var cx := floori(p.x / EXPLORE_CELL)
+	var cz := floori(p.z / EXPLORE_CELL)
+	var changed := false
+	for z in range(cz - c, cz + c + 1):
+		for x in range(cx - c, cx + c + 1):
+			if x < 0 or z < 0 or x >= n or z >= n:
+				continue
+			var mid := Vector2((x + 0.5) * EXPLORE_CELL - p.x, (z + 0.5) * EXPLORE_CELL - p.z)
+			if mid.length() > radius:
+				continue
+			var i := z * n + x
+			if explored[i] == 0:
+				explored[i] = 1
+				changed = true
+	return changed
+
+
+## Whether the ground at a world position has been explored.
+func is_explored(p: Vector3) -> bool:
+	var n := explore_size()
+	var x := floori(p.x / EXPLORE_CELL)
+	var z := floori(p.z / EXPLORE_CELL)
+	if x < 0 or z < 0 or x >= n or z >= n or explored.size() != n * n:
+		return false
+	return explored[z * n + x] == 1
+
+
 func snapshot() -> Dictionary:
 	return {
 		"seed": world_seed, "name": save_name if save_name != "" else world_name,
 		"play_time": play_time, "time_of_day": time_of_day, "day": day,
 		"removed": removed_resources, "resource_hp": resource_hp, "harvested": harvested,
 		"looted": looted, "pickups": pickups, "structures": structures,
+		"explored": Marshalls.raw_to_base64(explored),
+		"difficulty": difficulty,
 		"terrain": TerrainEdit.to_list(world_gen.edits) if world_gen else [],
 	}
 
@@ -299,6 +353,8 @@ func apply_snapshot(s: Dictionary) -> void:
 	structures = s.structures
 	if world_gen:
 		world_gen.edits = TerrainEdit.from_list(s.get("terrain", []))
+	explored = Marshalls.base64_to_raw(String(s.get("explored", "")))
+	difficulty = int(s.get("difficulty", Difficulty.NORMAL))
 	pickups_changed.emit()
 	structures_changed.emit()
 

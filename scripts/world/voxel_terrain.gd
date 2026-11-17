@@ -133,22 +133,19 @@ static func build(gen: WorldGen, origin: Vector3, size: float, step: float, segs
 				var s0 := d[(k * ny + j) * nx + i] > 0.0
 				# x edge: (i,j,k) -> (i+1,j,k); cells around it differ in y and z.
 				if j >= 1 and s0 != (d[(k * ny + j) * nx + i + 1] > 0.0):
-					_quad(indices, faces, verts, cell_vert, [
+					_quad(indices, faces, verts, normals, cell_vert, [
 						(k - 1) * ncy * ncx + (j - 1) * ncx + i, (k - 1) * ncy * ncx + j * ncx + i,
-						k * ncy * ncx + j * ncx + i, k * ncy * ncx + (j - 1) * ncx + i],
-						Vector3(1, 0, 0) if s0 else Vector3(-1, 0, 0))
+						k * ncy * ncx + j * ncx + i, k * ncy * ncx + (j - 1) * ncx + i])
 				# y edge: (i,j,k) -> (i,j+1,k); cells around it differ in x and z.
 				if s0 != (d[((k * ny) + j + 1) * nx + i] > 0.0):
-					_quad(indices, faces, verts, cell_vert, [
+					_quad(indices, faces, verts, normals, cell_vert, [
 						(k - 1) * ncy * ncx + j * ncx + (i - 1), (k - 1) * ncy * ncx + j * ncx + i,
-						k * ncy * ncx + j * ncx + i, k * ncy * ncx + j * ncx + (i - 1)],
-						Vector3(0, 1, 0) if s0 else Vector3(0, -1, 0))
+						k * ncy * ncx + j * ncx + i, k * ncy * ncx + j * ncx + (i - 1)])
 				# z edge: (i,j,k) -> (i,j,k+1); cells around it differ in x and y.
 				if j >= 1 and s0 != (d[(((k + 1) * ny) + j) * nx + i] > 0.0):
-					_quad(indices, faces, verts, cell_vert, [
+					_quad(indices, faces, verts, normals, cell_vert, [
 						k * ncy * ncx + (j - 1) * ncx + (i - 1), k * ncy * ncx + (j - 1) * ncx + i,
-						k * ncy * ncx + j * ncx + i, k * ncy * ncx + j * ncx + (i - 1)],
-						Vector3(0, 0, 1) if s0 else Vector3(0, 0, -1))
+						k * ncy * ncx + j * ncx + i, k * ncy * ncx + j * ncx + (i - 1)])
 	return {"verts": verts, "normals": normals, "colors": colors, "indices": indices, "faces": faces}
 
 
@@ -186,17 +183,30 @@ static func _carve(d: PackedFloat32Array, s: Array, origin: Vector3, ylo: float,
 					d[row + i] = dist
 
 
-## One quad from four cell vertices, facing `facing`, as two triangles.
-static func _quad(indices: PackedInt32Array, faces: PackedVector3Array, verts: PackedVector3Array, cell_vert: PackedInt32Array, cells: Array, facing: Vector3) -> void:
+## One quad from four cell vertices, as two triangles. `facing` is the outward direction of the surface
+## here. Godot shows the FRONT of a triangle as the side its winding points away from, so each
+## triangle is wound to have its normal pointing into the rock; a triangle that's wound the other
+## way is culled from outside and you see through the ground. Each triangle is checked on its own,
+## so quads that aren't flat still come out right.
+static func _quad(indices: PackedInt32Array, faces: PackedVector3Array, verts: PackedVector3Array, normals: PackedVector3Array, cell_vert: PackedInt32Array, cells: Array) -> void:
 	var q := PackedInt32Array()
 	for c: int in cells:
 		var vi := cell_vert[c]
 		if vi < 0:
 			return   # should not happen: a crossing edge always has its four cells with vertices
 		q.append(vi)
-	var p0 := verts[q[0]]
-	var n := (verts[q[1]] - p0).cross(verts[q[2]] - p0)
-	if n.dot(facing) < 0.0:
-		q = PackedInt32Array([q[0], q[3], q[2], q[1]])
-	indices.append_array([q[0], q[1], q[2], q[0], q[2], q[3]])
-	faces.append_array([verts[q[0]], verts[q[1]], verts[q[2]], verts[q[0]], verts[q[2]], verts[q[3]]])
+	_tri(indices, faces, verts, normals, q[0], q[1], q[2])
+	_tri(indices, faces, verts, normals, q[0], q[2], q[3])
+
+
+## One triangle, wound so its normal points against `outward` (into the rock).
+static func _tri(indices: PackedInt32Array, faces: PackedVector3Array, verts: PackedVector3Array, normals: PackedVector3Array, a: int, b: int, c: int) -> void:
+	var pa := verts[a]
+	var n := (verts[b] - pa).cross(verts[c] - pa)
+	var outward := normals[a] + normals[b] + normals[c]
+	if n.dot(outward) > 0.0:
+		var t := b
+		b = c
+		c = t
+	indices.append_array([a, b, c])
+	faces.append_array([verts[a], verts[b], verts[c]])
