@@ -469,6 +469,13 @@ func run_action(pid: int, peer: int, action: String, a: Dictionary) -> Dictionar
 			return {"id": GameActions.drop(pid, int(a.slot), int(a.amount), a.pos)}
 		"craft":
 			return GameActions.craft(pid, String(a.recipe), a.pos, int(a.get("times", 1)))
+		"terrain":
+			var res := TerrainEdit.apply(a, inv)
+			if res.ok:
+				TerrainEdit.commit(res.cells)
+				if is_host():
+					_terrain_cells.rpc(res.cells)
+			return res
 		"place":
 			return GameActions.place_structure(pid, int(a.slot), a.pos, float(a.yaw))
 		"hit_structure":
@@ -538,6 +545,12 @@ func _broadcast_resource(id: String, st: Dictionary) -> void:
 func _resource_changed(id: String, st: Dictionary) -> void:
 	if world:
 		world.apply_resource_change(id, st)
+
+
+## Everyone applies the same cell changes, so the ground matches on every machine.
+@rpc("authority", "reliable")
+func _terrain_cells(cells: Array) -> void:
+	TerrainEdit.commit(cells)
 
 
 @rpc("authority", "reliable")

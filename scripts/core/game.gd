@@ -46,6 +46,7 @@ const LOCAL_PLAYER := 1
 var inventories := {}
 
 signal pickups_changed
+signal terrain_changed(cells: Array)   ## shovel work changed the ground here (rebuild those chunks)
 signal structures_changed
 signal new_day(day: int)
 
@@ -212,6 +213,8 @@ func load_save(id: String) -> Dictionary:
 	looted = data.get("looted", {})
 	pickups = data.get("pickups", {})
 	structures = data.get("structures", {})
+	if world_gen:
+		world_gen.edits = TerrainEdit.from_list(data.get("terrain", []))
 	next_entity_id = int(data.get("next_entity_id", 1))
 	time_of_day = float(data.get("time_of_day", 0.3))
 	day = int(data.get("day", 1))
@@ -252,6 +255,7 @@ func write_save(player_data: Dictionary) -> void:
 		"looted": looted,
 		"pickups": pickups,
 		"structures": structures,
+		"terrain": TerrainEdit.to_list(world_gen.edits) if world_gen else [],
 		"next_entity_id": next_entity_id,
 		"time_of_day": time_of_day,
 		"day": day,
@@ -272,6 +276,7 @@ func snapshot() -> Dictionary:
 		"play_time": play_time, "time_of_day": time_of_day, "day": day,
 		"removed": removed_resources, "resource_hp": resource_hp, "harvested": harvested,
 		"looted": looted, "pickups": pickups, "structures": structures,
+		"terrain": TerrainEdit.to_list(world_gen.edits) if world_gen else [],
 	}
 
 
@@ -289,6 +294,8 @@ func apply_snapshot(s: Dictionary) -> void:
 	looted = s.looted
 	pickups = s.pickups
 	structures = s.structures
+	if world_gen:
+		world_gen.edits = TerrainEdit.from_list(s.get("terrain", []))
 	pickups_changed.emit()
 	structures_changed.emit()
 

@@ -54,6 +54,10 @@ func hold(item_id: String) -> void:
 		# Turned so you see the face of the head, not just its edge.
 		_item.position = Vector3(0, -0.06, 0)
 		_item.rotation = Vector3(-0.15, 0.9, 0.3)
+	elif _held_type == "shovel":
+		# Blade held low and forward so the spade is in view.
+		_item.position = Vector3(0.0, -0.24, 0.0)
+		_item.rotation = Vector3(-0.2, 0.35, 0.3)
 	elif _held_type == "pickaxe":
 		_item.position = Vector3(0, -0.06, 0)
 		_item.rotation = Vector3(-0.15, 0.3, 0.32)

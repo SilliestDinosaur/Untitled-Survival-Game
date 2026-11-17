@@ -114,7 +114,35 @@ func _init(seed_value: int, pal: WorldPalette) -> void:
 
 
 ## Terrain height in meters at world position (x, z). Sea level is 0.
+## Metres added to the procedural ground by digging / piling / flattening. Keys are whole-metre
+## cells (Vector2i). Copy-on-write: edits are replaced by a new dictionary, so worker threads that
+## hold the old one keep reading a consistent copy.
+var edits: Dictionary = {}
+
+
+## Ground height including player edits. Everything that places things uses this.
 func get_height(x: float, z: float) -> float:
+	var base := get_base_height(x, z)
+	if edits.is_empty():
+		return base
+	return base + edit_at(x, z)
+
+
+## Bilinear blend of the edit grid, so sculpted ground has smooth slopes between metres.
+func edit_at(x: float, z: float) -> float:
+	var x0 := floori(x)
+	var z0 := floori(z)
+	var fx := x - x0
+	var fz := z - z0
+	var a: float = edits.get(Vector2i(x0, z0), 0.0)
+	var b: float = edits.get(Vector2i(x0 + 1, z0), 0.0)
+	var c: float = edits.get(Vector2i(x0, z0 + 1), 0.0)
+	var d: float = edits.get(Vector2i(x0 + 1, z0 + 1), 0.0)
+	return lerpf(lerpf(a, b, fx), lerpf(c, d, fx), fz)
+
+
+## The procedural ground, before any digging or building.
+func get_base_height(x: float, z: float) -> float:
 	var half := Game.WORLD_SIZE * 0.5
 	var dx := (x - half) / half
 	var dz := (z - half) / half

@@ -57,6 +57,9 @@ var _heat := 0.0
 var _exposure_timer := 0.0
 ## While holding a placeable: {ok, reason, pos, yaw, name}
 var placement := {}
+## Shovel: which terrain mode and how wide a stroke (local to this player).
+var shovel_mode := 0
+var shovel_radius := 1.5
 var _ghost: MeshInstance3D
 var _ghost_kind := ""
 var _ghost_ok_mat: StandardMaterial3D
@@ -347,6 +350,16 @@ func _update_actions(delta: float) -> void:
 	_swing_cooldown = maxf(_swing_cooldown - delta, 0.0)
 	_interact_cooldown = maxf(_interact_cooldown - delta, 0.0)
 	var focused := Input.mouse_mode == Input.MOUSE_MODE_CAPTURED or DisplayServer.get_name() == "headless"
+	if focused and holding_shovel():
+		if Input.is_action_just_pressed("shovel_mode"):
+			shovel_mode = (shovel_mode + 1) % TerrainEdit.MODE_NAMES.size()
+			hint.emit("Shovel: %s" % TerrainEdit.MODE_NAMES[shovel_mode])
+		if Input.is_action_just_pressed("shovel_bigger"):
+			shovel_radius = minf(shovel_radius + 0.5, TerrainEdit.MAX_RADIUS)
+			hint.emit("Shovel width %.1f m" % shovel_radius)
+		if Input.is_action_just_pressed("shovel_smaller"):
+			shovel_radius = maxf(shovel_radius - 0.5, 0.5)
+			hint.emit("Shovel width %.1f m" % shovel_radius)
 	if not focused or viewmodel.is_busy():
 		return
 	if Input.is_action_pressed("interact") and _interact_cooldown <= 0.0 and looking_at.get("interact", "") != "":
@@ -398,6 +411,9 @@ func _on_strike() -> void:
 		return
 	var point := ray.get_collision_point()
 	var look := looking_at
+	if holding_shovel() and look.is_empty() and ray.get_collider().name == "TerrainBody":
+		_shovel_work(point)
+		return
 	if look.has("animal") and not is_instance_valid(look.animal):
 		return   # the animal was removed (e.g. despawned) mid-swing
 	if look.has("animal"):
@@ -425,6 +441,26 @@ func _on_strike() -> void:
 		return
 	if look.has("resource"):
 		_hit_resource(look.chunk, look.resource, point)
+
+
+func holding_shovel() -> bool:
+	var item := inventory.selected_item()
+	return item != "" and ItemDB.info(item).get("tool", {}).get("type", "") == "shovel"
+
+
+## Dig, pile, flatten or smooth the ground where the shovel struck.
+func _shovel_work(point: Vector3) -> void:
+	var op := {"mode": shovel_mode, "x": point.x, "z": point.z, "r": shovel_radius, "s": 0.35, "target": point.y}
+	hit_landed.emit()
+	Net.request("terrain", op, func(res: Dictionary) -> void:
+		if not res.get("ok", false):
+			hint.emit(String(res.get("reason", "")))
+			return
+		Audio.play_3d("chop" if shovel_mode == TerrainEdit.Mode.DIG else "thud", point, -4.0, 0.6)
+		var soil: Color = Game.palette.sand.darkened(0.15) if Game.world_gen.get_surface(point.x, point.z) == "sand" else Game.palette.meadow_grass.darkened(0.3)
+		Effects.chips(get_parent(), point, soil, 8, 0.06, 2.0)
+		if shovel_mode == TerrainEdit.Mode.DIG and int(res.get("dirt", 0)) > 0:
+			hint.emit("+%d dirt" % int(res.dirt)))
 
 
 func _hit_resource(_chunk: TerrainChunk, r: Dictionary, point: Vector3) -> void:

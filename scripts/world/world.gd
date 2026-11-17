@@ -13,10 +13,12 @@ var view_radius := 6
 
 var _chunks := {}     # Vector2i -> TerrainChunk
 var _jobs := {}       # Vector2i -> {task, job}
+var _dirty := {}      # chunk coords whose ground changed and must be rebuilt
 var _water: MeshInstance3D
 
 
 func _ready() -> void:
+	Game.terrain_changed.connect(_on_terrain_changed)
 	view_radius = Settings.view_radius()
 	_build_water()
 	Game.assets_rebuilt.connect(func() -> void:
@@ -113,7 +115,9 @@ func _update_chunks(pos: Vector3) -> void:
 				continue
 			var d := _cheb(c, center)
 			var want := _tier_for(d)
-			if not _chunks.has(c):
+			if _dirty.has(c) and _chunks.has(c):
+				wanted.append([d * 2, c, _chunks[c].tier])   # ground changed: rebuild now
+			elif not _chunks.has(c):
 				wanted.append([d * 2, c, want])        # missing: highest priority
 			else:
 				var have: int = _chunks[c].tier
@@ -162,17 +166,35 @@ func _collect_jobs() -> void:
 		WorkerThreadPool.wait_for_task_completion(entry.task)
 		_jobs.erase(c)
 		var job: Dictionary = entry.job
-		if not job.has("result") or job.gen != Game.world_gen:
+		if not job.has("result") or job.get("stale", false) or job.gen != Game.world_gen:
 			continue
 		if focus and _cheb(c, world_to_chunk(focus.global_position)) > view_radius + 1:
 			continue
 		var chunk := TerrainChunk.new()
 		chunk.apply(c, job.tier, job.result, Game.flora)
+		_dirty.erase(c)
 		if _chunks.has(c):
 			_chunks[c].queue_free()   # swap in the new detail level only once it's ready
 		_chunks[c] = chunk
 		add_child(chunk)
 		applied += 1
+
+
+## Shovel work changed these cells: mark the chunks around them for rebuilding. Chunks being
+## built right now are invalidated so their old result is thrown away.
+func _on_terrain_changed(cells: Array) -> void:
+	var touched := {}
+	for cell: Array in cells:
+		var i := int(cell[0])
+		var j := int(cell[1])
+		for dz in [-1, 0, 1]:
+			for dx in [-1, 0, 1]:
+				var c := Vector2i(floori((i + dx) / float(Game.CHUNK_SIZE)), floori((j + dz) / float(Game.CHUNK_SIZE)))
+				touched[c] = true
+	for c: Vector2i in touched:
+		_dirty[c] = true
+		if _jobs.has(c):
+			_jobs[c].job.stale = true   # _collect_jobs drops it (the worker keeps its own copy of the data)
 
 
 func _wait_for_jobs() -> void:

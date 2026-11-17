@@ -288,6 +288,8 @@ func _process(delta: float) -> void:
 		parts.append("[%s] %s" % [Settings.code_label(Settings.binding_of("interact")), look.interact])
 	if look.get("attack", "") != "":
 		parts.append("[%s] %s" % [Settings.code_label(Settings.binding_of("attack")).replace(" Click", ""), look.attack])
+	if player.holding_shovel():
+		parts.append("[%s] %s  ·  [ ] width %.1f m" % [Settings.code_label(Settings.binding_of("shovel_mode")), TerrainEdit.MODE_NAMES[player.shovel_mode], player.shovel_radius])
 	if look.is_empty() and not player.placement.is_empty():
 		var pl: Dictionary = player.placement
 		parts.append(("[%s] Place %s" % [Settings.code_label(Settings.binding_of("attack")).replace(" Click", ""), pl.name]) if pl.ok else pl.reason)
