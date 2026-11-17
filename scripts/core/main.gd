@@ -30,6 +30,11 @@ var _orbit := 0.0
 var _ambience_timer := 0.0
 var _ocean_level := 0.0
 var _autosave := AUTOSAVE_SECONDS
+var _cave: CaveScene = null       ## the cave the player is in, if any
+var _caves_root: Node3D
+var _mouths: Node3D
+var _fade: ColorRect
+var _fading := false
 
 
 func _ready() -> void:
@@ -133,6 +138,9 @@ func _ready() -> void:
 	var structures := preload("res://scripts/world/structures.gd").new()
 	structures.name = "Structures"
 	add_child(structures)
+	player.cave_enter.connect(enter_cave)
+	player.cave_leave.connect(leave_cave)
+	player.cave_chest.connect(_open_cave_chest)
 	player.open_crafting.connect(func() -> void:
 		if state == State.PLAYING and not _inventory.visible:
 			_toggle_inventory(true))
@@ -180,6 +188,20 @@ func _preview_seed(seed_value: int) -> void:
 func _new_world_loaded() -> void:
 	_spawn = Game.world_gen.find_spawn_point()
 	player.spawn_point = _spawn
+	_build_mouths()
+
+
+## The cave entrances on the hillsides of this island.
+func _build_mouths() -> void:
+	if _mouths:
+		remove_child(_mouths)   # out of the tree now, so the new one can take its name
+		_mouths.queue_free()
+	_mouths = Node3D.new()
+	_mouths.name = "CaveMouths"
+	add_child(_mouths)
+	var spots: Array = Caves.entrances(Game.world_gen)
+	for i in spots.size():
+		_mouths.add_child(Caves.build_mouth(i, spots[i]))
 
 
 func create_world(display_name: String, seed_value: int) -> void:
@@ -232,8 +254,91 @@ func save_now() -> void:
 		return
 	if Net.is_host():
 		Net.store_all_guests()
-	Game.write_save(player.to_save_data())
+	var data: Dictionary = player.to_save_data()
+	if Game.in_cave:   # save at the cave's entrance, not down in the dark
+		var m := _mouth_position(Game.cave_index)
+		data.pos = [m.x, m.y, m.z]
+	Game.write_save(data)
 	_autosave = AUTOSAVE_SECONDS
+
+
+func _mouth_position(index: int) -> Vector3:
+	if _mouths and index >= 0 and index < _mouths.get_child_count():
+		return _mouths.get_child(index).position
+	return _spawn
+
+
+## Go down into the cave behind entrance `index`.
+func enter_cave(index: int) -> void:
+	if Game.in_cave or _fading:
+		return
+	_fade_then(func() -> void:
+		_leave_cave_now()
+		var m := _mouth_position(index)
+		var plan := Caves.plan(index)
+		_cave = CaveScene.new()
+		_cave.name = "Cave%d" % index
+		_cave.position = Vector3(m.x, Caves.CAVE_Y, m.z)
+		add_child(_cave)
+		_cave.build(plan, Game.flora.terrain_material)
+		Game.in_cave = true
+		Game.cave_index = index
+		player.velocity = Vector3.ZERO
+		player.global_position = _cave.to_global(_cave.spawn_point())
+		player.rotation.y = randf() * TAU
+		_hud.show_hint("Underground. Carry a torch, and keep your eyes open.")
+		save_now())
+
+
+## The supply chest in a cave: one per cave, looted once.
+func _open_cave_chest(index: int) -> void:
+	var key := "cave_chest_%d" % index
+	if Game.looted.has(key):
+		_hud.show_hint("Empty already")
+		return
+	var inv := Game.inventory_of(Game.LOCAL_PLAYER)
+	var out := {}
+	GameActions._loot_cache(inv, key, RandomNumberGenerator.new(), out)
+	Game.looted[key] = true
+	Audio.play(Audio.sfx.pickup, -4.0)
+	_hud.show_hint("Found %d things in the chest" % out.size() if not out.is_empty() else "Nothing useful inside")
+
+
+## Come back up to the entrance.
+func leave_cave() -> void:
+	if not Game.in_cave or _fading:
+		return
+	_fade_then(func() -> void:
+		var m := _mouth_position(Game.cave_index)
+		_leave_cave_now()
+		player.velocity = Vector3.ZERO
+		player.global_position = m + Vector3(0, 1.0, 3.5)
+		save_now())
+
+
+func _leave_cave_now() -> void:
+	if _cave:
+		_cave.queue_free()
+		_cave = null
+	Game.in_cave = false
+	Game.cave_index = -1
+
+
+## A quick fade to black and back around a change of place.
+func _fade_then(change: Callable) -> void:
+	if not _fade:
+		_fade = ColorRect.new()
+		_fade.color = Color(0.02, 0.02, 0.03, 0.0)
+		_fade.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
+		_fade.mouse_filter = Control.MOUSE_FILTER_IGNORE
+		_ui.add_child(_fade)
+	_fading = true
+	var tw := create_tween()
+	tw.tween_property(_fade, "color:a", 1.0, 0.25)
+	tw.tween_callback(change)
+	tw.tween_interval(0.05)
+	tw.tween_property(_fade, "color:a", 0.0, 0.35)
+	tw.tween_callback(func() -> void: _fading = false)
 
 
 # --- Screens ------------------------------------------------------------------------
@@ -262,6 +367,7 @@ func _to_title() -> void:
 
 
 func _start_loading(at: Vector3, heading := "Generating") -> void:
+	_leave_cave_now()
 	state = State.LOADING
 	Game.time_paused = not Net.is_online()   # with friends, the world keeps going
 	get_tree().paused = false

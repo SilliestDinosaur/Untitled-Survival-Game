@@ -7,6 +7,9 @@ signal landed(impact: float)
 signal hint(text: String)   ## short messages for the HUD ("Too hard to break by hand")
 signal hit_landed           ## a swing connected with something
 signal open_crafting        ## Interact on a station
+signal cave_enter(index: int)   ## Interact on a cave entrance
+signal cave_leave                ## Interact at the way out of a cave
+signal cave_chest(index: int)    ## Interact with a cave's supply chest
 
 const REACH := 3.2
 const PICKUP_SCENE_LAYER := 2
@@ -167,7 +170,7 @@ func _unhandled_input(event: InputEvent) -> void:
 
 func _physics_process(delta: float) -> void:
 	var on_floor := is_on_floor()
-	swimming = global_position.y + 1.0 < Game.SEA_LEVEL
+	swimming = not Game.in_cave and global_position.y + 1.0 < Game.SEA_LEVEL
 	var input := Input.get_vector("move_left", "move_right", "move_forward", "move_back")
 	var dir := (transform.basis * Vector3(input.x, 0.0, input.y)).normalized()
 
@@ -222,7 +225,7 @@ func _physics_process(delta: float) -> void:
 	# Keep the player on the map, and catch anyone who falls through the world.
 	global_position.x = clampf(global_position.x, 4.0, Game.WORLD_SIZE - 4.0)
 	global_position.z = clampf(global_position.z, 4.0, Game.WORLD_SIZE - 4.0)
-	if global_position.y < -40.0:
+	if global_position.y < -40.0 and not Game.in_cave:
 		respawn()
 
 	is_sprinting = sprinting and input != Vector2.ZERO
@@ -263,7 +266,7 @@ func _update_camera(delta: float, sprinting: bool, input: Vector2) -> void:
 	_fov_kick = lerpf(_fov_kick, 9.0 if sprinting and horizontal > 6.0 else 0.0, 1.0 - exp(-6.0 * delta))
 	camera.fov = Settings.fov + _fov_kick
 	viewmodel.update_motion(delta, _bob_time, _bob_amount)
-	underwater = camera.global_position.y < Game.SEA_LEVEL - 0.05
+	underwater = not Game.in_cave and camera.global_position.y < Game.SEA_LEVEL - 0.05
 
 
 func _update_looking_at() -> void:
@@ -272,6 +275,17 @@ func _update_looking_at() -> void:
 		return
 	var body := ray.get_collider() as CollisionObject3D
 	if not body or ray.get_collision_point().distance_to(camera.global_position) > REACH + 0.6:
+		return
+	if body.has_meta("cave_mouth"):
+		looking_at = {"name": "Cave entrance", "label": "Cave", "cave_mouth": int(body.get_meta("cave_mouth")), "interact": "Go down"}
+		return
+	if body.has_meta("cave_exit"):
+		looking_at = {"name": "The way up", "label": "Cave", "cave_exit": true, "interact": "Climb out"}
+		return
+	if body.has_meta("cave_chest"):
+		var cid := int(body.get_meta("cave_chest"))
+		var opened: bool = Game.looted.has("cave_chest_%d" % cid)
+		looking_at = {"name": "Supply chest", "label": "Chest", "cave_chest": cid, "interact": "" if opened else "Open"}
 		return
 	if body.has_meta("pickup"):
 		var pid: String = body.get_meta("pickup")
@@ -530,6 +544,15 @@ func _on_hit_resource(res: Dictionary, r: Dictionary, point: Vector3) -> void:
 ## Interact: the viewmodel's hand reached out.
 func _on_grab() -> void:
 	var look := looking_at
+	if look.has("cave_mouth"):
+		cave_enter.emit(int(look.cave_mouth))
+		return
+	if look.has("cave_exit"):
+		cave_leave.emit()
+		return
+	if look.has("cave_chest"):
+		cave_chest.emit(int(look.cave_chest))
+		return
 	if look.has("structure"):
 		open_crafting.emit()
 		return
@@ -691,6 +714,13 @@ func _update_exposure() -> void:
 	var p := global_position
 	var gen: WorldGen = Game.world_gen
 	var night := 1.0 - Game.daylight()
+	if Game.in_cave:
+		# Underground there is no sun; the cold and dark are worst without a light in hand.
+		_cold = 0.5 if inventory.selected_item() == "torch" else 1.3
+		_heat = 0.0
+		if inventory.selected_item() == "torch":
+			_heat += 0.45
+		return
 	var h := gen.get_height(p.x, p.z)
 	var w := gen.get_biome_weights(gen.get_climate(p.x, p.z, h))
 	var cold_biome := 0.0

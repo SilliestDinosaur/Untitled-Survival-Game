@@ -105,6 +105,13 @@ func light_state(t: float) -> Dictionary:
 
 
 func _apply_time(_force := false) -> void:
+	if Game.in_cave:   # underground: no sun or moon, only the dark
+		sun.visible = false
+		moon.visible = false
+		environment.ambient_light_energy = 0.04
+		environment.fog_light_color = Color(0.02, 0.02, 0.03)
+		sky_material.set_shader_parameter("night", 1.0)
+		return
 	var t := Game.time_of_day
 	var st := light_state(t)
 	var day: float = st.day

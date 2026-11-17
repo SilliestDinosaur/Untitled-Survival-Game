@@ -38,6 +38,9 @@ const MOODS := {
 	# Stalking prey: a low, pulsing tension with plucks, never the full battle drums.
 	"hunt": {"tempo": [96, 108], "scales": ["dorian", "minor_penta", "aeolian"], "pad": "dark_pad", "lead": "pluck",
 		"arp": "pluck", "bass": true, "drums": "stalk", "lead_density": 0.14, "arp_density": 0.35, "volume": -10.0},
+	# Underground: sparse, far-off notes over a low drone, with long silences.
+	"cave": {"tempo": [54, 62], "scales": ["phrygian", "aeolian"], "pad": "dark_pad", "lead": "bell",
+		"arp": "", "bass": false, "drums": "", "lead_density": 0.1, "arp_density": 0.0, "volume": -11.0},
 	"combat": {"tempo": [118, 132], "scales": ["harmonic_minor", "phrygian"], "pad": "strings", "lead": "strings",
 		"arp": "pluck", "bass": true, "drums": "battle", "lead_density": 0.25, "arp_density": 0.9, "volume": -8.0},
 }
@@ -175,6 +178,8 @@ func _choose_mood() -> String:
 		return "title"
 	if combat_heat > 0.6 or (mood == "combat" and combat_heat > 0.15):
 		return "combat"
+	if Game.in_cave:
+		return "cave"
 	if hunt_heat > 0.6 or (mood == "hunt" and hunt_heat > 0.2):
 		return "hunt"
 	var st := _light(Game.time_of_day)
