@@ -176,8 +176,8 @@ func _choose_mood() -> String:
 	return "day"
 
 
-static func _light(t: float) -> Dictionary:
-	var elev := sin((t - 0.25) * TAU)
+func _light(t: float) -> Dictionary:
+	var elev := sin(Game.sun_angle(t))
 	var day := smoothstep(-0.12, 0.12, elev)
 	var golden := (1.0 - smoothstep(0.08, 0.45, absf(elev))) * smoothstep(-0.2, 0.0, elev)
 	return {"night": 1.0 - day, "golden": golden}

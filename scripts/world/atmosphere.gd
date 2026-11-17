@@ -96,9 +96,9 @@ func _process(delta: float) -> void:
 
 
 ## 0..1 values describing the light right now.
-static func light_state(t: float) -> Dictionary:
-	# Sun elevation: -1 at midnight, +1 at noon (shifted so sunrise/sunset match Game).
-	var elev := sin((t - 0.25) * TAU)
+func light_state(t: float) -> Dictionary:
+	# Sun elevation: -1 at midnight, +1 at noon, 0 at Game.SUNRISE / Game.SUNSET.
+	var elev := sin(Game.sun_angle(t))
 	var day := smoothstep(-0.12, 0.12, elev)            # 0 night .. 1 day
 	var golden := (1.0 - smoothstep(0.08, 0.45, absf(elev))) * smoothstep(-0.2, 0.0, elev)
 	return {"elev": elev, "day": day, "night": 1.0 - day, "golden": golden}
@@ -110,7 +110,7 @@ func _apply_time(_force := false) -> void:
 	var day: float = st.day
 	var golden: float = st.golden
 	# Sun travels east -> west through the south; the moon is opposite.
-	var ang := (t - 0.25) * TAU
+	var ang := Game.sun_angle(t)
 	var sun_dir := Vector3(cos(ang) * 0.85, sin(ang), 0.35).normalized()
 	var moon_dir := -sun_dir + Vector3(0, 0.25, 0)
 	moon_dir = moon_dir.normalized()

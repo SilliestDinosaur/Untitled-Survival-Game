@@ -83,6 +83,22 @@ func _process(delta: float) -> void:
 				new_day.emit(day)
 
 
+## Sun angle around the sky: 0 at sunrise, PI/2 at noon, PI at sunset, then under the world.
+## Days are longer than nights, so the two halves run at different speeds.
+func sun_angle(t := -1.0) -> float:
+	if t < 0.0:
+		t = time_of_day
+	if t >= SUNRISE and t <= SUNSET:
+		return (t - SUNRISE) / (SUNSET - SUNRISE) * PI
+	var into_night := fposmod(t - SUNSET, 1.0) / (1.0 - (SUNSET - SUNRISE))
+	return PI + into_night * PI
+
+
+## 0 at night .. 1 in daylight (soft around sunrise and sunset).
+func daylight(t := -1.0) -> float:
+	return smoothstep(-0.12, 0.12, sin(sun_angle(t)))
+
+
 func is_night() -> bool:
 	return time_of_day < SUNRISE or time_of_day > SUNSET
 

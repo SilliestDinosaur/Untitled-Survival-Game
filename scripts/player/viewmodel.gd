@@ -164,7 +164,7 @@ func _process(delta: float) -> void:
 	if not _torch_light or not _torch_light.visible:
 		return
 	_t += delta
-	var night := 1.0 - smoothstep(-0.12, 0.12, sin((Game.time_of_day - 0.25) * TAU))
+	var night := 1.0 - Game.daylight()
 	var flicker := 0.85 + 0.1 * sin(_t * 13.0) + 0.06 * sin(_t * 29.0)
 	_torch_light.light_energy = flicker * lerpf(0.6, 1.8, night)
 	_torch_flame.scale = Vector3(1.0, flicker * 1.15, 1.0)

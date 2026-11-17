@@ -165,10 +165,10 @@ static func _forge(k: MeshKit, g: MeshKit, stone: Color) -> void:
 		return mortar.darkened(0.15) if band or t > 0.93 else mortar.lightened(0.08 * sin(a * 5.0 + t * 11.0))
 	k.loft(path, radii, 14, mortar.lightened(0.05), chimney_col, Callable(), false, true, 0.02)
 	# Mouth: dark recess with glowing coals.
-	k.add_primitive(MeshKit.sphere(0.3, 14, 8), Transform3D(Basis.from_scale(Vector3(1.0, 0.8, 0.6)), Vector3(0, 0.55, -0.5)), Color(0.08, 0.06, 0.06), 0.0, 0.02)
+	k.add_primitive(MeshKit.sphere(0.3, 14, 8), Transform3D(Basis.from_scale(Vector3(1.0, 0.8, 0.6)), Vector3(0, 0.55, -0.48)), Color(0.16, 0.08, 0.05), 0.0, 0.02)
 	for i in 9:
 		g.add_primitive(MeshKit.sphere(rng.randf_range(0.05, 0.08), 7, 5),
-			Transform3D(Basis(), Vector3(rng.randf_range(-0.2, 0.2), 0.42 + rng.randf_range(0.0, 0.05), -0.52 + rng.randf_range(-0.08, 0.08))),
+			Transform3D(Basis(), Vector3(rng.randf_range(-0.18, 0.18), 0.4 + rng.randf_range(0.0, 0.06), -0.66 + rng.randf_range(-0.05, 0.05))),
 			Color(1.0, rng.randf_range(0.3, 0.55), 0.1), 0.012, 0.15)
 	# Anvil on a stump beside it.
 	var ax := Vector3(0.95, 0, -0.2)

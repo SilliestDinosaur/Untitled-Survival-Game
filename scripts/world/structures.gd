@@ -110,7 +110,7 @@ func _make(st: Dictionary) -> Node3D:
 
 func _process(_delta: float) -> void:
 	var t := Time.get_ticks_msec() / 1000.0
-	var night := 1.0 - smoothstep(-0.12, 0.12, sin((Game.time_of_day - 0.25) * TAU))
+	var night := 1.0 - Game.daylight()
 	for id: String in _nodes:
 		var n: Node3D = _nodes[id]
 		var ph: float = n.get_meta("phase")

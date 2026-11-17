@@ -297,15 +297,16 @@ class CraftingPanel extends PanelContainer:
 		inventory = inv
 		player = p
 		add_theme_stylebox_override("panel", UITheme.paper_box(UITheme.PAPER, 12, 30))
-		custom_minimum_size = Vector2(430, 0)
+		custom_minimum_size = Vector2(400, 0)
 		var col := VBoxContainer.new()
 		col.add_theme_constant_override("separation", 8)
 		add_child(col)
 		col.add_child(UITheme.heading("Crafting", 36))
 		_near_label = UITheme.label("", 15, UITheme.INK_DIM)
 		col.add_child(_near_label)
-		var tabs := HBoxContainer.new()
-		tabs.add_theme_constant_override("separation", 4)
+		var tabs := HFlowContainer.new()
+		tabs.add_theme_constant_override("h_separation", 4)
+		tabs.add_theme_constant_override("v_separation", 4)
 		col.add_child(tabs)
 		for g: String in Recipes.GROUPS:
 			var b := Button.new()
@@ -320,7 +321,7 @@ class CraftingPanel extends PanelContainer:
 			tabs.add_child(b)
 			_tabs[g] = b
 		var scroll := ScrollContainer.new()
-		scroll.custom_minimum_size = Vector2(410, 400)
+		scroll.custom_minimum_size = Vector2(380, 380)
 		scroll.horizontal_scroll_mode = ScrollContainer.SCROLL_MODE_DISABLED
 		col.add_child(scroll)
 		_list = VBoxContainer.new()
