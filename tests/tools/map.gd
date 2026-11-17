@@ -28,10 +28,27 @@ func _initialize() -> void:
 				var c := Color(0.1, 0.25, 0.55)
 				if h > -0.5:
 					c = Color(0.92, 0.85, 0.6) if h < 2.0 else Color(0.35 + clampf(h / 90.0, 0, 0.5), 0.55 + clampf(h / 200.0, 0, 0.3), 0.25 + clampf(h / 120.0, 0, 0.3))
-					if rivers and wg.hydro.depth.size() > 0 and Hydrology.sample(wg.hydro.depth, wg.hydro.n, x, z) > 0.4:
+					if rivers and wg.hydro.depth.size() > 0 and _sample(wg.hydro.depth, wg.hydro.n, x, z) > 0.4:
 						c = Color(0.2, 0.5, 0.9)
 				sheet.set_pixel(si * res + i, j, c)
 		print("seed ", seeds[si], "  world ", t1 - t0, " ms  map ", Time.get_ticks_msec() - t1, " ms")
 	sheet.save_png(out_path)
 	print("saved ", out_path)
 	quit()
+
+
+## Bilinear sample of a per-cell grid (same as Hydrology.sample). Written out here so this script
+## does not name any project class, which would compile the game before the autoloads exist.
+func _sample(field: PackedFloat32Array, n: int, x: float, z: float) -> float:
+	var cell: float = 8.0
+	var fx := clampf(x / cell, 0.0, float(n - 1) - 0.001)
+	var fz := clampf(z / cell, 0.0, float(n - 1) - 0.001)
+	var i := int(fx)
+	var j := int(fz)
+	var tx := fx - i
+	var tz := fz - j
+	var a := field[j * n + i]
+	var b := field[j * n + i + 1]
+	var c := field[(j + 1) * n + i]
+	var d := field[(j + 1) * n + i + 1]
+	return lerpf(lerpf(a, b, tx), lerpf(c, d, tx), tz)
