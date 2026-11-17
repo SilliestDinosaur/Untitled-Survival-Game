@@ -443,6 +443,8 @@ func _process(delta: float) -> void:
 
 ## Slow orbit around the spawn area for the title screen background.
 func _fly_menu_camera(delta: float) -> void:
+	if not Game.world_gen:
+		return   # no island yet (the title screen before a world exists)
 	_orbit += delta * 0.035
 	var radius := 120.0
 	var pos := _spawn + Vector3(cos(_orbit) * radius, 0.0, sin(_orbit) * radius)
@@ -459,7 +461,7 @@ func _update_ambience(delta: float) -> void:
 	var p := cam.global_position
 	# Check for ocean around the listener a couple of times per second.
 	_ambience_timer -= delta
-	if _ambience_timer <= 0.0:
+	if _ambience_timer <= 0.0 and Game.world_gen:
 		_ambience_timer = 0.5
 		var water := 0
 		for i in 8:

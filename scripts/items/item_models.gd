@@ -132,7 +132,7 @@ static func _handle(k: MeshKit, length: float, tier: int, radius := 0.016, curve
 		if tier == 1:   # a crooked branch
 			bend += Vector3(sin(t * 7.0 + rng.randf()) * 0.004, 0, sin(t * 4.0) * 0.006)
 		path.append(Vector3(0, y, 0) + bend)
-		var r := radius * (1.06 - t * 0.12)
+		var r := radius * 1.3 * (1.06 - t * 0.12)   # a sturdier haft than the first cut
 		r *= 1.0 + 0.32 * exp(-pow(t / 0.05, 2.0))   # knob at the butt
 		radii.append(r)
 	var wood := BARK if tier == 1 else (DARK_WOOD if tier >= 4 else WOOD.lightened(0.04 * tier))
@@ -297,9 +297,9 @@ static func _hatchet(k: MeshKit, tier: int, col: Color) -> void:
 	var eye := hr * 2.0 + 0.012 if tier > 1 else 0.0
 	# Simpler silhouette: a bigger head, so it reads at a glance.
 	for i in outline.size():
-		outline[i] *= 1.15
+		outline[i] *= 1.32
 	for i in edge.size():
-		edge[i] *= 1.15
+		edge[i] *= 1.32
 	var xf := Transform3D(FORWARD_PLANE, Vector3(0, top, 0))
 	k.sculpt(outline, xf, _head_thickness(edge, body, falloff, eye, hr + 0.006), _head_color(tier, m, edge, 0.011), 2, 0.007)
 	k.flat_shading = false
@@ -324,7 +324,7 @@ static func _pickaxe(k: MeshKit, tier: int, col: Color) -> void:
 	# The eye: a squared block around the handle.
 	var block := func(t: float, _a: float) -> Color: return m.base.darkened(0.08) if t < 0.12 or t > 0.88 else m.base
 	k.loft([Vector3(0, top - 0.036, 0), Vector3(0, top - 0.03, 0), Vector3(0, top + 0.03, 0), Vector3(0, top + 0.036, 0)],
-		[0.03, 0.035, 0.035, 0.03], 4 if tier != 4 else 6, m.base, block, func(_t: float, _a: float) -> Vector2: return Vector2(0.85, 1.25))
+		[0.04, 0.046, 0.046, 0.04], 4 if tier != 4 else 6, m.base, block, func(_t: float, _a: float) -> Vector2: return Vector2(0.85, 1.25))
 	# Two arms curving down from the eye to points (tier 3 has a flat chisel at the back).
 	var sides := 4 if tier != 4 else 6
 	if tier == 4:
@@ -338,7 +338,7 @@ static func _pickaxe(k: MeshKit, tier: int, col: Color) -> void:
 			var t := float(i) / steps
 			var z: float = dir * (0.012 + t * length)
 			path.append(Vector3(0, top - pow(t, 2.0) * 0.05 + 0.004, z))
-			var r := lerpf(0.031, 0.004, pow(t, 1.1))
+			var r := lerpf(0.042, 0.005, pow(t, 1.1))
 			if tier == 3 and dir > 0.0:
 				r = lerpf(0.03, 0.02, t)   # chisel stays wide
 			radii.append(r)

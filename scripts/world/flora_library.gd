@@ -317,43 +317,10 @@ func _vary(c: Color, rng: RandomNumberGenerator, amount := 0.06) -> Color:
 
 func _pine(kit: MeshKit, rng: RandomNumberGenerator, leaf: Color, tiers_min: int, tiers_max: int,
 		h_min: float, h_max: float, r_min: float, r_max: float) -> void:
-	var h := rng.randf_range(h_min, h_max)
-	var trunk_r := rng.randf_range(0.24, 0.32)
-	var bark := _vary(_pal.bark, rng)
-	kit.add_primitive(MeshKit.cylinder(trunk_r * 0.5, trunk_r, h * 0.5, 7), Transform3D(Basis(), Vector3(0, h * 0.25, 0)), bark, 0.03)
-	var tiers := rng.randi_range(tiers_min, tiers_max)
-	var base := h * rng.randf_range(0.18, 0.28)
-	var radius := rng.randf_range(r_min, r_max)
-	var tier_h := (h - base) / tiers * 1.75
-	var leaves := _vary(leaf, rng)
-	for t in tiers:
-		var f := float(t) / tiers
-		var r := lerpf(radius, radius * 0.4, f)
-		var y := base + (h - base - tier_h) * (float(t) / (tiers - 1))
-		var twist := Basis(Vector3.UP, rng.randf() * TAU)
-		# Each tier is lit from its own core, so the layers read as separate soft skirts.
-		kit.add_primitive(MeshKit.cylinder(0.0, r, tier_h, 9), Transform3D(twist, Vector3(0, y + tier_h * 0.5, 0)),
-			leaves.lightened(f * 0.14), 0.18, 0.06, Vector3(0, y + tier_h * 0.2, 0))
-
+	TreeModels.conifer(kit, rng, _vary(_pal.bark, rng), _vary(leaf, rng), rng.randi_range(tiers_min, tiers_max), rng.randf_range(h_min, h_max), rng.randf_range(r_min, r_max))
 
 func _oak(kit: MeshKit, rng: RandomNumberGenerator, leaf: Color) -> void:
-	var h := rng.randf_range(2.6, 3.8)
-	var trunk_r := rng.randf_range(0.3, 0.42)
-	var bark := _vary(_pal.bark, rng)
-	kit.add_primitive(MeshKit.cylinder(trunk_r * 0.6, trunk_r, h + 0.8, 8), Transform3D(Basis(), Vector3(0, (h + 0.8) * 0.5, 0)), bark, 0.06)
-	_branches(kit, rng, bark, trunk_r, h, rng.randi_range(2, 3), 30, 50)
-	var center := Vector3(0, h + 1.3, 0)
-	var base_leaf := _vary(leaf, rng)
-	var blobs: Array = [[center, rng.randf_range(1.9, 2.3)]]
-	for i in rng.randi_range(3, 5):
-		var a := rng.randf() * TAU
-		var d := rng.randf_range(1.1, 1.7)
-		blobs.append([center + Vector3(cos(a) * d, rng.randf_range(-0.7, 0.8), sin(a) * d), rng.randf_range(1.1, 1.6)])
-	for bl: Array in blobs:
-		kit.add_primitive(MeshKit.sphere(bl[1], 9, 5), Transform3D(Basis().scaled(Vector3(1, 0.85, 1)), bl[0]),
-			base_leaf.lightened(rng.randf_range(-0.05, 0.06)), bl[1] * 0.2, 0.07, center)
-	_leaf_clumps(kit, rng, blobs, center, base_leaf, rng.randi_range(7, 10), 0.4)
-
+	TreeModels.round_tree(kit, rng, _vary(_pal.bark, rng), _vary(leaf, rng), rng.randf_range(2.8, 3.8), rng.randf_range(0.3, 0.42), rng.randf_range(1.5, 1.9))
 
 func _branches(kit: MeshKit, rng: RandomNumberGenerator, bark: Color, trunk_r: float, h: float, count: int, tilt_min: float, tilt_max: float) -> Array:
 	var tips := []
@@ -368,28 +335,7 @@ func _branches(kit: MeshKit, rng: RandomNumberGenerator, bark: Color, trunk_r: f
 
 
 func _birch(kit: MeshKit, rng: RandomNumberGenerator) -> void:
-	var h := rng.randf_range(6.0, 8.5)
-	var trunk_r := rng.randf_range(0.15, 0.2)
-	kit.add_primitive(MeshKit.cylinder(trunk_r * 0.6, trunk_r, h, 7), Transform3D(Basis(), Vector3(0, h * 0.5, 0)), _pal.birch_bark, 0.0, 0.03)
-	for i in rng.randi_range(4, 7):
-		var y := rng.randf_range(0.4, h * 0.7)
-		var r := lerpf(trunk_r, trunk_r * 0.6, y / h) * 1.06
-		kit.add_primitive(MeshKit.cylinder(r, r, rng.randf_range(0.05, 0.12), 7), Transform3D(Basis(), Vector3(0, y, 0)), Color(0.2, 0.18, 0.17), 0.0, 0.0)
-	var leaf := _vary(_pal.birch_leaves, rng)
-	var center := Vector3(0, h * 0.78, 0)
-	var blobs: Array = []
-	var clumps := rng.randi_range(4, 6)
-	for i in clumps:
-		var f := float(i) / (clumps - 1)
-		var r := lerpf(1.05, 0.6, f) * rng.randf_range(0.85, 1.15)
-		var a := rng.randf() * TAU
-		var spread := lerpf(0.75, 0.2, f)
-		var pos := Vector3(cos(a) * spread, lerpf(h * 0.55, h * 0.98, f), sin(a) * spread)
-		blobs.append([pos, r])
-		kit.add_primitive(MeshKit.sphere(r, 8, 5), Transform3D(Basis().scaled(Vector3(1, 1.25, 1)), pos),
-			leaf.lightened(rng.randf_range(-0.06, 0.08)), r * 0.22, 0.07, center)
-	_leaf_clumps(kit, rng, blobs, center, leaf, 5, 0.3)
-
+	TreeModels.birch(kit, rng, _pal.birch_bark, _vary(_pal.birch_leaves, rng), rng.randf_range(6.0, 8.5), rng.randf_range(0.15, 0.2))
 
 ## Weeping willow: a dome with long curtains of leaves hanging around it.
 func _willow(kit: MeshKit, rng: RandomNumberGenerator) -> void:
@@ -415,40 +361,11 @@ func _willow(kit: MeshKit, rng: RandomNumberGenerator) -> void:
 
 ## Savanna tree: leaning trunk splitting into branches with flat, wide canopy layers.
 func _acacia(kit: MeshKit, rng: RandomNumberGenerator) -> void:
-	var h := rng.randf_range(3.5, 5.0)
-	var trunk_r := rng.randf_range(0.22, 0.3)
-	var bark := _vary(_pal.bark, rng).lightened(0.05)
-	var lean := Basis(Vector3.FORWARD, rng.randf_range(-0.18, 0.18))
-	kit.add_primitive(MeshKit.cylinder(trunk_r * 0.7, trunk_r, h, 7), Transform3D(lean, lean.y * h * 0.5), bark, 0.04)
-	var top := lean.y * h
-	var leaf := _vary(_pal.acacia_leaves, rng)
-	var center := top + Vector3(0, 1.4, 0)
-	for b in rng.randi_range(2, 3):
-		var dir := (Vector3(rng.randf_range(-1, 1), rng.randf_range(0.7, 1.1), rng.randf_range(-1, 1))).normalized()
-		var length := rng.randf_range(1.3, 2.0)
-		kit.add_primitive(MeshKit.cylinder(trunk_r * 0.3, trunk_r * 0.6, length, 6), Transform3D(Basis(Quaternion(Vector3.UP, dir)), top + dir * length * 0.5), bark)
-		var tip := top + dir * length
-		var r := rng.randf_range(1.6, 2.3)
-		kit.add_primitive(MeshKit.sphere(r, 10, 5), Transform3D(Basis().scaled(Vector3(1, 0.28, 1)), tip + Vector3(0, 0.2, 0)), leaf.lightened(rng.randf_range(-0.04, 0.08)), 0.25, 0.07, center)
-	kit.add_primitive(MeshKit.sphere(2.4, 11, 5), Transform3D(Basis().scaled(Vector3(1, 0.24, 1)), center), leaf, 0.3, 0.07, center)
-
+	TreeModels.umbrella(kit, rng, _vary(_pal.bark, rng).lightened(0.05), _vary(_pal.acacia_leaves, rng), rng.randf_range(3.5, 5.0), rng.randf_range(0.22, 0.3))
 
 ## Bare, weathered tree.
 func _dead_tree(kit: MeshKit, rng: RandomNumberGenerator) -> void:
-	var h := rng.randf_range(3.5, 6.0)
-	var trunk_r := rng.randf_range(0.2, 0.3)
-	var wood := _vary(_pal.dead_wood, rng)
-	kit.add_primitive(MeshKit.cylinder(trunk_r * 0.35, trunk_r, h, 7), Transform3D(Basis(Vector3.FORWARD, rng.randf_range(-0.1, 0.1)), Vector3(0, h * 0.5, 0)), wood, 0.05)
-	for b in rng.randi_range(3, 5):
-		var yaw := rng.randf() * TAU
-		var tilt := Basis(Vector3.UP, yaw) * Basis(Vector3.RIGHT, deg_to_rad(rng.randf_range(25, 60)))
-		var length := rng.randf_range(0.9, 1.8)
-		var start := Vector3(0, h * rng.randf_range(0.45, 0.9), 0)
-		kit.add_primitive(MeshKit.cylinder(trunk_r * 0.08, trunk_r * 0.35, length, 5), Transform3D(tilt, start + tilt.y * length * 0.5), wood.darkened(0.05))
-		# A twig off each branch.
-		var twig := tilt * Basis(Vector3.RIGHT, deg_to_rad(-40))
-		kit.add_primitive(MeshKit.cylinder(0.01, trunk_r * 0.12, length * 0.5, 4), Transform3D(twig, start + tilt.y * length * 0.6 + twig.y * length * 0.25), wood)
-
+	TreeModels.dead(kit, rng, _vary(_pal.dead_wood, rng), rng.randf_range(3.5, 6.0), rng.randf_range(0.2, 0.3))
 
 func _cactus(kit: MeshKit, rng: RandomNumberGenerator) -> void:
 	var h := rng.randf_range(2.0, 3.6)
@@ -981,59 +898,7 @@ func _fern(kit: MeshKit, rng: RandomNumberGenerator) -> void:
 
 ## Tall rainforest tree: buttress roots, a straight pale trunk, a broad layered crown and vines.
 func _jungle_tree(kit: MeshKit, rng: RandomNumberGenerator) -> void:
-	var h := rng.randf_range(11.0, 16.0)
-	var trunk_r := rng.randf_range(0.32, 0.42)
-	var bark := _vary(_pal.bark, rng).lightened(0.18)
-	var lean := Vector3(rng.randf_range(-0.4, 0.4), 0, rng.randf_range(-0.4, 0.4))
-	var path := []
-	var radii := []
-	for i in 8:
-		var t := i / 7.0
-		path.append(Vector3(0, t * h, 0) + lean * t * t)
-		radii.append(trunk_r * lerpf(1.0, 0.55, t))
-	kit.loft(path, radii, 9, bark, func(t: float, a: float) -> Color: return bark.darkened(0.12) if fposmod(a * 1.3 + t * 3.0, 1.0) < 0.2 else bark, Callable(), true, true, 0.03)
-	# Buttress roots: thin fins flaring out at the base.
-	for i in rng.randi_range(4, 6):
-		var a := TAU * i / 5.0 + rng.randf_range(-0.3, 0.3)
-		var dir := Vector3(cos(a), 0, sin(a))
-		var reach := rng.randf_range(0.55, 0.9)
-		var rise := rng.randf_range(0.9, 1.4)
-		var outline := PackedVector2Array([Vector2(0, 0), Vector2(reach, 0), Vector2(reach * 0.45, rise * 0.25), Vector2(0.1, rise)])
-		kit.extrude(outline, Transform3D(Basis(Vector3.UP, -a), dir * trunk_r * 0.5 + Vector3(0, -0.15, 0)), 0.16, 0.06, bark, bark.lightened(0.08), 0.5)
-	# Crown: two wide flat layers of leaf masses.
-	var top: Vector3 = path[-1]
-	var leaves := _vary(_pal.jungle_leaves, rng)
-	var leaves2 := _vary(_pal.jungle_leaves_2, rng)
-	var blobs := []
-	for layer in 2:
-		var y := top.y - layer * 2.2
-		var spread := rng.randf_range(3.0, 4.2) - layer * 0.6
-		var center := top + Vector3(0, -layer * 2.2, 0)
-		var col := leaves if layer == 0 else leaves2
-		for i in rng.randi_range(5, 7):
-			var a := rng.randf() * TAU
-			var d := rng.randf_range(0.3, 1.0) * spread
-			var r := rng.randf_range(1.3, 1.9)
-			var pos := center + Vector3(cos(a) * d, rng.randf_range(-0.3, 0.4), sin(a) * d)
-			blobs.append([pos, r])
-			kit.add_primitive(MeshKit.sphere(r, 9, 5), Transform3D(Basis().scaled(Vector3(1.2, 0.5, 1.2)), pos), col.lightened(rng.randf_range(-0.05, 0.06)), r * 0.2, 0.07, center + Vector3(0, -1.5, 0))
-		# Branches out to the layer.
-		for i in 3:
-			var a := rng.randf() * TAU
-			var tip := center + Vector3(cos(a) * spread * 0.7, -0.3, sin(a) * spread * 0.7)
-			kit.loft([center + Vector3(0, -1.2, 0), tip], [trunk_r * 0.35, trunk_r * 0.15], 6, bark)
-		if y < 0.0:
-			break
-	_leaf_clumps(kit, rng, blobs, top, leaves2, rng.randi_range(6, 9), 0.5)
-	# Hanging vines.
-	var vine := _vary(_pal.vine, rng)
-	for i in rng.randi_range(5, 9):
-		var bl: Array = blobs[rng.randi() % blobs.size()]
-		var start: Vector3 = bl[0] + Vector3(rng.randf_range(-0.6, 0.6), -float(bl[1]) * 0.35, rng.randf_range(-0.6, 0.6))
-		var length := rng.randf_range(2.0, 5.5)
-		var sway := Vector3(rng.randf_range(-0.3, 0.3), 0, rng.randf_range(-0.3, 0.3))
-		kit.loft([start, start + Vector3(0, -length * 0.5, 0) + sway, start + Vector3(0, -length, 0) + sway * 0.6], [0.035, 0.03, 0.02], 5, vine)
-
+	TreeModels.jungle(kit, rng, _vary(_pal.bark, rng).lightened(0.18), _vary(_pal.jungle_leaves, rng), rng.randf_range(11.0, 16.0), rng.randf_range(0.32, 0.42))
 
 ## A mushroom the size of a tree: a pale swollen stem and a broad domed cap with spots and gills.
 func _giant_mushroom(kit: MeshKit, rng: RandomNumberGenerator, index: int) -> void:
