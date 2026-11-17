@@ -97,6 +97,7 @@ func _init(seed_value: int, pal: WorldPalette) -> void:
 	_moisture.fractal_octaves = 3
 
 	_forest.seed = seed_value + 5
+	_hydro_ready = false
 	_forest.frequency = 0.012
 	_forest.fractal_octaves = 2
 
@@ -117,8 +118,15 @@ func _init(seed_value: int, pal: WorldPalette) -> void:
 	_lake.fractal_octaves = 2
 	lake_amount = rng.randf_range(0.0, 1.0)
 
+	hydro = Hydrology.compute(self)
+	_hydro_ready = true
+
 
 ## Terrain height in meters at world position (x, z). Sea level is 0.
+## Drainage: river depths and water levels on a coarse grid (see Hydrology). Built once per world.
+var hydro := {}
+var _hydro_ready := false
+
 ## Metres added to the procedural ground by digging / piling / flattening. Keys are whole-metre
 ## cells (Vector2i). Copy-on-write: edits are replaced by a new dictionary, so worker threads that
 ## hold the old one keep reading a consistent copy.
@@ -190,6 +198,9 @@ func get_base_height(x: float, z: float) -> float:
 		var stepped := (floorf(f) + smoothstep(0.6, 0.95, f - floorf(f))) * step
 		land = lerpf(land, lerpf(raised, stepped, 0.6), smoothstep(0.0, 0.5, bad))
 	land = _carve_water(x, z, land, range_t, mask, bumps)
+	# Rivers: cut where the drainage model says water runs (see Hydrology).
+	if _hydro_ready and land > 0.0:
+		land -= Hydrology.sample(hydro.depth, hydro.n, x, z) * clampf(land / 2.0, 0.0, 1.0)
 	# The seabed: a shallow shelf that drops away gradually offshore.
 	var offshore := smoothstep(0.5, 0.95, coast_raw)
 	var seabed := lerpf(-2.5, -24.0, offshore) + bumps * 0.6 * offshore
@@ -216,16 +227,6 @@ func _carve_water(x: float, z: float, land: float, range_t: float, mask: float, 
 	if lake_t > 0.0:
 		var depth := -1.5 - smoothstep(lake_th, lake_th + 0.25, lk) * 3.5
 		land = lerpf(land, minf(land, depth + bumps * 0.4), lake_t)
-	# Rivers
-	var gate := smoothstep(-0.4, -0.05, _river_gate.get_noise_2d(x, z))
-	if gate <= 0.0:
-		return land
-	var rv := absf(_river.get_noise_2d(x, z))
-	var strength := gate * lowland
-	var valley := (1.0 - smoothstep(0.02, 0.085, rv)) * strength
-	var channel := (1.0 - smoothstep(0.01, 0.03, rv)) * strength
-	land = lerpf(land, minf(land, 2.2 + bumps * 0.5), valley)
-	land = lerpf(land, minf(land, -1.6 - clampf(1.0 - rv / 0.03, 0.0, 1.0) * 0.8), channel)
 	return land
 
 
