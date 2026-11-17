@@ -1,3 +1,6 @@
 .godot/
 *.import
 export/
+
+# Temporary render/debug scripts
+tests/_*
