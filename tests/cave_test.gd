@@ -28,9 +28,13 @@ func _process(_d: float) -> bool:
 				var spots: Array = _CavesScript.entrances(_game.world_gen)
 				_check(spots.size() >= 1, "the island has cave entrances (%d)" % spots.size())
 				_check(_main._mouths.get_child_count() == spots.size(), "each entrance has a visible mouth")
-				var plan: Dictionary = _CavesScript.plan(0)
-				_check(plan.pts.size() >= 10 and plan.rooms.size() == 3, "the cave plan has a tunnel and three rooms")
-				_check(plan.pts == _CavesScript.plan(0).pts, "the same seed plans the same cave")
+				var pts: Array = []
+				for m: Node3D in _main._mouths.get_children():
+					pts.append(m.position)
+				var net: Dictionary = _CavesScript.network(pts)
+				_check(net.roots.size() == pts.size(), "every entrance drops into the network")
+				_check(net.nodes.size() >= 60 and net.rooms.size() >= 2, "the network has tunnels and chambers (%d nodes, %d chambers)" % [net.nodes.size(), net.rooms.size()])
+				_check(net.edges.size() >= net.nodes.size() - 1, "the network is connected by its edges (%d edges)" % net.edges.size())
 				_main.enter_cave(0)
 				_step = 1
 				_f = 0
@@ -39,7 +43,7 @@ func _process(_d: float) -> bool:
 				_check(_game.in_cave, "entering takes you underground")
 				var p = _main.get_node("Player")
 				_check(p.global_position.y < _CavesScript.CAVE_Y + 20.0 and p.global_position.y > _CavesScript.CAVE_Y - 20.0, "the player is in the cave (y %.1f)" % p.global_position.y)
-				_check(_main.get_node_or_null("Cave0") != null, "the cave scene exists")
+				_check(_main.get_node_or_null("Underground") != null, "the underground scene exists")
 				_check(not p.swimming and not p.underwater, "underground is not treated as water")
 				_step = 2
 				_f = 0

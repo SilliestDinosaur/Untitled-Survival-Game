@@ -41,42 +41,136 @@ static func entrances(gen: WorldGen) -> Array:
 	return out
 
 
-## The plan for cave number `index` (local coordinates: the entrance is at the origin, the tunnel
-## runs off into the hill). Deterministic from the seed, so every player sees the same cave.
-static func plan(index: int) -> Dictionary:
+## The underground network, planned from the world seed. Every entrance drops into it at its own
+## spot; tunnels grow from there with branches, dead ends, chambers of varying size, and loops.
+## Entrances that are close together are joined by long winding corridors, so caves link up.
+## Nodes are in world coordinates (y around CAVE_Y). Cached per world seed.
+static var _net_cache := {}
+const MAX_NODES := 900
+const LINK_DISTANCE := 260.0
+
+
+static func network(entrance_points: Array) -> Dictionary:
+	var key := "%d_%d" % [Game.world_seed, entrance_points.size()]
+	if _net_cache.has(key):
+		return _net_cache[key]
 	var rng := RandomNumberGenerator.new()
-	rng.seed = hash([Game.world_seed, "cave", index])
-	var pts: Array[Vector3] = []
-	var rad: Array = []
-	var p := Vector3.ZERO
-	var dir := Vector3(1, 0, 0).rotated(Vector3.UP, rng.randf() * TAU)
-	var n := 17
-	for i in n:
-		pts.append(p)
-		rad.append(2.1 + rng.randf() * 0.7)
-		dir = dir.rotated(Vector3.UP, rng.randf_range(-0.45, 0.45)).normalized()
-		dir.y = clampf(-0.12 + sin(float(i) * 0.5) * 0.08, -0.25, 0.05)
-		dir = dir.normalized()
-		p += dir * rng.randf_range(3.2, 4.4)
-	# Three rooms, spaced along the tunnel.
-	var rooms := [5, 10, 15]
+	rng.seed = hash([Game.world_seed, "network"])
+	var nodes: Array = []   # {p: Vector3, r: float, tree: int}
+	var edges: Array = []   # [a, b]
+	var rooms: Array = []   # node indices of chambers
+	var roots: Array = []   # node index at each entrance
+	# Each entrance starts a tree of tunnels.
+	for e in entrance_points.size():
+		var s: Vector3 = entrance_points[e]
+		var root := _add_node(nodes, Vector3(s.x, Caves.CAVE_Y, s.z), 2.4, e)
+		roots.append(root)
+		# Frontier items: [node index, direction, radius, steps left, tree]
+		var frontier: Array = [[root, Vector3(rng.randf_range(-1, 1), -0.25, rng.randf_range(-1, 1)).normalized(), 2.4, 14 + rng.randi() % 10, e]]
+		while not frontier.is_empty() and nodes.size() < MAX_NODES:
+			var pick: int = rng.randi() % frontier.size()
+			var item: Array = frontier[pick]
+			frontier.remove_at(pick)
+			var cur: int = item[0]
+			var dir: Vector3 = item[1]
+			var rad: float = item[2]
+			var steps: int = item[3]
+			var tree: int = item[4]
+			for _step in steps:
+				if nodes.size() >= MAX_NODES:
+					break
+				dir = dir.rotated(Vector3.UP, rng.randf_range(-0.55, 0.55)).normalized()
+				dir.y = clampf(dir.y + rng.randf_range(-0.12, 0.12) - (nodes[cur].p.y - Caves.CAVE_Y) * 0.04, -0.4, 0.3)
+				dir = dir.normalized()
+				var length := rng.randf_range(3.2, 5.0)
+				# Mostly tunnels, now and then a chamber (bigger, and a point to put chests and bats).
+				var is_room := rng.randf() < 0.1
+				var nr := clampf(rad + rng.randf_range(-0.5, 0.5), 1.2, 3.6)
+				if is_room:
+					nr = rng.randf_range(4.5, 7.5)
+				var p: Vector3 = nodes[cur].p + dir * length
+				p.y = clampf(p.y, Caves.CAVE_Y - 26.0, Caves.CAVE_Y + 10.0)
+				var nxt := _add_node(nodes, p, nr, tree)
+				edges.append([cur, nxt])
+				if is_room:
+					rooms.append(nxt)
+				cur = nxt
+				rad = nr
+				# Branches: side tunnels that are narrower and shorter.
+				if rng.randf() < 0.16 and steps > 3:
+					var bd := dir.rotated(Vector3.UP, (1.0 if rng.randf() < 0.5 else -1.0) * rng.randf_range(0.6, 1.3))
+					frontier.append([cur, bd.normalized(), maxf(rad * 0.7, 1.1), rng.randi_range(3, 8), tree])
+			# A tunnel can end in a dead end (fine), or carry on as its own branch.
+	# Corridors between entrances that are close: they make the caves connect.
+	for a in roots.size():
+		var best := -1
+		var best_d := LINK_DISTANCE
+		for b in roots.size():
+			if b == a:
+				continue
+			var d: float = nodes[roots[a]].p.distance_to(nodes[roots[b]].p)
+			if d < best_d:
+				best_d = d
+				best = b
+		if best >= 0 and rng.randf() < 0.8:
+			_corridor(nodes, edges, rng, roots[a], roots[best])
+	# Loops: a few nodes of different tunnels that happen to be close are joined.
+	var loops := 0
+	for i in nodes.size():
+		if loops >= 20 or nodes.size() >= MAX_NODES:
+			break
+		for j in range(i + 1, nodes.size()):
+			if nodes[i].tree == nodes[j].tree:
+				continue
+			if nodes[i].p.distance_to(nodes[j].p) < 16.0 and rng.randf() < 0.3:
+				edges.append([i, j])
+				loops += 1
+				break
+	# Chests in some chambers, glowing fungus on the floors, bats up in the chambers.
+	var chests: Array = []
+	var glow: Array = []
+	var bats: Array = []
 	for r: int in rooms:
-		rad[r] = 5.0 + rng.randf() * 1.0
-	var glow: Array[Vector3] = []
-	for i in 16:
-		var k: int = rooms[rng.randi() % rooms.size()] if rng.randf() < 0.7 else rng.randi_range(1, n - 2)
-		var c: Vector3 = pts[k]
-		var ang := rng.randf() * TAU
-		var spread := float(rad[k]) * rng.randf_range(0.2, 0.7)
-		glow.append(c + Vector3(cos(ang) * spread, -float(rad[k]) * 0.8, sin(ang) * spread))
-	var bats: Array[Vector3] = []
-	for r: int in rooms:
-		for j in 2:
+		if chests.size() < 6 and rng.randf() < 0.45:
+			chests.append(nodes[r].p + Vector3(float(nodes[r].r) * 0.4, -float(nodes[r].r) + 1.0, 0.0))
+		if bats.size() < 16:
+			for k in 2:
+				var ang := rng.randf() * TAU
+				bats.append(nodes[r].p + Vector3(cos(ang) * 2.5, float(nodes[r].r) * 0.4, sin(ang) * 2.5))
+	for i in nodes.size():
+		if glow.size() >= 90:
+			break
+		if rng.randf() < 0.1:
+			var n: Dictionary = nodes[i]
 			var ang := rng.randf() * TAU
-			bats.append(pts[r] + Vector3(cos(ang) * 2.0, float(rad[r]) * 0.45, sin(ang) * 2.0))
-	var last: Vector3 = pts[rooms[2]]
-	var chest := Vector3(last.x + 2.2, last.y - float(rad[rooms[2]]) + 1.0, last.z - 1.2)
-	return {"id": index, "pts": pts, "rad": rad, "rooms": rooms, "glow": glow, "bats": bats, "chest": chest}
+			glow.append(n.p + Vector3(cos(ang) * float(n.r) * 0.5, -float(n.r) * 0.8, sin(ang) * float(n.r) * 0.5))
+	var result := {"nodes": nodes, "edges": edges, "rooms": rooms, "roots": roots, "chests": chests, "glow": glow, "bats": bats}
+	_net_cache[key] = result
+	return result
+
+
+static func _add_node(nodes: Array, p: Vector3, r: float, tree: int) -> int:
+	nodes.append({"p": p, "r": r, "tree": tree})
+	return nodes.size() - 1
+
+
+## A long winding corridor from node a to node b, with a few bends so it reads as dug rock.
+static func _corridor(nodes: Array, edges: Array, rng: RandomNumberGenerator, a: int, b: int) -> void:
+	var pa: Vector3 = nodes[a].p
+	var pb: Vector3 = nodes[b].p
+	var n := maxi(3, int(pa.distance_to(pb) / 4.5))
+	var prev := a
+	for i in range(1, n):
+		if nodes.size() >= MAX_NODES:
+			break
+		var t := float(i) / n
+		var p := pa.lerp(pb, t)
+		p += Vector3(rng.randf_range(-3, 3), rng.randf_range(-1.5, 1.5), rng.randf_range(-3, 3))
+		p.y = clampf(p.y, Caves.CAVE_Y - 26.0, Caves.CAVE_Y + 10.0)
+		var nxt := _add_node(nodes, p, rng.randf_range(1.5, 2.6), nodes[a].tree)
+		edges.append([prev, nxt])
+		prev = nxt
+	edges.append([prev, b])
 
 
 ## The visible entrance on the hillside: a rock arch around a dark opening, facing downhill.

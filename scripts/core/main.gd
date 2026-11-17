@@ -274,17 +274,18 @@ func enter_cave(index: int) -> void:
 		return
 	_fade_then(func() -> void:
 		_leave_cave_now()
-		var m := _mouth_position(index)
-		var plan := Caves.plan(index)
+		var points: Array = []
+		for m: Node3D in _mouths.get_children():
+			points.append(m.position)
+		var net := Caves.network(points)
 		_cave = CaveScene.new()
-		_cave.name = "Cave%d" % index
-		_cave.position = Vector3(m.x, Caves.CAVE_Y, m.z)
+		_cave.name = "Underground"
 		add_child(_cave)
-		_cave.build(plan, Game.flora.terrain_material)
+		_cave.build(net, net.roots)
 		Game.in_cave = true
 		Game.cave_index = index
 		player.velocity = Vector3.ZERO
-		player.global_position = _cave.to_global(_cave.spawn_point())
+		player.global_position = _cave.spawn_for(index)
 		player.rotation.y = randf() * TAU
 		_hud.show_hint("Underground. Carry a torch, and keep your eyes open.")
 		save_now())
@@ -305,11 +306,11 @@ func _open_cave_chest(index: int) -> void:
 
 
 ## Come back up to the entrance.
-func leave_cave() -> void:
+func leave_cave(index: int) -> void:
 	if not Game.in_cave or _fading:
 		return
 	_fade_then(func() -> void:
-		var m := _mouth_position(Game.cave_index)
+		var m := _mouth_position(index)
 		_leave_cave_now()
 		player.velocity = Vector3.ZERO
 		player.global_position = m + Vector3(0, 1.0, 3.5)

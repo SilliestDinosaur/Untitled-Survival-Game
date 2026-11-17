@@ -8,7 +8,7 @@ signal hint(text: String)   ## short messages for the HUD ("Too hard to break by
 signal hit_landed           ## a swing connected with something
 signal open_crafting        ## Interact on a station
 signal cave_enter(index: int)   ## Interact on a cave entrance
-signal cave_leave                ## Interact at the way out of a cave
+signal cave_leave(index: int)    ## Interact at a way out of a cave
 signal cave_chest(index: int)    ## Interact with a cave's supply chest
 
 const REACH := 3.2
@@ -280,7 +280,7 @@ func _update_looking_at() -> void:
 		looking_at = {"name": "Cave entrance", "label": "Cave", "cave_mouth": int(body.get_meta("cave_mouth")), "interact": "Go down"}
 		return
 	if body.has_meta("cave_exit"):
-		looking_at = {"name": "The way up", "label": "Cave", "cave_exit": true, "interact": "Climb out"}
+		looking_at = {"name": "The way up", "label": "Cave", "cave_exit": int(body.get_meta("cave_exit")), "interact": "Climb out"}
 		return
 	if body.has_meta("cave_chest"):
 		var cid := int(body.get_meta("cave_chest"))
@@ -548,7 +548,7 @@ func _on_grab() -> void:
 		cave_enter.emit(int(look.cave_mouth))
 		return
 	if look.has("cave_exit"):
-		cave_leave.emit()
+		cave_leave.emit(int(look.cave_exit))
 		return
 	if look.has("cave_chest"):
 		cave_chest.emit(int(look.cave_chest))
