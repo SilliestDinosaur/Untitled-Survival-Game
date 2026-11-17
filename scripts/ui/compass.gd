@@ -4,6 +4,7 @@ extends Control
 
 var heading := 0.0   ## degrees, 0 = north, 90 = east
 ## Other players: [{bearing: degrees from north, name, color}] shown as dots on the strip.
+## Players outside the strip are pinned to its edge with an arrow, so friends are always findable.
 var markers: Array = []
 const SPAN := 150.0  ## degrees visible across the strip
 const LETTERS := {0: "N", 45: "NE", 90: "E", 135: "SE", 180: "S", 225: "SW", 270: "W", 315: "NW"}
@@ -37,14 +38,20 @@ func _draw() -> void:
 			draw_line(Vector2(x, 14), Vector2(x, 24), Color(UITheme.INK, 0.45 * fade), 1.5, true)
 	for m: Dictionary in markers:
 		var diff := wrapf(float(m.bearing) - heading, -180.0, 180.0)
-		if absf(diff) > SPAN * 0.5:
-			continue
-		var x := mid + diff / (SPAN * 0.5) * (w * 0.5 - 30)
+		var off := absf(diff) > SPAN * 0.5
+		# Friends outside the strip are pinned to the edge they are beyond, dimmed, with an arrow.
+		var shown := clampf(diff, -SPAN * 0.5, SPAN * 0.5)
+		var x := mid + shown / (SPAN * 0.5) * (w * 0.5 - 30)
 		var at := Vector2(x, 7.0)
-		draw_circle(at, 7.5, Color(0.12, 0.09, 0.07, 0.85))
-		draw_circle(at, 5.8, m.color)
+		var alpha := 0.55 if off else 1.0
+		draw_circle(at, 7.5, Color(0.12, 0.09, 0.07, 0.85 * alpha))
+		draw_circle(at, 5.8, Color(m.color, alpha))
 		var font := UITheme.BOLD_FONT
 		var initial: String = String(m.name).substr(0, 1).to_upper()
 		var iw := font.get_string_size(initial, HORIZONTAL_ALIGNMENT_LEFT, -1, 11).x
-		draw_string(font, at + Vector2(-iw * 0.5, 4.0), initial, HORIZONTAL_ALIGNMENT_LEFT, -1, 11, Color(1, 1, 1))
+		draw_string(font, at + Vector2(-iw * 0.5, 4.0), initial, HORIZONTAL_ALIGNMENT_LEFT, -1, 11, Color(1, 1, 1, alpha))
+		if off:
+			var dir := signf(diff)
+			var tip := at + Vector2(dir * 11.0, 0)
+			draw_colored_polygon(PackedVector2Array([tip, tip - Vector2(dir * 4.0, 3.5), tip - Vector2(dir * 4.0, -3.5)]), Color(m.color, alpha))
 	draw_colored_polygon(PackedVector2Array([Vector2(mid - 6, size.y + 4), Vector2(mid + 6, size.y + 4), Vector2(mid, size.y - 4)]), UITheme.ACCENT)

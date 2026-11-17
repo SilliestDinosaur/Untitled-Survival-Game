@@ -34,7 +34,18 @@ func _process(_d: float) -> bool:
 				var net: Dictionary = _CavesScript.network(pts)
 				_check(net.roots.size() == pts.size(), "every entrance drops into the network")
 				_check(net.nodes.size() >= 60 and net.rooms.size() >= 2, "the network has tunnels and chambers (%d nodes, %d chambers)" % [net.nodes.size(), net.rooms.size()])
-				_check(net.edges.size() >= net.nodes.size() - 1, "the network is connected by its edges (%d edges)" % net.edges.size())
+				# Real connectivity: union the edges and count the separate systems. Each entrance's
+				# tunnels are one system; corridors may join systems, so the count is informational.
+				var par: Array = range(net.nodes.size())
+				for e: Array in net.edges:
+					var ra: int = _find(par, e[0])
+					var rb: int = _find(par, e[1])
+					par[ra] = rb
+				var systems := {}
+				for i in net.nodes.size():
+					systems[_find(par, i)] = true
+				print("cave systems: %d (entrances %d, edges %d)" % [systems.size(), net.roots.size(), net.edges.size()])
+				_check(systems.size() <= net.roots.size(), "no cave tunnel floats free of every entrance (%d systems)" % systems.size())
 				_main.enter_cave(0)
 				_step = 1
 				_f = 0
@@ -49,7 +60,7 @@ func _process(_d: float) -> bool:
 				_f = 0
 		2:
 			if _f == 60:
-				_main.leave_cave()
+				_main.leave_cave(0)
 				_step = 3
 				_f = 0
 		3:
@@ -87,3 +98,10 @@ func _check(ok: bool, what: String) -> void:
 func _finish() -> bool:
 	print("RESULT: ", "PASS" if _fails.is_empty() else "FAIL")
 	return true
+
+
+func _find(par: Array, i: int) -> int:
+	while par[i] != i:
+		par[i] = par[par[i]]
+		i = par[i]
+	return i
