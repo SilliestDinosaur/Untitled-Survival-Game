@@ -96,11 +96,21 @@ func _make(st: Dictionary) -> Node3D:
 	body.collision_mask = 0
 	body.set_meta("structure", st.id)
 	var cs := CollisionShape3D.new()
-	var shape := CylinderShape3D.new()
-	shape.radius = model.radius
-	shape.height = 0.9 if st.kind != "forge" else 2.0
-	cs.shape = shape
-	cs.position.y = shape.height * 0.5
+	if GameActions.is_building(st.kind):
+		var box := BoxShape3D.new()
+		if st.kind == "foundation":
+			box.size = Vector3(2.0, 0.5, 2.0)
+			cs.position.y = 0.0
+		else:
+			box.size = Vector3(2.0, 2.4, 0.3)
+			cs.position.y = 1.2
+		cs.shape = box
+	else:
+		var shape := CylinderShape3D.new()
+		shape.radius = model.radius
+		shape.height = 0.9 if st.kind != "forge" else 2.0
+		cs.shape = shape
+		cs.position.y = shape.height * 0.5
 	body.add_child(cs)
 	root.add_child(body)
 	root.set_meta("phase", randf() * TAU)

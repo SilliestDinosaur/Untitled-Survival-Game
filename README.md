@@ -65,6 +65,16 @@ around the island hold a few used tools to get you started.
 Food is per-world too: berries, a fruiting tree species, and mushrooms and herbs whose effects
 (mending, vigor, sated... or poison) are unknown until you try them.
 
+## Shaping the land
+- **Shovel** (R changes mode, `[` and `]` change width): **Dig** removes dirt and gives it to you,
+  **Pile** builds up with dirt from your satchel, **Flatten** levels to the height you aim at,
+  **Smooth** softens bumps. Changes are saved with the world and shared with friends.
+- **Pickaxe**: breaks stone on rocky or steep ground (not on soft soil) and gives stone.
+  Stone chiseled at a workbench becomes **stone bricks**.
+- **Base building**: a **Foundation** (4 bricks) levels the ground under it, blending into the
+  slope. **Brick walls** (3 bricks) and **plank walls** (3 planks) snap to the edges of a
+  foundation, so they can't float or clip into the ground. Pieces snap to a 2 m grid.
+
 ## Crafting
 Open the satchel (Tab) to see the crafting list beside it, by group: Basics, Stations, Tools,
 Materials, Food. Ingredients show what you have / need; Shift-click Craft to make five.

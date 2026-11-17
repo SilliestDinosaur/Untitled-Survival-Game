@@ -212,10 +212,91 @@ static func craft(player_id: int, recipe_id: String, pos: Vector3, times := 1) -
 	return {"ok": true, "out": r.out, "made": made}
 
 
+## Building pieces snap to a 2 m grid: foundations fill cells, walls sit on cell edges.
+const CELL := 2.0
+const BUILD_KINDS := ["foundation", "wall", "wood_wall"]
+const WALL_LIFT := 0.25   ## walls stand on top of a foundation's slab
+
+
+static func is_building(kind: String) -> bool:
+	return kind in BUILD_KINDS
+
+
+static func cell_of(p: Vector3) -> Vector2i:
+	return Vector2i(floori(p.x / CELL), floori(p.z / CELL))
+
+
+## The foundation in a grid cell, or {} if there isn't one.
+static func foundation_at(cell: Vector2i) -> Dictionary:
+	for id: String in Game.structures:
+		var st: Dictionary = Game.structures[id]
+		if st.kind == "foundation":
+			var p: Array = st.pos
+			if cell_of(Vector3(p[0], p[1], p[2])) == cell:
+				return st
+	return {}
+
+
+## Where a building piece would go if the player aims at `aim` (ground point).
+## Returns {pos, yaw}. Foundations: the cell under the aim. Walls: the nearest cell edge.
+static func snap_piece(kind: String, aim: Vector3) -> Dictionary:
+	var cell := cell_of(aim)
+	var c := Vector3(cell.x * CELL + CELL * 0.5, 0.0, cell.y * CELL + CELL * 0.5)
+	if kind == "foundation":
+		c.y = Game.world_gen.get_height(c.x, c.z)
+		return {"pos": c, "yaw": 0.0}
+	var dx := aim.x - c.x
+	var dz := aim.z - c.z
+	var pos: Vector3
+	var yaw := 0.0
+	if absf(dx) > absf(dz):   # the wall runs north-south, on an east or west edge
+		pos = Vector3(c.x + signf(dx) * CELL * 0.5, 0.0, c.z)
+		yaw = PI * 0.5
+	else:                     # runs east-west, on a north or south edge
+		pos = Vector3(c.x, 0.0, c.z + signf(dz) * CELL * 0.5)
+	# Stand on the foundation that the wall borders (either side), if there is one.
+	var sides := _wall_sides(pos, yaw)
+	for s: Vector2i in sides:
+		var f := foundation_at(s)
+		if not f.is_empty():
+			pos.y = float(f.pos[1]) + WALL_LIFT
+			return {"pos": pos, "yaw": yaw}
+	pos.y = Game.world_gen.get_height(pos.x, pos.z)
+	return {"pos": pos, "yaw": yaw}
+
+
+## The two grid cells a wall at `pos` with `yaw` separates.
+static func _wall_sides(pos: Vector3, yaw: float) -> Array:
+	if absf(yaw) < 0.01:   # along x, on a z boundary
+		return [cell_of(Vector3(pos.x, 0, pos.z - 0.5)), cell_of(Vector3(pos.x, 0, pos.z + 0.5))]
+	return [cell_of(Vector3(pos.x - 0.5, 0, pos.z)), cell_of(Vector3(pos.x + 0.5, 0, pos.z))]
+
+
 ## Can a structure go here? Returns "" if fine, else the reason.
-static func placement_problem(pos: Vector3) -> String:
+static func placement_problem(pos: Vector3, kind := "", yaw := 0.0) -> String:
 	if pos.y < Game.SEA_LEVEL + 0.15:
 		return "Can't build in water"
+	if is_building(kind):
+		var steep_limit := 0.6 if kind == "foundation" else 0.8
+		if kind == "foundation" and Game.world_gen.get_normal(pos.x, pos.z).y < steep_limit:
+			return "Too steep here (the ground would need too much levelling)"
+		if kind == "foundation":
+			if not foundation_at(cell_of(pos)).is_empty():
+				return "There's already a foundation here"
+			return ""
+		var sides := _wall_sides(pos, yaw)
+		var supported := false
+		for s: Vector2i in sides:
+			if not foundation_at(s).is_empty():
+				supported = true
+		if not supported:
+			return "Walls need a foundation along that edge"
+		for id: String in Game.structures:
+			var o: Dictionary = Game.structures[id]
+			var p: Array = o.pos
+			if o.kind in BUILD_KINDS and o.kind != "foundation" and Vector3(p[0], p[1], p[2]).distance_to(pos) < 0.5:
+				return "There's already a wall here"
+		return ""
 	if Game.world_gen.get_normal(pos.x, pos.z).y < 0.8:
 		return "Too steep here"
 	for id: String in Game.structures:
@@ -231,15 +312,16 @@ static func place_structure(player_id: int, slot: int, pos: Vector3, yaw: float)
 	var s: Dictionary = inv.slots[slot]
 	if s.is_empty() or ItemDB.info(s.id).kind != "placeable":
 		return {"ok": false, "reason": ""}
-	var problem := placement_problem(pos)
+	var kind: String = ItemDB.info(s.id).station
+	var problem := placement_problem(pos, kind, yaw)
 	if problem != "":
 		return {"ok": false, "reason": problem}
-	var kind: String = ItemDB.info(s.id).station
 	inv.take_from_slot(slot, 1)
 	var id := Game.new_entity_id("s")
-	Game.structures[id] = {"id": id, "kind": kind, "pos": [pos.x, pos.y, pos.z], "yaw": yaw, "hp": 3}
+	var hp := 8 if is_building(kind) else 3
+	Game.structures[id] = {"id": id, "kind": kind, "pos": [pos.x, pos.y, pos.z], "yaw": yaw, "hp": hp}
 	Game.structures_changed.emit()
-	return {"ok": true, "id": id}
+	return {"ok": true, "id": id, "kind": kind}
 
 
 ## Knock a structure down a bit; after a few hits it's packed back up into an item.

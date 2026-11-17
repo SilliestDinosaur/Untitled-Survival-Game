@@ -477,7 +477,16 @@ func run_action(pid: int, peer: int, action: String, a: Dictionary) -> Dictionar
 					_terrain_cells.rpc(res.cells)
 			return res
 		"place":
-			return GameActions.place_structure(pid, int(a.slot), a.pos, float(a.yaw))
+			var placed := GameActions.place_structure(pid, int(a.slot), a.pos, float(a.yaw))
+			if placed.get("ok", false) and placed.get("kind", "") == "foundation":
+				# Level the ground under the slab, blending out at the rim, so the ground and
+				# the piece merge instead of clipping into each other.
+				var level := TerrainEdit.apply({"mode": TerrainEdit.Mode.FLATTEN, "x": a.pos.x, "z": a.pos.z, "r": 2.2, "s": 1.0, "target": a.pos.y}, inv)
+				if level.get("ok", false):
+					TerrainEdit.commit(level.cells)
+					if is_host():
+						_terrain_cells.rpc(level.cells)
+			return placed
 		"hit_structure":
 			return GameActions.hit_structure(pid, String(a.structure))
 		"consume":

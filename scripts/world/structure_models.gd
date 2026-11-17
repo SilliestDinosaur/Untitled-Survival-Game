@@ -23,6 +23,11 @@ static func get_model(kind: String, material: Material, glow_material: Material)
 	var key := kind + str(material.get_instance_id())
 	if _cache.has(key):
 		return _cache[key]
+	if kind == "foundation" or kind == "wall" or kind == "wood_wall":
+		var bm := _build_piece(kind)
+		var piece := {"body": bm.commit(material), "glow": null, "light": Vector3(0, 1, 0), "radius": 1.0}
+		_cache[kind + str(material.get_instance_id())] = piece
+		return piece
 	var k := MeshKit.new(hash(kind))
 	var g := MeshKit.new(hash(kind) + 1)
 	var light := Vector3(0, 0.5, 0)
@@ -53,6 +58,43 @@ static func _board(k: MeshKit, size: Vector3, xf: Transform3D, col: Color, wobbl
 	var hy := size.y * 0.5
 	var outline := PackedVector2Array([Vector2(-hx, -hy), Vector2(hx, -hy + wobble), Vector2(hx, hy), Vector2(-hx, hy - wobble)])
 	k.extrude(outline, xf, size.z, minf(size.z, size.y) * 0.25, col, col.lightened(0.12), 0.55)
+
+
+## Building pieces: a stone slab (foundation), brick walls and plank walls, sculpted as solids.
+static func _build_piece(kind: String) -> MeshKit:
+	var k := MeshKit.new(hash(kind))
+	if kind == "foundation":
+		# Rounded square slab, 2 x 2 m and half a metre thick, lying flat (outline y -> world z).
+		var outline := PackedVector2Array()
+		for i in 48:
+			var a := TAU * i / 48.0
+			outline.append(Vector2(signf(cos(a)) * pow(absf(cos(a)), 0.25), signf(sin(a)) * pow(absf(sin(a)), 0.25)) * 1.0)
+		var stone: Color = Game.palette.rock
+		var xf := Transform3D(Basis(Vector3.RIGHT, PI * 0.5), Vector3.ZERO)
+		var slab_col := func(p: Vector2, _t: float) -> Color:
+			var h := fposmod(sin(floorf(p.x * 2.0) * 12.9 + floorf(p.y * 2.0) * 78.2) * 43758.5, 1.0)
+			var seam := fposmod(p.x, 1.0) < 0.03 or fposmod(p.y, 1.0) < 0.03
+			return stone.darkened(0.22) if seam else stone.lightened((h - 0.5) * 0.14)
+		k.sculpt(outline, xf, func(_p: Vector2) -> float: return 0.5, slab_col, 3, 0.05)
+		return k
+	# Walls: 2 m long, 2.4 m tall, 0.3 m thick; the wall runs along local x and stands on y = 0.
+	var rect := PackedVector2Array([Vector2(-1.0, 0.0), Vector2(1.0, 0.0), Vector2(1.0, 2.4), Vector2(-1.0, 2.4)])
+	var brick: Color = ItemDB.info("brick").color
+	if kind == "wall":
+		var brick_col := func(p: Vector2, _t: float) -> Color:
+			var row := floorf(p.y / 0.2)
+			var u := fposmod(p.x + (fposmod(row, 2.0) * 0.2), 0.4)
+			var mortar := u > 0.385 or fposmod(p.y, 0.2) < 0.022
+			return Color(0.66, 0.63, 0.58) if mortar else brick.lightened((fposmod(sin(row * 9.1 + floorf(p.x * 2.5) * 3.7), 1.0) - 0.5) * 0.06)
+		k.sculpt(rect, Transform3D(), func(_p: Vector2) -> float: return 0.3, brick_col, 4, 0.05)
+	else:   # plank wall: vertical boards with dark seams
+		var wood := WOOD.lightened(0.04)
+		var board_col := func(p: Vector2, _t: float) -> Color:
+			var seam := fposmod(p.x + 1.0, 0.25) < 0.02
+			var grain := sin(p.y * 40.0 + floorf((p.x + 1.0) * 4.0) * 2.0) * 0.03
+			return WOOD_DARK if seam else wood.lightened(grain)
+		k.sculpt(rect, Transform3D(), func(_p: Vector2) -> float: return 0.14, board_col, 4, 0.04)
+	return k
 
 
 static func _stone(k: MeshKit, at: Vector3, r: float, col: Color, rng: RandomNumberGenerator) -> void:

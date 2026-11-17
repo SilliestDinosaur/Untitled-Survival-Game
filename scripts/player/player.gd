@@ -610,11 +610,17 @@ func _update_placement() -> void:
 		var flat := Vector3(dir.x, 0, dir.z).normalized()
 		pos = global_position + flat * 3.0
 	pos.y = Game.world_gen.get_height(pos.x, pos.z)
+	var yaw := rotation.y + PI
+	var kind: String = info.station
+	if GameActions.is_building(kind):
+		# Building pieces snap to the grid (and walls to a foundation edge).
+		var snap := GameActions.snap_piece(kind, pos)
+		pos = snap.pos
+		yaw = snap.yaw
 	var flat_dist := Vector2(pos.x - global_position.x, pos.z - global_position.z).length()
-	var reason := GameActions.placement_problem(pos)
+	var reason := GameActions.placement_problem(pos, kind, yaw)
 	if reason == "" and flat_dist < 1.2:
 		reason = "Too close to you"
-	var yaw := rotation.y + PI
 	placement = {"ok": reason == "", "reason": reason, "pos": pos, "yaw": yaw, "name": info.name}
 	if not _ghost:
 		_ghost = MeshInstance3D.new()
