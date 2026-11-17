@@ -24,7 +24,8 @@ your position, stats and inventory, and every tree/rock you gathered (they regro
 ## Everything is generated from the seed
 Each seed produces its own:
 - **Island**: terrain shape, mountain height, coastline (2 km x 2 km)
-- **Biomes**: Meadow, Forest, Autumn Grove, Savanna, Taiga, Marsh, Desert + Beach, Highlands, Snowfields
+- **Biomes**: Meadow, Forest, Autumn Grove, Savanna, Taiga, Marsh, Desert, Jungle, Tundra,
+  Badlands (striped mesas), Fungal Grove (rare: giant mushrooms and glowcaps) + Beach, Highlands, Snowfields
 - **Mountains**: warped ridged ranges with foothills, alpine meadows and snow caps
 - **Water**: the sea, plus meandering rivers and lowland lakes carved into the terrain (how
   lake-rich a world is varies). Painted water shader: clear shallows that show the ground,
@@ -36,7 +37,11 @@ Each seed produces its own:
 - **Palette**: grass, foliage, rock, sky, water, flower colors (~1 in 5 worlds is "exotic")
 - **Species**: tree/bush/rock/ore shapes and their names
 - **World name**
-- **Wildlife**: 10 body plans (slender, stocky, bulky, shellback, two-legged strider, wader,
+- **Wildlife**: every biome has its own adapted grazer, and some get their own beast and critter.
+  The biome shapes them: thick shaggy fur, bigger bodies and small ears in the cold; lean,
+  sand-coloured, big-eared and night-active in the desert; bold stripes in the jungle; rust coats
+  in the badlands; glowing spots in the fungal grove. Marsh animals keep to the water's edge, and
+  highland and badlands animals climb slopes. Built from 10 body plans (slender, stocky, bulky, shellback, two-legged strider, wader,
   boar, horned brute, hopper, ferret) plus birds. Counting only the discrete choices (pattern,
   ears, horns/antlers/tusks, tail, hump, temperament) there are 968 distinct animal designs;
   each also has ~15 continuous traits (size, proportions, neck, head, horn length, three coat
@@ -67,6 +72,13 @@ Materials, Food. Ingredients show what you have / need; Shift-click Craft to mak
 Stations are placed like Rust: hold one, aim (a green/red ghost shows if it fits), click to place.
 Press E on a station to open crafting; hit it a few times to pack it back up.
 
+## Survival
+- Hunger runs out in about 15 minutes; sprinting burns food and stamina quickly.
+- Tools wear down and gathering takes effort, so upgrading tools matters.
+- **Warmth**: nights are cold, and the tundra, taiga, highlands, mountain tops and water are
+  colder still. When warmth runs low you stop healing and tire faster; at zero you freeze.
+  Stand by a campfire (or forge) to warm up, or carry a torch to slow the chill.
+
 ## Day & night
 A day lasts 16 minutes. The sun and moon cross the sky, dusk warms the light and the sky glows
 on the sun's side, night brings stars, a moon, cool shadows and darkness (torches and campfires
@@ -75,8 +87,9 @@ matter). The HUD shows the day and time, and warns as the sun sets.
 ## Music
 Procedural, like No Man's Sky: synthesized instruments (pad, kalimba pluck, bell, flute, bass,
 tremolo strings, soft drums) and a generative sequencer. Moods change with what's happening:
-**title**, calm **day**, **exploring** (after a stretch of travel), **dusk**, **night** and
-**combat** (when something charges you or you're fighting), crossfading between them. Every world
+**title**, calm **day**, **exploring** (after a stretch of travel), **dusk**, **night**,
+**hunting** (chasing and striking prey) and **combat** (only when something fights back),
+crossfading between them. Every world
 picks its own key and scales per mood, so each island sounds different, and the music
 periodically thins out to leave room for the ambience.
 
