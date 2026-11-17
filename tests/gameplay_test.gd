@@ -174,7 +174,35 @@ func _process(_delta: float) -> bool:
 				Input.action_release("interact")
 				_check(_player.inventory.count("raw_meat") > 0, "raw meat from carcass: %d" % _player.inventory.count("raw_meat"))
 				_check(_player.inventory.count("hide") > 0, "hide from carcass: %d" % _player.inventory.count("hide"))
-				_next("save")
+				_next("craft")
+		"craft":
+			var inv = _player.inventory
+			for e in [["fiber", 20], ["sticks", 20], ["stone", 20], ["wood", 20], ["resin", 3], ["raw_meat", 2]]:
+				inv.add(e[0], e[1], true)
+			var rope := _recipe("rope")
+			var res: Dictionary = _GA.craft(1, rope, _player.global_position)
+			_check(res.ok and inv.count("rope") >= 1, "crafted rope by hand")
+			var cook: Dictionary = _GA.craft(1, _recipe("cooked_meat"), _player.global_position)
+			_check(not cook.ok, "can't cook without a campfire (%s)" % cook.get("reason", ""))
+			_check(_GA.craft(1, _recipe("campfire"), _player.global_position).ok and inv.count("campfire") == 1, "crafted a campfire")
+			var slot := -1
+			for i in inv.slots.size():
+				if inv.slots[i].get("id", "") == "campfire":
+					slot = i
+			var at: Vector3 = _player.global_position + Vector3(2.0, 0, 0)
+			at.y = _game.world_gen.get_height(at.x, at.z)
+			var placed: Dictionary = _GA.place_structure(1, slot, at, 0.0)
+			if not placed.ok:   # odd terrain right here: try a few spots around the player
+				for a in 8:
+					at = _player.global_position + Vector3(cos(a * 0.8), 0, sin(a * 0.8)) * 2.5
+					at.y = _game.world_gen.get_height(at.x, at.z)
+					placed = _GA.place_structure(1, slot, at, 0.0)
+					if placed.ok:
+						break
+			_check(placed.ok and _game.structures.size() == 1, "placed the campfire (%s)" % placed.get("reason", "ok"))
+			cook = _GA.craft(1, _recipe("cooked_meat"), _player.global_position, 2)
+			_check(cook.ok and inv.count("cooked_meat") == 2, "cooked meat at the campfire: %d" % inv.count("cooked_meat"))
+			_next("save")
 		"save":
 			# Save, go back to the title, load it again and check everything came back.
 			_saved_items = _player.inventory.to_data()
@@ -190,6 +218,7 @@ func _process(_delta: float) -> bool:
 				_main.load_world(_save_id)
 			elif _frames > 10 and _main.state == _main.State.PLAYING:
 				_check(_player.inventory.to_data() == _saved_items, "inventory restored (%d stone, %d wood)" % [_player.inventory.count("stone"), _player.inventory.count("wood")])
+				_check(_game.structures.size() == 1, "campfire still there after reload")
 				_check(_player.global_position.distance_to(_saved_pos) < 1.5, "position restored (%.2f m off)" % _player.global_position.distance_to(_saved_pos))
 				_check(_game.removed_resources.size() == _saved_removed and _saved_removed > 0, "gathered resources stay gone: %d" % _game.removed_resources.size())
 				var listed := false
@@ -203,6 +232,13 @@ func _process(_delta: float) -> bool:
 				_check(false, "reload never finished")
 				return _finish()
 	return false
+
+
+func _recipe(out: String) -> String:
+	for rc: Dictionary in load("res://scripts/items/recipes.gd").all():
+		if rc.out == out:
+			return rc.id
+	return ""
 
 
 func _next(p: String) -> void:

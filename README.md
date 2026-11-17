@@ -26,6 +26,10 @@ Each seed produces its own:
 - **Island**: terrain shape, mountain height, coastline (2 km x 2 km)
 - **Biomes**: Meadow, Forest, Autumn Grove, Savanna, Taiga, Marsh, Desert + Beach, Highlands, Snowfields
 - **Mountains**: warped ridged ranges with foothills, alpine meadows and snow caps
+- **Water**: the sea, plus meandering rivers and lowland lakes carved into the terrain (how
+  lake-rich a world is varies). Painted water shader: clear shallows that show the ground,
+  banded depth colours, sky reflections, shore foam lines and glints.
+- **Music**: each world has its own key, scales, motifs and chord progressions (see below)
 - **Plants & clutter**: palms, saplings, flowering shrubs, agave, barrel cacti, tumbleweeds,
   ferns, tall grass, clover, reeds, dry brush, fallen logs (with shelf fungi), stumps with roots,
   fallen branches, mushrooms, pebbles, scree, boulders
@@ -46,11 +50,35 @@ Tools come in tiers: **Rock → Stone → three materials generated per world �
 Every island invents its own metals and gem (name, color, trait like *Swift*, *Keen*, *Sturdy*,
 *Vicious* or *Luminous*) found at different altitudes: the first metal in the hills, the second in
 the mountains, crystals near the peaks. Better ore needs a pickaxe of the tier below it. The last
-tier is forged from shadow essence dropped by the night's creatures (coming with the night cycle).
-Hatchets, pickaxes, spears and knives exist for every tier and wear down with use. Crafting comes
-next; for now tools are found in supply caches around the island (or via the F9 debug menu).
+tier is forged from shadow essence dropped by the night's creatures (the creatures come next).
+Hatchets, pickaxes, spears and knives exist for every tier and wear down with use. Supply caches
+around the island hold a few used tools to get you started.
 Food is per-world too: berries, a fruiting tree species, and mushrooms and herbs whose effects
 (mending, vigor, sated... or poison) are unknown until you try them.
+
+## Crafting
+Open the satchel (Tab) to see the crafting list beside it, by group: Basics, Stations, Tools,
+Materials, Food. Ingredients show what you have / need; Shift-click Craft to make five.
+- **By hand:** rope, torches (a held light that matters at night), bandages, stone tools, campfire, workbench.
+- **Campfire:** cooked meat, roasted fruit, hearty stew. Lights up the night.
+- **Workbench:** planks, leather, the first metal's tools, cut gems and gem tools. Also builds the forge.
+- **Forge:** smelts this world's ores into ingots, the second metal's tools, Duskforged ingots and tools.
+
+Stations are placed like Rust: hold one, aim (a green/red ghost shows if it fits), click to place.
+Press E on a station to open crafting; hit it a few times to pack it back up.
+
+## Day & night
+A day lasts 16 minutes. The sun and moon cross the sky, dusk warms the light and the sky glows
+on the sun's side, night brings stars, a moon, cool shadows and darkness (torches and campfires
+matter). The HUD shows the day and time, and warns as the sun sets.
+
+## Music
+Procedural, like No Man's Sky: synthesized instruments (pad, kalimba pluck, bell, flute, bass,
+tremolo strings, soft drums) and a generative sequencer. Moods change with what's happening:
+**title**, calm **day**, **exploring** (after a stretch of travel), **dusk**, **night** and
+**combat** (when something charges you or you're fighting), crossfading between them. Every world
+picks its own key and scales per mood, so each island sounds different, and the music
+periodically thins out to leave room for the ambience.
 
 ## Gameplay so far
 - **Destroy (left click):** each hit gives resources and the node breaks when its HP runs out
@@ -70,12 +98,15 @@ brush-stroke buttons and bars, and the Alegreya typefaces (SIL Open Font License
 
 ## Graphics settings
 - **View distance**: 4-10 chunks; far chunks use simpler terrain and low-poly tree twins.
-- **Quality**: shadows, ambient occlusion, anti-aliasing, grass density.
-- **Model detail** (Low / Medium / High / Ultra): polygon count of every generated plant, rock
-  and animal. Changes apply instantly.
+- **Model detail** (Low / Medium / High / Ultra): polygon count of every generated plant, rock,
+  animal and item.
+- **Shadows** (Off / Low / Medium / High / Ultra), **Anti-aliasing** (Off, FXAA, MSAA 2x/4x/8x, TAA),
+  **Grass & flowers** density, **Render scale** with FSR upscaling, **FPS limit**, **V-Sync**,
+  **Ambient occlusion**, **Glow**.
+- Audio: master, music and effects volume.
 
 Type a number or any word into the seed box on the title screen.
-Sounds (footsteps, wind, ocean, UI) are synthesized at startup, so there are no audio files.
+Sounds and music are synthesized at startup, so there are no audio files.
 
 ## Layout
 | Path | What it does |
@@ -94,7 +125,12 @@ Sounds (footsteps, wind, ocean, UI) are synthesized at startup, so there are no 
 | `scripts/world/chunk_generator.gd` | Builds chunk data on worker threads |
 | `scripts/world/terrain_chunk.gd` | Turns chunk data into meshes/colliders |
 | `scripts/world/world.gd` | Streams chunks with 3 detail tiers, ocean |
-| `scripts/world/atmosphere.gd` | Sun, sky, fog, graphics quality |
+| `scripts/world/atmosphere.gd` | Day/night: sun, moon, sky, fog; graphics settings |
+| `scripts/world/structures.gd` | Placed stations (campfire light, forge coals) |
+| `scripts/world/structure_models.gd` | Campfire, workbench and forge models |
+| `scripts/items/recipes.gd` | Crafting recipes |
+| `scripts/audio/music.gd` | Autoload `Music`: generative mood-based music |
+| `scripts/audio/instruments.gd` | Synthesized instrument samples |
 | `scripts/player/` | First-person controller, stats, viewmodel (held item + swing) |
 | `scripts/items/` | Item registry (base + per-world tiers/foods) and slot inventory |
 | `scripts/gameplay/` | Gathering rules and hit effects |
@@ -116,4 +152,5 @@ world from the seed and only need the list of changes.
 - Chunks are generated on worker threads, so streaming doesn't stutter.
 - 3 terrain detail tiers: full detail + collision + grass near you, simpler farther out.
 - All plants/rocks are drawn with MultiMesh (one draw call per type per chunk).
-- Quality presets (Low/Medium/High) control shadows, SSAO, MSAA and grass density.
+- Shadows, SSAO, AA, render scale and grass density are separate settings.
+- Music instruments are rendered once on a worker thread; playback uses polyphonic streams.

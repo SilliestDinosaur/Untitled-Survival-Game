@@ -10,6 +10,11 @@ const VIEW_DISTANCES := {"Low": 4, "Medium": 6, "High": 8, "Ultra": 10}
 const QUALITY_LEVELS := ["Low", "Medium", "High"]
 ## Model detail: multiplies the number of segments in every generated plant, rock and animal.
 const MODEL_DETAIL := {"Low": 0.55, "Medium": 0.8, "High": 1.0, "Ultra": 1.5}
+const SHADOW_LEVELS := ["Off", "Low", "Medium", "High", "Ultra"]
+const AA_MODES := ["Off", "FXAA", "MSAA 2x", "MSAA 4x", "MSAA 8x", "TAA"]
+const RENDER_SCALES := [0.5, 0.67, 0.75, 0.85, 1.0]
+const FPS_CAPS := [0, 30, 60, 90, 120, 144, 165, 240]
+const GRASS_LEVELS := {"Off": 0.0, "Low": 0.45, "Medium": 1.0, "High": 1.5, "Ultra": 2.0}
 
 ## Remappable actions, in the order the Controls tab lists them: [action, label, default events].
 ## Events are "key:<keycode>" or "mouse:<button index>".
@@ -44,7 +49,17 @@ var fov := 80.0
 var view_distance := "Medium"
 var quality := "Medium"
 var model_detail := "High"
+var shadow_quality := "High"
+var anti_aliasing := "MSAA 2x"
+var render_scale := 1.0
+var ambient_occlusion := true
+var glow := true
+var vsync := false
+var fps_cap := 0
+var grass := "Medium"
 var master_volume := 0.8
+var music_volume := 0.6
+var sfx_volume := 1.0
 var show_fps := false
 var bindings := {}               ## action -> Array[String] overrides
 
@@ -60,7 +75,7 @@ func view_radius() -> int:
 
 ## How much grass/flowers/clutter to place near the player.
 func grass_density() -> float:
-	return {"Low": 0.45, "Medium": 1.0, "High": 1.5}.get(quality, 1.0)
+	return GRASS_LEVELS.get(grass, 1.0)
 
 
 func mesh_detail() -> float:
@@ -79,7 +94,17 @@ func load_settings() -> void:
 	quality = cfg.get_value("video", "quality", quality)
 	model_detail = cfg.get_value("video", "model_detail", model_detail)
 	show_fps = cfg.get_value("video", "show_fps", show_fps)
+	shadow_quality = cfg.get_value("video", "shadow_quality", shadow_quality)
+	anti_aliasing = cfg.get_value("video", "anti_aliasing", anti_aliasing)
+	render_scale = cfg.get_value("video", "render_scale", render_scale)
+	ambient_occlusion = cfg.get_value("video", "ambient_occlusion", ambient_occlusion)
+	glow = cfg.get_value("video", "glow", glow)
+	vsync = cfg.get_value("video", "vsync", vsync)
+	fps_cap = cfg.get_value("video", "fps_cap", fps_cap)
+	grass = cfg.get_value("video", "grass", grass)
 	master_volume = cfg.get_value("audio", "master_volume", master_volume)
+	music_volume = cfg.get_value("audio", "music_volume", music_volume)
+	sfx_volume = cfg.get_value("audio", "sfx_volume", sfx_volume)
 
 
 func save_settings() -> void:
@@ -92,13 +117,21 @@ func save_settings() -> void:
 	cfg.set_value("video", "quality", quality)
 	cfg.set_value("video", "model_detail", model_detail)
 	cfg.set_value("video", "show_fps", show_fps)
+	for k: String in ["shadow_quality", "anti_aliasing", "render_scale", "ambient_occlusion", "glow", "vsync", "fps_cap", "grass"]:
+		cfg.set_value("video", k, get(k))
 	cfg.set_value("audio", "master_volume", master_volume)
+	cfg.set_value("audio", "music_volume", music_volume)
+	cfg.set_value("audio", "sfx_volume", sfx_volume)
 	cfg.save(PATH)
 
 
 ## Call after changing any value.
 func apply() -> void:
 	AudioServer.set_bus_volume_db(0, linear_to_db(maxf(master_volume, 0.0001)))
+	for pair: Array in [["Music", music_volume], ["SFX", sfx_volume]]:
+		var bus := AudioServer.get_bus_index(pair[0])
+		if bus >= 0:
+			AudioServer.set_bus_volume_db(bus, linear_to_db(maxf(pair[1], 0.0001)))
 	changed.emit()
 
 

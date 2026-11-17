@@ -22,6 +22,7 @@ const CLIMATE_BIOMES := {
 var palette: WorldPalette
 var mountain_scale: float
 var hill_scale: float
+var lake_amount: float                 ## 0..1: how lake-rich this world is
 
 var _continent := FastNoiseLite.new()  # big rolling lowlands
 var _ranges := FastNoiseLite.new()     # where mountain ranges run
@@ -30,6 +31,9 @@ var _detail := FastNoiseLite.new()     # small bumps + coastline wobble
 var _temperature := FastNoiseLite.new()
 var _moisture := FastNoiseLite.new()
 var _forest := FastNoiseLite.new()     # clumping of trees inside a biome
+var _river := FastNoiseLite.new()      # rivers follow this noise's zero line (meandering via warp)
+var _river_gate := FastNoiseLite.new() # breaks the zero lines into separate rivers and creeks
+var _lake := FastNoiseLite.new()       # lake basins in the lowlands
 
 
 func _init(seed_value: int, pal: WorldPalette) -> void:
@@ -82,6 +86,23 @@ func _init(seed_value: int, pal: WorldPalette) -> void:
 	_forest.frequency = 0.012
 	_forest.fractal_octaves = 2
 
+	_river.seed = seed_value + 7
+	_river.noise_type = FastNoiseLite.TYPE_SIMPLEX_SMOOTH
+	_river.frequency = rng.randf_range(0.0013, 0.0019)
+	_river.fractal_octaves = 1
+	_river.domain_warp_enabled = true
+	_river.domain_warp_type = FastNoiseLite.DOMAIN_WARP_SIMPLEX
+	_river.domain_warp_amplitude = 40.0
+	_river.domain_warp_frequency = 0.006
+	_river_gate.seed = seed_value + 8
+	_river_gate.frequency = 0.0012
+	_river_gate.fractal_octaves = 1
+	_lake.seed = seed_value + 9
+	_lake.noise_type = FastNoiseLite.TYPE_SIMPLEX_SMOOTH
+	_lake.frequency = rng.randf_range(0.0035, 0.005)
+	_lake.fractal_octaves = 2
+	lake_amount = rng.randf_range(0.0, 1.0)
+
 
 ## Terrain height in meters at world position (x, z). Sea level is 0.
 func get_height(x: float, z: float) -> float:
@@ -111,7 +132,34 @@ func get_height(x: float, z: float) -> float:
 	# Marshes sit low and flat.
 	var wet := smoothstep(0.82, 0.95, get_moisture(x, z))
 	land = lerpf(land, 2.4 + bumps * 0.5, wet * (1.0 - range_t) * 0.85)
+	land = _carve_water(x, z, land, range_t, mask, bumps)
 	return lerpf(-25.0, land, mask)
+
+
+## Rivers and lakes: channels and basins cut below sea level so the sea plane fills them.
+## They only form in the lowlands; in hills and mountains they taper out (springs, gorges' ends).
+func _carve_water(x: float, z: float, land: float, range_t: float, mask: float, bumps: float) -> float:
+	var lowland := (1.0 - range_t) * (1.0 - smoothstep(20.0, 34.0, land)) * smoothstep(0.25, 0.5, mask)
+	if lowland <= 0.001:
+		return land
+	# Lakes
+	var lk := _lake.get_noise_2d(x, z)
+	var lake_th := lerpf(0.56, 0.4, lake_amount)
+	var lake_t := smoothstep(lake_th - 0.06, lake_th + 0.08, lk) * lowland
+	if lake_t > 0.0:
+		var depth := -1.5 - smoothstep(lake_th, lake_th + 0.25, lk) * 3.5
+		land = lerpf(land, minf(land, depth + bumps * 0.4), lake_t)
+	# Rivers
+	var gate := smoothstep(-0.4, -0.05, _river_gate.get_noise_2d(x, z))
+	if gate <= 0.0:
+		return land
+	var rv := absf(_river.get_noise_2d(x, z))
+	var strength := gate * lowland
+	var valley := (1.0 - smoothstep(0.02, 0.085, rv)) * strength
+	var channel := (1.0 - smoothstep(0.01, 0.03, rv)) * strength
+	land = lerpf(land, minf(land, 2.2 + bumps * 0.5), valley)
+	land = lerpf(land, minf(land, -1.6 - clampf(1.0 - rv / 0.03, 0.0, 1.0) * 0.8), channel)
+	return land
 
 
 ## Approximate surface normal, from neighbouring heights.

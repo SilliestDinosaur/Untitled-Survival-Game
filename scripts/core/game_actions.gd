@@ -144,6 +144,97 @@ static func eat(player_id: int, stats: PlayerStats) -> Dictionary:
 	return {"ok": true, "id": id, "effect": info.get("effect", ""), "first_time": first and info.has("effect")}
 
 
+# --- Crafting & structures ---------------------------------------------------------------
+
+## Which station kinds are within reach of a position.
+static func stations_near(pos: Vector3) -> Array:
+	var out := []
+	for id: String in Game.structures:
+		var st: Dictionary = Game.structures[id]
+		var p: Array = st.pos
+		if Vector3(p[0], p[1], p[2]).distance_to(pos) <= Recipes.STATION_RANGE and not out.has(st.kind):
+			out.append(st.kind)
+	return out
+
+
+## How many times the player could craft a recipe right now (ignores stations).
+static func craftable_count(inv: Inventory, recipe: Dictionary) -> int:
+	var n := 999
+	for item: String in recipe.needs:
+		n = mini(n, inv.count(item) / int(recipe.needs[item]))
+	return n
+
+
+## Craft a recipe `times` times. Result: {ok, reason, out, made}
+static func craft(player_id: int, recipe_id: String, pos: Vector3, times := 1) -> Dictionary:
+	var inv := Game.inventory_of(player_id)
+	var r := Recipes.get_recipe(recipe_id)
+	if r.is_empty():
+		return {"ok": false, "reason": "Unknown recipe"}
+	if r.at != "" and not stations_near(pos).has(r.at):
+		return {"ok": false, "reason": "Needs a %s nearby" % Recipes.STATION_NAMES[r.at]}
+	var made := 0
+	for i in times:
+		if craftable_count(inv, r) < 1:
+			break
+		for item: String in r.needs:
+			inv.remove(item, int(r.needs[item]))
+		var got := inv.add(r.out, int(r.count))
+		if got < int(r.count):
+			spawn_pickup(r.out, int(r.count) - got, -1, pos + Vector3(0, 0.3, 0))
+		made += 1
+	if made == 0:
+		return {"ok": false, "reason": "Missing ingredients"}
+	return {"ok": true, "out": r.out, "made": made}
+
+
+## Can a structure go here? Returns "" if fine, else the reason.
+static func placement_problem(pos: Vector3) -> String:
+	if pos.y < Game.SEA_LEVEL + 0.15:
+		return "Can't build in water"
+	if Game.world_gen.get_normal(pos.x, pos.z).y < 0.8:
+		return "Too steep here"
+	for id: String in Game.structures:
+		var p: Array = Game.structures[id].pos
+		if Vector3(p[0], p[1], p[2]).distance_to(pos) < 1.8:
+			return "Too close to another structure"
+	return ""
+
+
+## Place the held placeable. Result: {ok, reason, id}
+static func place_structure(player_id: int, slot: int, pos: Vector3, yaw: float) -> Dictionary:
+	var inv := Game.inventory_of(player_id)
+	var s: Dictionary = inv.slots[slot]
+	if s.is_empty() or ItemDB.info(s.id).kind != "placeable":
+		return {"ok": false, "reason": ""}
+	var problem := placement_problem(pos)
+	if problem != "":
+		return {"ok": false, "reason": problem}
+	var kind: String = ItemDB.info(s.id).station
+	inv.take_from_slot(slot, 1)
+	var id := Game.new_entity_id("s")
+	Game.structures[id] = {"id": id, "kind": kind, "pos": [pos.x, pos.y, pos.z], "yaw": yaw, "hp": 3}
+	Game.structures_changed.emit()
+	return {"ok": true, "id": id}
+
+
+## Knock a structure down a bit; after a few hits it's packed back up into an item.
+static func hit_structure(player_id: int, structure_id: String) -> Dictionary:
+	if not Game.structures.has(structure_id):
+		return {"ok": false}
+	var st: Dictionary = Game.structures[structure_id]
+	st.hp = int(st.hp) - 1
+	if st.hp > 0:
+		return {"ok": true, "packed": false}
+	Game.structures.erase(structure_id)
+	Game.structures_changed.emit()
+	var p: Array = st.pos
+	var got := Game.inventory_of(player_id).add(st.kind, 1)
+	if got < 1:
+		spawn_pickup(st.kind, 1, -1, Vector3(p[0], p[1] + 0.3, p[2]))
+	return {"ok": true, "packed": true, "kind": st.kind}
+
+
 # --- Items in the world -----------------------------------------------------------------
 
 ## Drop items from a slot onto the ground in front of the player.

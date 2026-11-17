@@ -325,7 +325,7 @@ class SettingsPanel extends Control:
 	func _ready() -> void:
 		set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
 		Menus._dim(self, 0.5)
-		var col := Menus._card(self, Vector2(700, 560), 6)
+		var col := Menus._card(self, Vector2(720, 600), 6)
 		col.add_child(UITheme.heading("Settings", 40))
 		var tabs := TabContainer.new()
 		tabs.size_flags_vertical = Control.SIZE_EXPAND_FILL
@@ -338,19 +338,36 @@ class SettingsPanel extends Control:
 		_slider(game, "Field of view", 60.0, 110.0, 1.0, Settings.fov, "%d°", func(v: float) -> void: Settings.fov = v)
 		_check(game, "Show FPS", Settings.show_fps, func(on: bool) -> void: Settings.show_fps = on)
 
-		var gfx := _tab(tabs, "Graphics")
+		var gfx := _tab(tabs, "Graphics", true)
 		_options(gfx, "View distance", Settings.VIEW_DISTANCES.keys(), Settings.view_distance,
 			func(v: String) -> void: Settings.view_distance = v)
-		_options(gfx, "Graphics quality", Settings.QUALITY_LEVELS, Settings.quality,
-			func(v: String) -> void: Settings.quality = v)
 		_options(gfx, "Model detail", Settings.MODEL_DETAIL.keys(), Settings.model_detail,
 			func(v: String) -> void: Settings.model_detail = v)
-		var note := UITheme.label("Model detail sets how many polygons plants, rocks and animals have.\nQuality sets shadows, ambient occlusion, anti-aliasing and grass.", 14, UITheme.INK_DIM)
-		gfx.get_parent().add_child(note)
+		_options(gfx, "Shadows", Settings.SHADOW_LEVELS, Settings.shadow_quality,
+			func(v: String) -> void: Settings.shadow_quality = v)
+		_options(gfx, "Anti-aliasing", Settings.AA_MODES, Settings.anti_aliasing,
+			func(v: String) -> void: Settings.anti_aliasing = v)
+		_options(gfx, "Grass & flowers", Settings.GRASS_LEVELS.keys(), Settings.grass,
+			func(v: String) -> void: Settings.grass = v)
+		var scales: Array = Settings.RENDER_SCALES.map(func(x: float) -> String: return "%d%%" % roundi(x * 100.0))
+		_options(gfx, "Render scale (FSR)", scales, "%d%%" % roundi(Settings.render_scale * 100.0),
+			func(v: String) -> void: Settings.render_scale = float(v.trim_suffix("%")) / 100.0)
+		var caps: Array = Settings.FPS_CAPS.map(func(x: int) -> String: return "Unlimited" if x == 0 else str(x))
+		_options(gfx, "FPS limit", caps, "Unlimited" if Settings.fps_cap == 0 else str(Settings.fps_cap),
+			func(v: String) -> void: Settings.fps_cap = 0 if v == "Unlimited" else int(v))
+		_check(gfx, "V-Sync", Settings.vsync, func(on: bool) -> void: Settings.vsync = on)
+		_check(gfx, "Ambient occlusion", Settings.ambient_occlusion, func(on: bool) -> void: Settings.ambient_occlusion = on)
+		_check(gfx, "Glow", Settings.glow, func(on: bool) -> void: Settings.glow = on)
+		var note := UITheme.label("Model detail sets how smooth plants, rocks, animals and items are.\nView distance, model detail and grass apply as new terrain loads.", 14, UITheme.INK_DIM)
+		gfx.get_parent().get_parent().add_child(note)
 
 		var audio := _tab(tabs, "Audio")
 		_slider(audio, "Master volume", 0.0, 1.0, 0.01, Settings.master_volume, "%d%%",
 			func(v: float) -> void: Settings.master_volume = v, 100.0)
+		_slider(audio, "Music", 0.0, 1.0, 0.01, Settings.music_volume, "%d%%",
+			func(v: float) -> void: Settings.music_volume = v, 100.0)
+		_slider(audio, "Effects", 0.0, 1.0, 0.01, Settings.sfx_volume, "%d%%",
+			func(v: float) -> void: Settings.sfx_volume = v, 100.0)
 
 		var controls := _tab(tabs, "Controls", true)
 		for entry: Array in Settings.ACTIONS:

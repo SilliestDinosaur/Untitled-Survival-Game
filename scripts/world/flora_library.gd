@@ -127,6 +127,10 @@ var rock_material: ShaderMaterial
 var terrain_material: ShaderMaterial
 
 var _pal: WorldPalette
+var _bare := false   ## building the "already harvested" look
+
+## Kinds that look different after being hand-harvested (the fruiting tree is added per world).
+const BARE_KINDS := ["berry", "reeds", "agave"]
 
 
 func _init(seed_value: int, pal: WorldPalette) -> void:
@@ -144,6 +148,11 @@ func _init(seed_value: int, pal: WorldPalette) -> void:
 			var key := "%s_%d" % [kind, i]
 			var variant_seed := rng.randi()
 			meshes[key] = _build_mesh(kind, i, variant_seed)
+			# Harvested look (same shape, same seed): bare bushes, fruitless trees, cut reeds.
+			if kind in BARE_KINDS or kind == ItemDB.fruit_tree:
+				_bare = true
+				meshes[key + "_bare"] = _build_mesh(kind, i, variant_seed)
+				_bare = false
 			# Far-away twin: same shape (same seed), far fewer polygons.
 			if KINDS[kind].category == "tree":
 				MeshKit.detail = base_detail * 0.45
@@ -258,6 +267,8 @@ func _build_mesh(kind: String, index: int, variant_seed: int) -> ArrayMesh:
 		"tumbleweed": _tumbleweed(kit, rng)
 		"branch": _branch(kit, rng)
 		"scree": _scree(kit, rng)
+	if kind == ItemDB.fruit_tree and not _bare:
+		_add_fruit(kit, rng)
 	var cat: String = KINDS[kind].category
 	var mat: Material = foliage_material
 	if cat == "rock" or kind in ["pebbles", "scree"]:
@@ -427,6 +438,27 @@ func _cactus(kit: MeshKit, rng: RandomNumberGenerator) -> void:
 		kit.add_primitive(MeshKit.sphere(r * 0.35, 8, 5), Transform3D(Basis().scaled(Vector3(1, 0.6, 1)), Vector3(0, h + r * 0.85, 0)), _pal.flowers[0], 0.0, 0.03)
 
 
+## Hang fruit on the outside of a canopy: pick points from the upper part of the mesh built so far.
+func _add_fruit(kit: MeshKit, rng: RandomNumberGenerator) -> void:
+	var top := -1e9
+	var bottom := 1e9
+	for v in kit.verts:
+		top = maxf(top, v.y)
+		bottom = minf(bottom, v.y)
+	var col: Color = ItemDB.info("fruit").get("color", Color(0.9, 0.3, 0.2))
+	var placed := 0
+	var tries := 0
+	while placed < 14 and tries < 400:
+		tries += 1
+		var v: Vector3 = kit.verts[rng.randi() % kit.verts.size()]
+		var t := (v.y - bottom) / maxf(top - bottom, 0.01)
+		if t < 0.45 or t > 0.85 or Vector2(v.x, v.z).length() < 0.6:
+			continue
+		var out := Vector3(v.x, 0, v.z).normalized() * 0.06
+		kit.add_primitive(MeshKit.sphere(0.11, 10, 7), Transform3D(Basis.from_scale(Vector3(1, 1.1, 1)), v + out - Vector3(0, 0.06, 0)), col.lightened(rng.randf_range(-0.08, 0.08)), 0.0, 0.04)
+		placed += 1
+
+
 ## Small leafy bumps scattered over the canopy surface.
 func _leaf_clumps(kit: MeshKit, rng: RandomNumberGenerator, blobs: Array, center: Vector3, leaf: Color, count: int, size: float) -> void:
 	for i in count:
@@ -446,7 +478,7 @@ func _bush(kit: MeshKit, rng: RandomNumberGenerator, berries: bool) -> void:
 		var pos := Vector3(rng.randf_range(-0.5, 0.5), r * 0.7, rng.randf_range(-0.5, 0.5))
 		blobs.append([pos, r])
 		kit.add_primitive(MeshKit.sphere(r, 8, 5), Transform3D(Basis(), pos), leaf.lightened(rng.randf_range(-0.05, 0.07)), r * 0.25, 0.07, center)
-	if berries:
+	if berries and not _bare:
 		for i in rng.randi_range(10, 16):
 			var blob: Array = blobs[rng.randi() % blobs.size()]
 			var dir := Vector3(rng.randf_range(-1, 1), rng.randf_range(0.0, 1.0), rng.randf_range(-1, 1)).normalized()
@@ -461,7 +493,7 @@ func _reeds(kit: MeshKit, rng: RandomNumberGenerator) -> void:
 		var d := rng.randf_range(0.0, 0.6)
 		var base := Vector3(cos(a) * d, -0.05, sin(a) * d)
 		var lean := Vector3(rng.randf_range(-0.15, 0.15), 0, rng.randf_range(-0.15, 0.15))
-		var tip := base + lean + Vector3.UP * rng.randf_range(0.9, 1.7)
+		var tip := base + lean + Vector3.UP * rng.randf_range(0.9, 1.7) * (0.3 if _bare else 1.0)   # cut: stubble
 		var side := Vector3(cos(a + 1.5), 0, sin(a + 1.5)) * 0.03
 		kit.add_tri(base - side, base + side, tip, col.darkened(0.25), col.darkened(0.25), col.lightened(0.1))
 		if rng.randf() < 0.35:   # cattail head
@@ -563,7 +595,7 @@ func _log(kit: MeshKit, rng: RandomNumberGenerator) -> void:
 		radii.append(r * lerpf(1.05, 0.85, t))
 	var ridges := func(t: float, a: float) -> Color:
 		return bark.darkened(0.15) if fposmod(a * 2.2 + t * 1.5, 1.0) < 0.28 else bark
-	kit.loft(path, radii, 10, bark, ridges, Callable(), false, false, r * 0.08)
+	kit.loft(path, radii, 12, bark, ridges, Callable(), true, true)
 	# Clean cut at one end (pale rings), jagged break at the other.
 	var rings := func(t: float, a: float) -> Color:
 		return Color(0.8, 0.66, 0.46).darkened(0.1 * (int(t * 4.0) % 2))
@@ -600,16 +632,17 @@ func _stump(kit: MeshKit, rng: RandomNumberGenerator) -> void:
 		radii.append(r * (1.0 + pow(1.0 - t, 3.0) * 0.45))
 	var ridges := func(t: float, a: float) -> Color:
 		return bark.darkened(0.15) if fposmod(a * 2.5, 1.0) < 0.25 else bark
-	kit.loft(path, radii, 12, bark, ridges, Callable(), false, false, 0.02)
+	# Closed trunk (no see-through rim), with the cut face sitting flush on top of it.
+	kit.loft(path, radii, 14, bark, ridges, Callable(), true, true)
 	var top_rings := func(t: float, a: float) -> Color:
-		return Color(0.8, 0.66, 0.46) if int(t * 5.0) % 2 == 0 else Color(0.7, 0.55, 0.38)
+		return Color(0.8, 0.66, 0.46) if int(t * 6.0) % 2 == 0 else Color(0.7, 0.55, 0.38)
 	var cap: Array = []
 	var cap_r: Array = []
-	for i in 6:
-		var t := i / 5.0
-		cap.append(Vector3(0, h + sin(t * PI * 0.5) * 0.01, 0))
-		cap_r.append(r * 0.95 * (1.0 - t) + 0.001)
-	kit.loft(cap, cap_r, 12, Color(0.8, 0.66, 0.46), top_rings, Callable(), false, true)
+	for i in 7:
+		var t := i / 6.0
+		cap.append(Vector3(0, h + 0.004 + sin(t * PI * 0.5) * 0.012, 0))
+		cap_r.append(lerpf(float(radii[radii.size() - 1]) * 0.97, 0.002, t))
+	kit.loft(cap, cap_r, 14, Color(0.8, 0.66, 0.46), top_rings, Callable(), true, true)
 	for i in rng.randi_range(3, 5):
 		var a := TAU * i / 4.0 + rng.randf_range(-0.3, 0.3)
 		var d := Vector3(cos(a), 0, sin(a))
@@ -755,7 +788,7 @@ func _agave(kit: MeshKit, rng: RandomNumberGenerator) -> void:
 	for i in leaves:
 		var a := TAU * i / leaves + rng.randf_range(-0.1, 0.1)
 		var dir := Vector3(cos(a), 0, sin(a))
-		var length := rng.randf_range(0.6, 1.0) * (1.0 if i % 2 == 0 else 0.8)
+		var length := rng.randf_range(0.6, 1.0) * (1.0 if i % 2 == 0 else 0.8) * (0.55 if _bare and i % 2 == 0 else 1.0)
 		var rise := rng.randf_range(0.6, 1.1)
 		var path := [Vector3.ZERO + dir * 0.05, dir * length * 0.4 + Vector3.UP * rise * 0.5, dir * length * 0.8 + Vector3.UP * rise * 0.75, dir * length + Vector3.UP * rise * 0.7]
 		kit.loft(path, [0.07, 0.06, 0.035, 0.0], 6, col.lightened(rng.randf_range(-0.05, 0.08)), func(t: float, aa: float) -> Color:

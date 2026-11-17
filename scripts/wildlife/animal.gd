@@ -90,6 +90,8 @@ func _mesh(m: Mesh) -> MeshInstance3D:
 
 func _enter(s: State) -> void:
 	state = s
+	if s == State.ATTACK:
+		Music.combat_ping(1.0)
 	match s:
 		State.IDLE:
 			_timer = _rng.randf_range(2.0, 5.0)

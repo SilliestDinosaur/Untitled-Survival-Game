@@ -35,6 +35,8 @@ var known_items := {}
 var looted := {}
 ## Items lying in the world: entity id -> {id, item, count, dur, pos: [x, y, z]}.
 var pickups := {}
+## Placed structures (campfires, workbenches, forges): id -> {id, kind, pos [x,y,z], yaw, hp}.
+var structures := {}
 ## Counter for network-stable entity ids (pickups now; more entity kinds later).
 var next_entity_id := 1
 
@@ -44,6 +46,17 @@ const LOCAL_PLAYER := 1
 var inventories := {}
 
 signal pickups_changed
+signal structures_changed
+signal new_day(day: int)
+
+## Day/night: 0 = midnight, 0.25 = sunrise, 0.5 = noon, 0.75 = sunset. One full cycle takes
+## DAY_SECONDS; daylight runs from SUNRISE to SUNSET (about 60% of the cycle).
+const DAY_SECONDS := 960.0
+const SUNRISE := 0.21
+const SUNSET := 0.79
+var time_of_day := 0.3
+var day := 1
+var time_paused := false   ## title screen keeps a fixed afternoon
 const HARVEST_REGROW := 240.0   ## seconds before a hand-harvested plant can be harvested again
 
 ## The save file this session is playing ("" = not saved yet / title preview).
@@ -62,6 +75,22 @@ func _ready() -> void:
 func _process(delta: float) -> void:
 	if save_id != "" and not get_tree().paused:
 		play_time += delta
+		if not time_paused:
+			time_of_day += delta / DAY_SECONDS
+			if time_of_day >= 1.0:
+				time_of_day -= 1.0
+				day += 1
+				new_day.emit(day)
+
+
+func is_night() -> bool:
+	return time_of_day < SUNRISE or time_of_day > SUNSET
+
+
+## "14:20" style clock.
+func clock_text() -> String:
+	var minutes := int(time_of_day * 24.0 * 60.0)
+	return "%02d:%02d" % [minutes / 60, minutes % 60]
 
 
 func random_seed() -> int:
@@ -83,12 +112,15 @@ func new_world(seed_value: int) -> void:
 	known_items = {}
 	looted = {}
 	pickups = {}
+	structures = {}
 	next_entity_id = 1
 	for pid: int in inventories:
 		inventories[pid].clear()
 	save_id = ""
 	save_name = ""
 	play_time = 0.0
+	time_of_day = 0.3
+	day = 1
 	world_changed.emit()
 
 
@@ -156,8 +188,12 @@ func load_save(id: String) -> Dictionary:
 	known_items = data.get("known_items", {})
 	looted = data.get("looted", {})
 	pickups = data.get("pickups", {})
+	structures = data.get("structures", {})
 	next_entity_id = int(data.get("next_entity_id", 1))
+	time_of_day = float(data.get("time_of_day", 0.3))
+	day = int(data.get("day", 1))
 	pickups_changed.emit()
+	structures_changed.emit()
 	# Saves keep a map of players (the local one is LOCAL_PLAYER); older saves had one player.
 	var players: Dictionary = data.get("players", {})
 	if players.is_empty() and data.has("player"):
@@ -189,7 +225,10 @@ func write_save(player_data: Dictionary) -> void:
 		"known_items": known_items,
 		"looted": looted,
 		"pickups": pickups,
+		"structures": structures,
 		"next_entity_id": next_entity_id,
+		"time_of_day": time_of_day,
+		"day": day,
 		"players": {str(LOCAL_PLAYER): player_data},
 	})
 

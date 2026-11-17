@@ -15,6 +15,8 @@ var resources: Array[Dictionary] = []
 var _mmis := {}          # mesh key -> MultiMeshInstance3D
 var _colliders := {}     # resource index -> CollisionShape3D
 var _wobbles := {}       # resource index -> time left
+var _bare := {}          # resource index -> MeshInstance3D showing the harvested look
+var _regrow_check := 0.0
 
 
 func apply(c: Vector2i, t: int, data: Dictionary, flora: FloraLibrary) -> void:
@@ -34,6 +36,11 @@ func apply(c: Vector2i, t: int, data: Dictionary, flora: FloraLibrary) -> void:
 	_build_multimeshes(data.multimesh, flora)
 	if tier == 0:
 		_build_resource_colliders(flora)
+	# Plants that were hand-harvested recently show their bare look.
+	for k in resources.size():
+		var r := resources[k]
+		if flora.meshes.has(String(r.key) + "_bare") and Game.is_harvested(r.id) and r.has("mm_index"):
+			set_bare(k, true)
 
 
 func _build_terrain(data: Dictionary, flora: FloraLibrary) -> void:
@@ -131,6 +138,12 @@ func _build_resource_colliders(flora: FloraLibrary) -> void:
 
 ## Given a raycast hit on one of this chunk's bodies, return the resource it hit (or {}).
 func resource_from_hit(body: CollisionObject3D, shape_idx: int) -> Dictionary:
+	# The ray can report a shape that was removed this frame (the node was just gathered).
+	var total := 0
+	for o in body.get_shape_owners():
+		total += body.shape_owner_get_shape_count(o)
+	if shape_idx < 0 or shape_idx >= total:
+		return {}
 	var owner_id := body.shape_find_owner(shape_idx)
 	var node := body.shape_owner_get_owner(owner_id) as Node
 	if node and node.has_meta("resource_index"):
@@ -152,11 +165,36 @@ func wobble(index: int) -> void:
 ## Hide a gathered resource and remove its collider.
 func remove_resource(index: int) -> void:
 	_wobbles.erase(index)
+	if _bare.has(index):
+		_bare[index].queue_free()
+		_bare.erase(index)
 	_set_instance(index, Transform3D(Basis().scaled(Vector3.ZERO), Vector3.ZERO))
 	if _colliders.has(index):
 		_colliders[index].queue_free()
 		_colliders.erase(index)
 	resources[index].removed = true
+
+
+## Swap a plant between its normal and harvested ("bare") look.
+func set_bare(index: int, on: bool) -> void:
+	var r := resources[index]
+	var key := String(r.key) + "_bare"
+	if on == _bare.has(index) or not Game.flora.meshes.has(key) or r.get("removed", false):
+		return
+	var xf: Transform3D = r.transform
+	xf.origin -= position
+	if on:
+		var mi := MeshInstance3D.new()
+		mi.mesh = Game.flora.meshes[key]
+		mi.transform = xf
+		add_child(mi)
+		_bare[index] = mi
+		_set_instance(index, Transform3D(Basis().scaled(Vector3.ZERO), Vector3.ZERO))
+	else:
+		_bare[index].queue_free()
+		_bare.erase(index)
+		_set_instance(index, xf)
+	set_process(true)
 
 
 func get_resource_mesh(index: int) -> Mesh:
@@ -165,10 +203,17 @@ func get_resource_mesh(index: int) -> Mesh:
 
 
 func _ready() -> void:
-	set_process(false)
+	set_process(not _bare.is_empty())   # bare plants need regrow checks
 
 
 func _process(delta: float) -> void:
+	# Regrow: bare plants come back once their harvest timer runs out.
+	_regrow_check -= delta
+	if _regrow_check <= 0.0 and not _bare.is_empty():
+		_regrow_check = 3.0
+		for index: int in _bare.keys():
+			if not Game.is_harvested(resources[index].id):
+				set_bare(index, false)
 	for index: int in _wobbles.keys():
 		var t: float = _wobbles[index] - delta
 		var r := resources[index]
@@ -176,15 +221,22 @@ func _process(delta: float) -> void:
 		xf.origin -= position
 		if t <= 0.0:
 			_wobbles.erase(index)
-			_set_instance(index, xf)
+			if _bare.has(index):
+				_bare[index].transform = xf
+			else:
+				_set_instance(index, xf)
 			continue
 		_wobbles[index] = t
 		# Damped sway, stronger for tall things.
 		var k := t / WOBBLE_TIME
 		var amount := sin((1.0 - k) * 28.0) * k * (0.06 if FloraLibrary.category_of(r.kind) == "tree" else 0.03)
 		var axis := Vector3(cos(index * 1.7), 0, sin(index * 1.7)).normalized()
-		_set_instance(index, Transform3D(Basis(axis, amount) * xf.basis, xf.origin))
-	if _wobbles.is_empty():
+		var wob := Transform3D(Basis(axis, amount) * xf.basis, xf.origin)
+		if _bare.has(index):
+			_bare[index].transform = wob
+		else:
+			_set_instance(index, wob)
+	if _wobbles.is_empty() and _bare.is_empty():
 		set_process(false)
 
 

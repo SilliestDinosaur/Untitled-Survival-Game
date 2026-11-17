@@ -50,6 +50,22 @@ const BASE_ITEMS := {
 	"raw_meat": {"name": "Raw Meat", "kind": "food", "stack": 40, "icon": "meat", "food": 16.0, "health": -4.0, "desc": "Filling, but it should really be cooked."},
 	"cactus_flesh": {"name": "Cactus Flesh", "kind": "food", "stack": 40, "icon": "cactus", "food": 5.0, "health": 3.0, "desc": "Watery and a little sour."},
 	"essence": {"name": "Shadow Essence", "kind": "material", "stack": 50, "icon": "essence", "tier": 5, "desc": "Left behind by shadow creatures. Forges Duskforged tools."},
+	# Crafted materials
+	"rope": {"name": "Rope", "kind": "material", "stack": 50, "icon": "rope", "desc": "Twisted plant fiber. Lashes tools and frames together."},
+	"plank": {"name": "Planks", "kind": "material", "stack": 100, "icon": "plank", "desc": "Split and smoothed at a workbench."},
+	"leather": {"name": "Leather", "kind": "material", "stack": 50, "icon": "leather", "desc": "Cured hide. Wraps grips and makes straps."},
+	# Crafted food & medicine
+	"cooked_meat": {"name": "Cooked Meat", "kind": "food", "stack": 40, "icon": "cooked_meat", "food": 30.0, "health": 5.0, "desc": "Seared over a campfire. Much better."},
+	"roast_fruit": {"name": "Roasted Fruit", "kind": "food", "stack": 40, "icon": "roast_fruit", "food": 24.0, "health": 6.0, "desc": "Soft, caramelised and warm."},
+	"stew": {"name": "Hearty Stew", "kind": "food", "stack": 10, "icon": "stew", "food": 55.0, "health": 12.0, "effect": "satiate", "desc": "Meat and berries simmered in a wooden bowl. Keeps you full for a long time."},
+	"bandage": {"name": "Bandage", "kind": "food", "stack": 20, "icon": "bandage", "food": 0.0, "health": 15.0, "effect": "mend", "verb": "Apply", "desc": "Fiber wrap sealed with resin. Stops bleeding and heals over time."},
+	# Light
+	"torch": {"name": "Torch", "kind": "tool", "stack": 1, "icon": "torch", "tier": 0, "desc": "Lights the way at night. Burns down as you swing it.",
+		"tool": {"type": "torch", "tier": 0, "tree": 0.1, "rock": 0.0, "bush": 0.6, "carcass": 0.2, "damage": 8.0, "cooldown": 0.6, "durability": 120}},
+	# Placeable stations
+	"campfire": {"name": "Campfire", "kind": "placeable", "stack": 5, "icon": "campfire", "station": "campfire", "desc": "Place it, then cook food and light up the night."},
+	"workbench": {"name": "Workbench", "kind": "placeable", "stack": 5, "icon": "workbench", "station": "workbench", "desc": "Place it to craft planks, metal tools and better gear."},
+	"forge": {"name": "Forge", "kind": "placeable", "stack": 5, "icon": "forge", "station": "forge", "desc": "Place it to smelt ore into ingots and forge the best tools."},
 	"rock": {"name": "Rock", "kind": "tool", "stack": 1, "icon": "tool", "tier": 0, "desc": "A fist-sized flint rock. Better than bare hands.",
 		"tool": {"type": "rock", "tier": 0, "tree": 0.6, "rock": 0.6, "bush": 1.0, "carcass": 0.6, "damage": 10.0, "cooldown": 0.7, "durability": 150}},
 }
@@ -149,6 +165,13 @@ static func build(seed_value: int, pal: WorldPalette) -> void:
 			"desc": "Tier %d material. %s tools are %s." % [t, name, TRAITS[traits[t - 2]].name.to_lower()],
 		}
 	_tiers.append({"name": "Duskforged", "color": Color(0.36, 0.22, 0.55), "trait": "luminous"})
+	for t in [2, 3]:
+		_items["ingot_t%d" % t] = {"name": "%s Ingot" % _tiers[t].name, "kind": "material", "stack": 50, "icon": "ingot",
+			"color": _tiers[t].color, "tier": t, "desc": "Smelted at a forge. Makes tier %d tools." % t}
+	_items["cut_gem"] = {"name": "Cut %s" % _tiers[4].name, "kind": "material", "stack": 50, "icon": "cut_gem",
+		"color": _tiers[4].color, "tier": 4, "desc": "Faceted at a workbench. Sets into tier 4 tools."}
+	_items["dusk_ingot"] = {"name": "Duskforged Ingot", "kind": "material", "stack": 50, "icon": "ingot",
+		"color": _tiers[5].color, "tier": 5, "desc": "Shadow essence bound into metal at a forge. It hums faintly."}
 
 	# Tools for every tier from stone up.
 	for t in range(1, 6):

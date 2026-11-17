@@ -105,6 +105,12 @@ func _ready() -> void:
 	var pickups := preload("res://scripts/world/pickups.gd").new()
 	pickups.name = "Pickups"
 	add_child(pickups)
+	var structures := preload("res://scripts/world/structures.gd").new()
+	structures.name = "Structures"
+	add_child(structures)
+	player.open_crafting.connect(func() -> void:
+		if state == State.PLAYING and not _inventory.visible:
+			_toggle_inventory(true))
 
 	_wildlife = preload("res://scripts/wildlife/wildlife_manager.gd").new()
 	_wildlife.name = "Wildlife"
@@ -199,12 +205,14 @@ func _to_title() -> void:
 	for c in [_hud, _pause, _settings, _inventory, _loading, _new_world, _load, _debug_items]:
 		c.hide()
 	Game.save_id = ""
+	Game.time_of_day = 0.4   # the title screen sits in a warm afternoon
 	_title.show()
 	_title.refresh()
 
 
 func _start_loading(at: Vector3, heading := "Generating") -> void:
 	state = State.LOADING
+	Game.time_paused = true
 	get_tree().paused = false
 	player.set_active(false)
 	for c in [_hud, _title, _pause, _inventory]:
@@ -223,6 +231,7 @@ func _start_loading(at: Vector3, heading := "Generating") -> void:
 
 func _start_playing() -> void:
 	state = State.PLAYING
+	Game.time_paused = false
 	if not _pending_player.is_empty():
 		player.apply_save_data(_pending_player)
 		_pending_player = {}
@@ -231,6 +240,7 @@ func _start_playing() -> void:
 	player.set_active(true)
 	_hud.show()
 	_hud.show_arrival(Game.world_name)
+	_hud.sync_time()
 	_autosave = AUTOSAVE_SECONDS
 	var tw := create_tween()
 	tw.tween_property(_loading, "modulate:a", 0.0, 0.8)

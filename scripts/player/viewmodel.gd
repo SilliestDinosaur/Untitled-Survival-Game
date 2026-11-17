@@ -15,6 +15,9 @@ var _sway := Vector2.ZERO
 var _busy := false
 var _held := ""
 var _held_type := ""
+var _torch_light: OmniLight3D
+var _torch_flame: MeshInstance3D
+var _t := 0.0
 
 
 func _ready() -> void:
@@ -35,12 +38,19 @@ func hold(item_id: String) -> void:
 	_held = item_id
 	var info := ItemDB.info(item_id) if item_id != "" else {}
 	_held_type = String(info.tool.type) if info.has("tool") else ""
+	_set_torch(_held_type == "torch")
+	_item.scale = Vector3.ONE
 	if item_id == "":
 		_item.mesh = null
 		return
 	_item.mesh = ItemModels.mesh_for(item_id, _mat)
+	if info.kind == "placeable":   # a miniature of the station, held like a bundle
+		_item.scale = Vector3.ONE * 0.11
+		_item.position = Vector3(-0.02, -0.04, 0)
+		_item.rotation = Vector3(0.35, 0.6, 0.0)
+		return
 	# Long tools lean in toward the middle of the screen; small things sit a little higher.
-	if _held_type in ["hatchet", "pickaxe", "knife"]:
+	if _held_type in ["hatchet", "pickaxe", "knife", "torch"]:
 		_item.position = Vector3(0, -0.06, 0)
 		_item.rotation = Vector3(-0.15, 0.25, 0.32)
 	elif _held_type == "spear":
@@ -128,3 +138,34 @@ func update_motion(delta: float, bob_phase: float, bob_amount: float) -> void:
 	_sway = _sway.clamp(Vector2(-0.06, -0.06), Vector2(0.06, 0.06))
 	if not _busy:
 		position = REST + Vector3(-_sway.x + cos(bob_phase) * 0.012 * bob_amount, _sway.y - absf(sin(bob_phase)) * 0.02 * bob_amount, 0)
+
+
+## A held torch lights the area around you and has a flickering flame at its tip.
+func _set_torch(on: bool) -> void:
+	if on and not _torch_light:
+		_torch_light = OmniLight3D.new()
+		_torch_light.light_color = Color(1.0, 0.65, 0.32)
+		_torch_light.omni_range = 14.0
+		_torch_light.omni_attenuation = 1.3
+		_torch_light.shadow_enabled = false
+		_item.add_child(_torch_light)
+		_torch_light.position = Vector3(0, 0.42, 0)
+		_torch_flame = MeshInstance3D.new()
+		_torch_flame.mesh = ItemModels.torch_flame()
+		_torch_flame.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+		_torch_flame.position = Vector3(0, 0.33, 0)
+		_item.add_child(_torch_flame)
+	if _torch_light:
+		_torch_light.visible = on
+		_torch_flame.visible = on
+
+
+func _process(delta: float) -> void:
+	if not _torch_light or not _torch_light.visible:
+		return
+	_t += delta
+	var night := 1.0 - smoothstep(-0.12, 0.12, sin((Game.time_of_day - 0.25) * TAU))
+	var flicker := 0.85 + 0.1 * sin(_t * 13.0) + 0.06 * sin(_t * 29.0)
+	_torch_light.light_energy = flicker * lerpf(0.6, 1.8, night)
+	_torch_flame.scale = Vector3(1.0, flicker * 1.15, 1.0)
+	_torch_flame.rotation.y = _t * 1.5

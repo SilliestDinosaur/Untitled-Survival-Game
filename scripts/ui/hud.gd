@@ -32,6 +32,10 @@ var _target_bar: StatBar
 var _prompt: Label
 var _effects: Label
 var _hit_marker := 0.0
+var _clock: Label
+var _time_banner: Label
+var _was_night := false
+var _dusk_warned := false
 
 
 func setup(p: CharacterBody3D, w: Node) -> void:
@@ -136,6 +140,17 @@ func _ready() -> void:
 	_hint.modulate.a = 0.0
 	add_child(_hint)
 
+	# Day counter + clock, top-right.
+	_clock = UITheme.label("", 19, UITheme.TEXT, 5, true)
+	_clock.horizontal_alignment = HORIZONTAL_ALIGNMENT_RIGHT
+	UITheme.place(_clock, Control.PRESET_TOP_RIGHT, Vector2(-268, 22), Vector2(240, 0))
+	add_child(_clock)
+	_time_banner = UITheme.label("", 36, UITheme.TEXT, 8, true)
+	_time_banner.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	UITheme.place(_time_banner, Control.PRESET_CENTER, Vector2(-400, -170), Vector2(800, 0))
+	_time_banner.modulate.a = 0.0
+	add_child(_time_banner)
+
 	_debug = UITheme.label("", 14, UITheme.TEXT, 4)
 	_debug.position = Vector2(14, 10)
 	add_child(_debug)
@@ -172,6 +187,40 @@ func show_arrival(world_name: String) -> void:
 	tw.tween_property(_banner, "modulate:a", 0.0, 1.5)
 
 
+func _update_clock() -> void:
+	var night := Game.is_night()
+	_clock.text = "%s  Day %d  ·  %s" % ["☾" if night else "☀", Game.day, Game.clock_text()]
+	_clock.modulate = Color(0.75, 0.82, 1.0) if night else Color.WHITE
+	# A warning shortly before dark, and a banner when night falls / the sun comes back.
+	var t := Game.time_of_day
+	var near_dusk := t > Game.SUNSET - 0.04 and t < Game.SUNSET
+	if near_dusk and not _dusk_warned:
+		_dusk_warned = true
+		_flash_time("The sun is setting...", Color(1.0, 0.75, 0.5))
+	if not near_dusk and not night:
+		_dusk_warned = false
+	if night != _was_night:
+		if night:
+			_flash_time("Night falls", Color(0.7, 0.78, 1.0))
+		else:
+			_flash_time("Dawn of day %d" % Game.day, Color(1.0, 0.9, 0.65))
+		_was_night = night
+
+
+func sync_time() -> void:
+	_was_night = Game.is_night()
+	_dusk_warned = Game.time_of_day > Game.SUNSET - 0.04
+
+
+func _flash_time(text: String, tint: Color) -> void:
+	_time_banner.text = text
+	_time_banner.modulate = Color(tint.r, tint.g, tint.b, 0.0)
+	var tw := create_tween()
+	tw.tween_property(_time_banner, "modulate:a", 1.0, 1.0)
+	tw.tween_interval(2.5)
+	tw.tween_property(_time_banner, "modulate:a", 0.0, 1.5)
+
+
 func _unhandled_input(event: InputEvent) -> void:
 	if event.is_action_pressed("toggle_debug"):
 		_debug_on = not _debug_on
@@ -187,6 +236,7 @@ func _process(delta: float) -> void:
 
 	_compass.heading = fposmod(-rad_to_deg(player.rotation.y), 360.0)
 	_compass.queue_redraw()
+	_update_clock()
 
 	# Biome name: update a few times a second, flash brighter when it changes.
 	_biome_timer -= delta
@@ -209,6 +259,9 @@ func _process(delta: float) -> void:
 		parts.append("[%s] %s" % [Settings.code_label(Settings.binding_of("interact")), look.interact])
 	if look.get("attack", "") != "":
 		parts.append("[%s] %s" % [Settings.code_label(Settings.binding_of("attack")).replace(" Click", ""), look.attack])
+	if look.is_empty() and not player.placement.is_empty():
+		var pl: Dictionary = player.placement
+		parts.append(("[%s] Place %s" % [Settings.code_label(Settings.binding_of("attack")).replace(" Click", ""), pl.name]) if pl.ok else pl.reason)
 	_prompt.text = "     ".join(parts)
 	var eff: Array[String] = []
 	for e: String in player.stats.effects:

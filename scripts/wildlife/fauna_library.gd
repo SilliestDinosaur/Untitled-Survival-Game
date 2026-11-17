@@ -270,7 +270,8 @@ func _make_quadruped(rng: RandomNumberGenerator, arch: String) -> Species:
 	kit.loft(neck_path, [neck_r * 1.1, neck_r * 0.92, neck_r * 0.78, neck_r * 0.72], 12, coat,
 		func(t: float, a: float) -> Color: return coat_fn.call(Vector3(-sin(a) * neck_r, -cos(a) * neck_r + H * 0.3, 0.0)),
 		func(t: float, a: float) -> Vector2: return Vector2(1.0, 0.85))
-	var head_tilt := Basis(Vector3.RIGHT, deg_to_rad(rng.randf_range(25, 45)))
+	# Negative = nose tipped down (heads carried forward, not gazing at the sky).
+	var head_tilt := Basis(Vector3.RIGHT, deg_to_rad(-rng.randf_range(8.0, 22.0)))
 	var fwd := head_tilt * Vector3(0, 0, -1)
 	var up := head_tilt * Vector3(0, 1, 0)
 	var snout_len := head_len * rng.randf_range(0.5, 0.75)

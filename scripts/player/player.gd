@@ -6,6 +6,7 @@ extends CharacterBody3D
 signal landed(impact: float)
 signal hint(text: String)   ## short messages for the HUD ("Too hard to break by hand")
 signal hit_landed           ## a swing connected with something
+signal open_crafting        ## Interact on a station
 
 const REACH := 3.2
 const PICKUP_SCENE_LAYER := 2
@@ -51,6 +52,12 @@ var _bob_amount := 0.0
 var _last_step := 0
 var _land_dip := 0.0
 var _fov_kick := 0.0
+## While holding a placeable: {ok, reason, pos, yaw, name}
+var placement := {}
+var _ghost: MeshInstance3D
+var _ghost_kind := ""
+var _ghost_ok_mat: StandardMaterial3D
+var _ghost_bad_mat: StandardMaterial3D
 
 
 func _ready() -> void:
@@ -66,7 +73,9 @@ func _ready() -> void:
 		hint.emit("Your %s broke!" % ItemDB.display_name(id))
 		Audio.play("clink", -2.0, 0.6))
 	reset_inventory()
-	stats.damaged.connect(func(amount: float) -> void: _shake = minf(_shake + amount / 20.0, 1.0))
+	stats.damaged.connect(func(amount: float) -> void:
+		_shake = minf(_shake + amount / 20.0, 1.0)
+		Music.combat_ping(0.5 + amount / 20.0))
 	set_active(false)
 
 
@@ -120,6 +129,8 @@ func set_active(on: bool) -> void:
 	set_process(on)
 	set_process_unhandled_input(on)
 	camera.current = on
+	if _ghost and not on:
+		_ghost.visible = false
 	if on:
 		Input.mouse_mode = Input.MOUSE_MODE_CAPTURED
 
@@ -206,6 +217,7 @@ func _physics_process(delta: float) -> void:
 	stats.tick(delta, is_sprinting)
 	_update_camera(delta, sprinting, input)
 	_update_looking_at()
+	_update_placement()
 	_update_actions(delta)
 
 
@@ -251,6 +263,13 @@ func _update_looking_at() -> void:
 			var p: Dictionary = Game.pickups[pid]
 			looking_at = {"name": "%s%s" % [ItemDB.display_name(p.item), (" x%d" % p.count) if int(p.count) > 1 else ""],
 				"label": "Dropped item", "pickup": pid, "interact": "Pick up"}
+		return
+	if body.has_meta("structure"):
+		var sid: String = body.get_meta("structure")
+		if Game.structures.has(sid):
+			var st: Dictionary = Game.structures[sid]
+			looking_at = {"name": ItemDB.display_name(st.kind), "label": "Crafting station", "structure": sid,
+				"interact": "Craft", "attack": "Pack up"}
 		return
 	if body.has_meta("animal"):
 		var animal: Node = body.get_meta("animal")
@@ -325,6 +344,16 @@ func _update_actions(delta: float) -> void:
 	if not Input.is_action_pressed("attack") or _swing_cooldown > 0.0:
 		return
 	var item := inventory.selected_item()
+	if item != "" and ItemDB.info(item).kind == "placeable" and looking_at.is_empty():
+		_swing_cooldown = 0.4
+		if placement.get("ok", false):
+			var res := GameActions.place_structure(player_id, inventory.selected, placement.pos, placement.yaw)
+			if res.ok:
+				Audio.play_3d("thud", placement.pos, -2.0, 0.8)
+				Effects.chips(get_parent(), placement.pos + Vector3.UP * 0.2, Game.palette.sand.darkened(0.2), 10, 0.06, 2.0)
+		elif placement.get("reason", "") != "":
+			hint.emit(placement.reason)
+		return
 	if item != "" and ItemDB.info(item).kind == "food":
 		_swing_cooldown = 0.6
 		viewmodel.eat(func() -> void:
@@ -360,8 +389,19 @@ func _on_strike() -> void:
 			return
 		hit_landed.emit()
 		var res := GameActions.hit_animal(player_id, animal, global_position)
+		if res.get("ok", false):
+			Music.combat_ping(0.35)
 		Audio.play_3d("thud", point)
 		Effects.chips(get_parent(), point, Color(0.65, 0.12, 0.12), 6, 0.05)
+		return
+	if look.has("structure"):
+		var res := GameActions.hit_structure(player_id, look.structure)
+		if res.get("ok", false):
+			hit_landed.emit()
+			Audio.play_3d("chop", point, -2.0, 0.8)
+			Effects.chips(get_parent(), point, Game.palette.bark.lightened(0.2), 6, 0.06)
+			if res.packed:
+				hint.emit("Packed up the %s" % ItemDB.display_name(res.kind))
 		return
 	if look.has("resource"):
 		_hit_resource(look.chunk, look.resource, point)
@@ -404,6 +444,9 @@ func _hit_resource(chunk: TerrainChunk, r: Dictionary, point: Vector3) -> void:
 ## Interact: the viewmodel's hand reached out.
 func _on_grab() -> void:
 	var look := looking_at
+	if look.has("structure"):
+		open_crafting.emit()
+		return
 	if look.has("pickup"):
 		if GameActions.pick_up(player_id, look.pickup) > 0:
 			Audio.play(Audio.sfx.pickup, -6.0)
@@ -434,6 +477,7 @@ func _on_grab() -> void:
 		if res.picked_up:
 			_remove_visual(chunk, r)
 		else:
+			chunk.set_bare(r.index, true)   # berries gone, fruit picked, reeds cut...
 			chunk.wobble(r.index)
 
 
@@ -474,3 +518,58 @@ func drop_slot(slot: int, whole_stack := true) -> void:
 	pos.y = maxf(ground, Game.SEA_LEVEL) + 0.15
 	GameActions.drop(player_id, slot, int(s.count) if whole_stack else 1, pos)
 	Audio.play(Audio.sfx.click, -8.0, 0.8)
+
+
+# --- Placing stations -----------------------------------------------------------------
+
+func _update_placement() -> void:
+	var item := inventory.selected_item()
+	var info := ItemDB.info(item) if item != "" else {}
+	if info.get("kind", "") != "placeable" or not active:
+		placement = {}
+		if _ghost:
+			_ghost.visible = false
+		return
+	# March along the view ray until it meets the ground (max ~6 m); else 3 m ahead.
+	var from := camera.global_position
+	var dir := -camera.global_transform.basis.z
+	var pos := Vector3.INF
+	var d := 0.5
+	while d < 6.0:
+		var p := from + dir * d
+		if p.y <= Game.world_gen.get_height(p.x, p.z):
+			pos = p
+			break
+		d += 0.2
+	if pos == Vector3.INF:
+		var flat := Vector3(dir.x, 0, dir.z).normalized()
+		pos = global_position + flat * 3.0
+	pos.y = Game.world_gen.get_height(pos.x, pos.z)
+	var flat_dist := Vector2(pos.x - global_position.x, pos.z - global_position.z).length()
+	var reason := GameActions.placement_problem(pos)
+	if reason == "" and flat_dist < 1.2:
+		reason = "Too close to you"
+	var yaw := rotation.y + PI
+	placement = {"ok": reason == "", "reason": reason, "pos": pos, "yaw": yaw, "name": info.name}
+	if not _ghost:
+		_ghost = MeshInstance3D.new()
+		_ghost.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+		_ghost_ok_mat = _ghost_material(Color(0.55, 1.0, 0.6, 0.45))
+		_ghost_bad_mat = _ghost_material(Color(1.0, 0.4, 0.35, 0.45))
+		get_parent().add_child(_ghost)
+	if _ghost_kind != info.station:
+		_ghost_kind = info.station
+		_ghost.mesh = StructureModels.get_model(info.station, _ghost_ok_mat, _ghost_ok_mat).body
+	_ghost.visible = true
+	_ghost.material_override = _ghost_ok_mat if placement.ok else _ghost_bad_mat
+	_ghost.global_position = pos
+	_ghost.rotation = Vector3(0, yaw, 0)
+
+
+func _ghost_material(col: Color) -> StandardMaterial3D:
+	var m := StandardMaterial3D.new()
+	m.albedo_color = col
+	m.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
+	m.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
+	m.no_depth_test = false
+	return m

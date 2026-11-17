@@ -16,6 +16,10 @@ var _rng := RandomNumberGenerator.new()
 func _ready() -> void:
 	process_mode = Node.PROCESS_MODE_ALWAYS
 	_rng.seed = 42
+	if AudioServer.get_bus_index("SFX") < 0:
+		AudioServer.add_bus()
+		AudioServer.set_bus_name(AudioServer.bus_count - 1, "SFX")
+		AudioServer.set_bus_send(AudioServer.bus_count - 1, "Master")
 	for surface in ["grass", "sand", "rock", "snow", "water"]:
 		_steps[surface] = []
 		for i in 4:
@@ -33,6 +37,7 @@ func _ready() -> void:
 	sfx.munch = SoundGen.munch(_rng)
 	for i in 10:
 		var p := AudioStreamPlayer.new()
+		p.bus = "SFX"
 		add_child(p)
 		_pool.append(p)
 	for i in 16:
@@ -40,10 +45,12 @@ func _ready() -> void:
 		p3.unit_size = 6.0
 		p3.max_distance = 90.0
 		p3.attenuation_filter_cutoff_hz = 6000.0
+		p3.bus = "SFX"
 		add_child(p3)
 		_pool_3d.append(p3)
 	_wind = _loop_player(SoundGen.wind())
 	_ocean = _loop_player(SoundGen.ocean())
+	Settings.apply()
 
 
 func _make(name: String) -> AudioStreamWAV:
@@ -58,6 +65,7 @@ func _make(name: String) -> AudioStreamWAV:
 func _loop_player(stream: AudioStream) -> AudioStreamPlayer:
 	var p := AudioStreamPlayer.new()
 	p.stream = stream
+	p.bus = "SFX"
 	p.volume_db = -80.0
 	add_child(p)
 	p.play()

@@ -226,12 +226,18 @@ class InventoryPanel extends Control:
 		center.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
 		center.mouse_filter = Control.MOUSE_FILTER_IGNORE
 		add_child(center)
+		var row := HBoxContainer.new()
+		row.add_theme_constant_override("separation", 16)
+		center.add_child(row)
 		var panel := PanelContainer.new()
 		panel.add_theme_stylebox_override("panel", UITheme.paper_box(UITheme.PAPER, 8, 30))
-		center.add_child(panel)
+		row.add_child(panel)
 		var col := VBoxContainer.new()
 		col.add_theme_constant_override("separation", 10)
 		panel.add_child(col)
+		var craft := CraftingPanel.new()
+		craft.setup(inventory, player)
+		row.add_child(craft)
 		var title_row := HBoxContainer.new()
 		title_row.add_child(UITheme.heading("Satchel", 36))
 		var spacer := Control.new()
@@ -239,7 +245,8 @@ class InventoryPanel extends Control:
 		title_row.add_child(spacer)
 		title_row.add_child(UITheme.label("Tab to close", 15, UITheme.INK_DIM))
 		col.add_child(title_row)
-		col.add_child(UITheme.label("Drag to move  ·  Right-click to split  ·  Shift-click to send to/from the hotbar  ·  Drag outside to drop", 14, UITheme.INK_DIM))
+		var help := UITheme.label("Drag to move  ·  Right-click to split  ·  Shift-click to send to/from the hotbar\nDrag outside to drop", 14, UITheme.INK_DIM)
+		col.add_child(help)
 		var grid := GridContainer.new()
 		grid.columns = 8
 		grid.add_theme_constant_override("h_separation", 6)
@@ -270,3 +277,153 @@ class InventoryPanel extends Control:
 	func _drop_data(_at: Vector2, data: Variant) -> void:
 		if player:
 			player.drop_slot(int(data.slot), true)
+
+
+
+## Crafting list beside the satchel: recipes by group, ingredients you have / need, the station
+## each needs (and whether one is near), and Craft buttons (Shift-click crafts five).
+class CraftingPanel extends PanelContainer:
+	var inventory: Inventory
+	var player: Node
+	var _group := "Basics"
+	var _list: VBoxContainer
+	var _near_label: Label
+	var _status: Label
+	var _tabs := {}
+	var _near: Array = []
+	var _timer := 0.0
+
+	func setup(inv: Inventory, p: Node) -> void:
+		inventory = inv
+		player = p
+		add_theme_stylebox_override("panel", UITheme.paper_box(UITheme.PAPER, 12, 30))
+		custom_minimum_size = Vector2(430, 0)
+		var col := VBoxContainer.new()
+		col.add_theme_constant_override("separation", 8)
+		add_child(col)
+		col.add_child(UITheme.heading("Crafting", 36))
+		_near_label = UITheme.label("", 15, UITheme.INK_DIM)
+		col.add_child(_near_label)
+		var tabs := HBoxContainer.new()
+		tabs.add_theme_constant_override("separation", 4)
+		col.add_child(tabs)
+		for g: String in Recipes.GROUPS:
+			var b := Button.new()
+			b.text = g
+			b.toggle_mode = true
+			b.focus_mode = Control.FOCUS_NONE
+			b.add_theme_font_size_override("font_size", 15)
+			b.pressed.connect(func() -> void:
+				_group = g
+				Audio.click()
+				refresh())
+			tabs.add_child(b)
+			_tabs[g] = b
+		var scroll := ScrollContainer.new()
+		scroll.custom_minimum_size = Vector2(410, 400)
+		scroll.horizontal_scroll_mode = ScrollContainer.SCROLL_MODE_DISABLED
+		col.add_child(scroll)
+		_list = VBoxContainer.new()
+		_list.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+		_list.add_theme_constant_override("separation", 6)
+		scroll.add_child(_list)
+		_status = UITheme.label("", 15, UITheme.ACCENT)
+		col.add_child(_status)
+		inv.changed.connect(func() -> void:
+			if is_visible_in_tree():
+				refresh())
+		visibility_changed.connect(func() -> void:
+			if is_visible_in_tree():
+				_status.text = ""
+				refresh())
+
+	func _process(delta: float) -> void:
+		if not is_visible_in_tree() or not player:
+			return
+		_timer -= delta
+		if _timer <= 0.0:
+			_timer = 0.5
+			var near := GameActions.stations_near(player.global_position)
+			if near != _near:
+				refresh()
+
+	func refresh() -> void:
+		if not player:
+			return
+		_near = GameActions.stations_near(player.global_position)
+		var names: Array[String] = []
+		for k: String in _near:
+			names.append(Recipes.STATION_NAMES[k])
+		_near_label.text = "Nearby: " + (", ".join(names) if not names.is_empty() else "no stations (place a campfire or workbench)")
+		for g: String in _tabs:
+			_tabs[g].button_pressed = g == _group
+		for c in _list.get_children():
+			c.queue_free()
+		var recipes: Array = Recipes.all().filter(func(r: Dictionary) -> bool: return r.group == _group)
+		# Things you can make right now first, then things you're close to, then the rest.
+		recipes.sort_custom(func(a: Dictionary, b: Dictionary) -> bool: return _score(a) > _score(b))
+		for r: Dictionary in recipes:
+			_list.add_child(_row(r))
+
+	func _score(r: Dictionary) -> float:
+		var at_ok: bool = r.at == "" or _near.has(r.at)
+		var have := 0.0
+		for item: String in r.needs:
+			have += minf(float(inventory.count(item)) / float(r.needs[item]), 1.0)
+		have /= r.needs.size()
+		return (2.0 if at_ok and have >= 1.0 else 0.0) + have
+
+	func _row(r: Dictionary) -> Control:
+		var can := GameActions.craftable_count(inventory, r) >= 1
+		var at_ok: bool = r.at == "" or _near.has(r.at)
+		var box := PanelContainer.new()
+		box.add_theme_stylebox_override("panel", UITheme.box(Color(UITheme.PAPER_DARK, 0.55 if can and at_ok else 0.25), 8, Color(0, 0, 0, 0), 0, 6))
+		var h := HBoxContainer.new()
+		h.add_theme_constant_override("separation", 10)
+		box.add_child(h)
+		var icon := ItemIcon.new(r.out, 44)
+		icon.modulate.a = 1.0 if can and at_ok else 0.6
+		h.add_child(icon)
+		var v := VBoxContainer.new()
+		v.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+		v.add_theme_constant_override("separation", 0)
+		h.add_child(v)
+		var title := UITheme.label(("%s x%d" % [ItemDB.display_name(r.out), r.count]) if int(r.count) > 1 else ItemDB.display_name(r.out), 17, UITheme.INK)
+		title.add_theme_font_override("font", UITheme.BOLD_FONT)
+		title.tooltip_text = ItemDB.describe(r.out)
+		title.mouse_filter = Control.MOUSE_FILTER_PASS
+		v.add_child(title)
+		var needs := RichTextLabel.new()
+		needs.bbcode_enabled = true
+		needs.fit_content = true
+		needs.scroll_active = false
+		needs.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+		needs.add_theme_font_size_override("normal_font_size", 14)
+		needs.add_theme_color_override("default_color", UITheme.INK)
+		var parts: Array[String] = []
+		for item: String in r.needs:
+			var have := inventory.count(item)
+			var need := int(r.needs[item])
+			var c := "#3d6b2e" if have >= need else "#a3402a"
+			parts.append("[color=%s]%s %d/%d[/color]" % [c, ItemDB.display_name(item), have, need])
+		var text := "  ·  ".join(parts)
+		if r.at != "":
+			text += "\n[color=%s]At a %s%s[/color]" % ["#5a4a3a" if at_ok else "#a3402a", Recipes.STATION_NAMES[r.at], "" if at_ok else " (none nearby)"]
+		needs.text = text
+		v.add_child(needs)
+		var b := UITheme.button("Craft", can and at_ok, 84)
+		b.custom_minimum_size = Vector2(84, 38)
+		b.size_flags_vertical = Control.SIZE_SHRINK_CENTER
+		b.disabled = not (can and at_ok)
+		b.pressed.connect(func() -> void: _craft(r))
+		h.add_child(b)
+		return box
+
+	func _craft(r: Dictionary) -> void:
+		var times := 5 if Input.is_key_pressed(KEY_SHIFT) else 1
+		var res := GameActions.craft(player.player_id, r.id, player.global_position, times)
+		if res.ok:
+			Audio.play("chop" if r.at in ["workbench", ""] else "clink", -6.0, 1.2)
+			_status.text = "Made %s%s" % [ItemDB.display_name(res.out), (" x%d" % res.made) if res.made > 1 else ""]
+		else:
+			_status.text = res.reason

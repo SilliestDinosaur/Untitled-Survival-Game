@@ -191,6 +191,7 @@ func _build_water() -> void:
 	if not _water:
 		_water = MeshInstance3D.new()
 		_water.name = "Water"
+		_water.add_to_group("water")
 		var plane := PlaneMesh.new()
 		plane.size = Vector2(Game.WORLD_SIZE * 5.0, Game.WORLD_SIZE * 5.0)
 		var mat := ShaderMaterial.new()
