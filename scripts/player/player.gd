@@ -4,6 +4,7 @@ extends CharacterBody3D
 
 signal landed(impact: float)
 signal hint(text: String)   ## short messages for the HUD ("Too hard to break by hand")
+signal hit_landed           ## a swing connected with something
 
 const REACH := 3.2
 
@@ -33,6 +34,7 @@ var inventory := Inventory.new()
 var viewmodel: Viewmodel
 var _rng := RandomNumberGenerator.new()
 var _swing_cooldown := 0.0
+var _shake := 0.0
 var is_sprinting := false   ## animals hear you from farther away
 
 var _gravity: float = ProjectSettings.get_setting("physics/3d/default_gravity")
@@ -55,18 +57,57 @@ func _ready() -> void:
 	viewmodel.strike.connect(_on_strike)
 	inventory.changed.connect(func() -> void: viewmodel.hold(inventory.selected_item()))
 	reset_inventory()
+	stats.damaged.connect(func(amount: float) -> void: _shake = minf(_shake + amount / 20.0, 1.0))
 	set_active(false)
+
+
+## Everything about the player that goes into a save file.
+func to_save_data() -> Dictionary:
+	return {
+		"pos": [global_position.x, global_position.y, global_position.z],
+		"yaw": rotation.y,
+		"pitch": head.rotation.x,
+		"health": stats.health,
+		"hunger": stats.hunger,
+		"stamina": stats.stamina,
+		"items": inventory.counts.duplicate(),
+		"hotbar": Array(inventory.hotbar),
+		"selected": inventory.selected,
+	}
+
+
+func apply_save_data(d: Dictionary) -> void:
+	if d.is_empty():
+		return
+	var p: Array = d.get("pos", [])
+	if p.size() == 3:
+		global_position = Vector3(p[0], p[1], p[2])
+	rotation = Vector3(0, float(d.get("yaw", 0.0)), 0)
+	head.rotation.x = float(d.get("pitch", 0.0))
+	velocity = Vector3.ZERO
+	stats.health = float(d.get("health", stats.max_health))
+	stats.hunger = float(d.get("hunger", stats.max_hunger))
+	stats.stamina = float(d.get("stamina", stats.max_stamina))
+	inventory.clear()
+	var items: Dictionary = d.get("items", {})
+	for id: String in items:
+		inventory.counts[id] = int(items[id])
+	var bar: Array = d.get("hotbar", [])
+	for i in mini(bar.size(), Inventory.HOTBAR_SIZE):
+		inventory.hotbar[i] = String(bar[i])
+	inventory.select(int(d.get("selected", 0)))
 
 
 ## Fresh start: just a rock in hand (also used after dying).
 func reset_inventory() -> void:
 	inventory.clear()
-	inventory.add("rock", 1)
+	inventory.add("rock", 1, true)
 	inventory.select(0)
 
 
 func set_active(on: bool) -> void:
 	active = on
+	looking_at = {}
 	set_physics_process(on)
 	set_process(on)
 	set_process_unhandled_input(on)
@@ -79,7 +120,7 @@ func _unhandled_input(event: InputEvent) -> void:
 	if event is InputEventMouseMotion and Input.mouse_mode == Input.MOUSE_MODE_CAPTURED:
 		var sens := 0.0022 * Settings.mouse_sensitivity
 		rotate_y(-event.relative.x * sens)
-		head.rotate_x(-event.relative.y * sens)
+		head.rotate_x(-event.relative.y * sens * (-1.0 if Settings.invert_y else 1.0))
 		head.rotation.x = clampf(head.rotation.x, deg_to_rad(-89), deg_to_rad(89))
 		viewmodel.add_sway(event.relative)
 	elif event is InputEventMouseButton and event.pressed and Input.mouse_mode == Input.MOUSE_MODE_CAPTURED:
@@ -177,7 +218,10 @@ func _update_camera(delta: float, sprinting: bool, input: Vector2) -> void:
 	_land_dip = lerpf(_land_dip, 0.0, 1.0 - exp(-7.0 * delta))
 	var bob_scale := 0.6 if swimming else 1.0
 	var bob := Vector3(cos(_bob_time) * 0.035, -absf(sin(_bob_time)) * 0.06, 0.0) * _bob_amount * bob_scale
-	camera.position = bob + Vector3(0, -_land_dip, 0)
+	# Screen shake when hurt (decays quickly).
+	_shake = maxf(_shake - delta * 2.5, 0.0)
+	var shake := Vector3(randf_range(-1, 1), randf_range(-1, 1), 0) * _shake * _shake * 0.08
+	camera.position = bob + Vector3(0, -_land_dip, 0) + shake
 
 	_fov_kick = lerpf(_fov_kick, 9.0 if sprinting and horizontal > 6.0 else 0.0, 1.0 - exp(-6.0 * delta))
 	camera.fov = Settings.fov + _fov_kick
@@ -257,6 +301,10 @@ func _on_strike() -> void:
 	var point := ray.get_collision_point()
 	var item := inventory.selected_item()
 	var look := looking_at
+	if look.has("animal") and not is_instance_valid(look.animal):
+		return   # the animal was removed (e.g. despawned) mid-swing
+	if look.has("animal") or look.has("resource"):
+		hit_landed.emit()
 	if look.has("animal"):
 		var animal: Node = look.animal
 		if animal.dead:
@@ -297,7 +345,7 @@ func _hit_resource(chunk: TerrainChunk, r: Dictionary, item: String, point: Vect
 		var xf: Transform3D = r.transform
 		chunk.remove_resource(r.index)
 		if mesh:
-			if target == "tree":
+			if FloraLibrary.category_of(r.kind) == "tree":
 				Effects.fall_tree(get_parent(), mesh, xf, xf.origin - global_position, pal.bark)
 			else:
 				Effects.crumble(get_parent(), mesh, xf)

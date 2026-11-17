@@ -18,8 +18,7 @@ static func hit_resource(chunk: TerrainChunk, index: int, tool_id: String, inv: 
 	_give(inv, ItemDB.YIELDS[key], mult, rng, result.items)
 	if r.hp <= 0.0:
 		_give(inv, ItemDB.BONUS.get(key, []), 1.0, rng, result.items)
-		Game.removed_resources[r.id] = true
-		Game.resource_hp.erase(r.id)
+		Game.mark_removed(r.id)
 		result.destroyed = true
 	else:
 		Game.resource_hp[r.id] = r.hp

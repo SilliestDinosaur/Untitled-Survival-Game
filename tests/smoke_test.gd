@@ -20,7 +20,7 @@ func _process(_delta: float) -> bool:
 	match _phase:
 		"title":
 			if _frames == 30:
-				_main._start_loading()
+				_main.create_world("Test World", 629946553)
 				_phase = "loading"
 		"loading":
 			if _main.state == _main.State.PLAYING:
@@ -51,5 +51,6 @@ func _report(player, world) -> bool:
 	print("chunks: ", world.get_chunk_count(), "  resources: ", counts)
 	print("stamina: %.1f  hunger: %.2f  health: %.1f" % [player.stats.stamina, player.stats.hunger, player.stats.health])
 	var ok: bool = (player.is_on_floor() or player.swimming) and player.global_position.distance_to(_start_pos) > 10.0 and world.get_chunk_count() > 50
+	SaveManager.delete(root.get_node("Game").save_id)
 	print("RESULT: ", "PASS" if ok else "FAIL")
 	return true

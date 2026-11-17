@@ -8,18 +8,29 @@ Day: explore and gather. Night: defend your base from shadow creatures that brea
 2. Open Godot -> Import -> select this folder's `project.godot`.
 3. Press F5.
 
-**Controls:** WASD move · Shift sprint · Space jump / swim up · Left click swing / eat ·
-1-6 or mouse wheel hotbar · Tab inventory · Esc pause · F3 debug info
+**Controls** (all remappable in Settings → Controls): WASD move · Shift sprint ·
+Space jump / swim up · Left click swing / eat · 1-6 or mouse wheel hotbar · Tab satchel ·
+Esc pause · F3 debug info
+
+## Saves
+Worlds are saved in `user://saves/` (on Windows: `%APPDATA%/Godot/app_userdata/Untitled Survival/saves`).
+The title screen has **Continue**, **New World** (name + seed, with a live preview) and
+**Load World** (play, rename or delete). The game autosaves every 2 minutes, when you pause,
+and when you quit or close the window. A save stores the seed plus everything that changed:
+your position, stats and inventory, and every tree/rock you gathered (they regrow after 15 minutes).
 
 ## Everything is generated from the seed
 Each seed produces its own:
 - **Island**: terrain shape, mountain height, coastline (2 km x 2 km)
-- **Biomes**: Meadow, Forest, Autumn Grove, Drylands + Beach, Highlands, Snowfields
+- **Biomes**: Meadow, Forest, Autumn Grove, Savanna, Taiga, Marsh, Desert + Beach, Highlands, Snowfields
+- **Mountains**: warped ridged ranges with foothills, alpine meadows and snow caps
+- **Clutter**: fallen logs, stumps, mushrooms, pebbles, boulders, ferns, reeds, dry brush
 - **Palette**: grass, foliage, rock, sky, water, flower colors (~1 in 5 worlds is "exotic")
 - **Species**: tree/bush/rock/ore shapes and their names
 - **World name**
-- **Wildlife**: grazers, territorial beasts, critters and birds with generated bodies
-  (legs, neck, ears, horns/antlers/tusks, tail, coat pattern), behaviors, calls and names
+- **Wildlife**: 10 body plans (slender, stocky, bulky, shellback, two-legged strider, wader,
+  boar, horned brute, hopper, ferret) plus birds, each with generated proportions, coat pattern,
+  horns/antlers/tusks, behavior, call and name
 
 ## Gameplay so far
 - **Gathering (Rust-style):** hit trees, rocks, ore and bushes; each hit gives resources and
@@ -31,9 +42,17 @@ Each seed produces its own:
 - **Death:** you drop everything and wake up back at the spawn point with a rock.
 
 ## Art style
-Painterly / gouache: soft two-band lighting with warm light and cool shadows, world-space
-brush-stroke color variation, "puffy" canopies lit as one volume, painted two-tone clouds,
-and a screen filter (Kuwahara + paper grain) whose strength follows the quality setting.
+Painterly / gouache, done per material (no screen filter): a generated brush-stroke texture
+varies the pigment, the light/shadow edge follows the strokes, values band softly into a few
+painted tones, and paint pools darker at silhouettes. Canopies are lit as one soft volume and
+clouds are painted in two tones. The UI matches: parchment cards with ragged painted edges,
+brush-stroke buttons and bars, and the Alegreya typefaces (SIL Open Font License, `fonts/OFL.txt`).
+
+## Graphics settings
+- **View distance**: 4-10 chunks; far chunks use simpler terrain and low-poly tree twins.
+- **Quality**: shadows, ambient occlusion, anti-aliasing, grass density.
+- **Model detail** (Low / Medium / High / Ultra): polygon count of every generated plant, rock
+  and animal. Changes apply instantly.
 
 Type a number or any word into the seed box on the title screen.
 Sounds (footsteps, wind, ocean, UI) are synthesized at startup, so there are no audio files.
@@ -42,7 +61,8 @@ Sounds (footsteps, wind, ocean, UI) are synthesized at startup, so there are no 
 | Path | What it does |
 |---|---|
 | `scripts/core/game.gd` | Autoload `Game`: seed, world name, palette, generators, input map |
-| `scripts/core/settings.gd` | Autoload `Settings`: saved to `user://settings.cfg` |
+| `scripts/core/settings.gd` | Autoload `Settings`: options + key bindings, saved to `user://settings.cfg` |
+| `scripts/core/save_manager.gd` | World save files: list, read, write, rename, delete |
 | `scripts/core/main.gd` | Game flow: title -> loading -> playing <-> paused |
 | `scripts/core/name_gen.gd` | Procedural world and species names |
 | `scripts/world/palette.gd` | Per-seed colors |
@@ -62,7 +82,7 @@ Sounds (footsteps, wind, ocean, UI) are synthesized at startup, so there are no 
 | `scripts/ui/` | Theme, HUD, compass, stat bars, menus |
 | `shaders/` | Painterly include + terrain, painted, foliage, grass, sky, water, post filter |
 | `tests/smoke_test.gd` | `godot --headless --path . -s tests/smoke_test.gd` |
-| `tests/gameplay_test.gd` | Chops, mines, eats, hunts and harvests headlessly |
+| `tests/gameplay_test.gd` | Chops, mines, eats, hunts, harvests, then saves and reloads |
 
 ## Performance notes
 - Chunks are generated on worker threads, so streaming doesn't stutter.

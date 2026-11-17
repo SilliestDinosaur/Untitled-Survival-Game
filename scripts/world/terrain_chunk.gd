@@ -76,7 +76,7 @@ func _build_terrain(data: Dictionary, flora: FloraLibrary) -> void:
 func _build_multimeshes(buffers: Dictionary, flora: FloraLibrary) -> void:
 	for key: String in buffers:
 		var buf: PackedFloat32Array = buffers[key]
-		var kind := key.rsplit("_", true, 1)[0]
+		var kind := FloraLibrary.kind_of_key(key)
 		var cat := FloraLibrary.category_of(kind)
 		var mm := MultiMesh.new()
 		mm.transform_format = MultiMesh.TRANSFORM_3D
@@ -92,7 +92,7 @@ func _build_multimeshes(buffers: Dictionary, flora: FloraLibrary) -> void:
 		if vis > 0.0:
 			mmi.visibility_range_end = vis
 			mmi.visibility_range_end_margin = 10.0
-		if cat in ["grass", "flower"] or (cat == "bush" and tier > 0):
+		if cat in ["grass", "flower", "fern"] or (cat in ["bush", "clutter"] and tier > 0):
 			mmi.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
 		add_child(mmi)
 
@@ -110,16 +110,20 @@ func _build_resource_colliders(flora: FloraLibrary) -> void:
 	soft.collision_mask = 0
 	for k in resources.size():
 		var r := resources[k]
-		var cat := FloraLibrary.category_of(r.kind)
+		var info: Dictionary = FloraLibrary.KINDS[r.kind]
 		var t: Transform3D = r.transform
 		var s := t.basis.get_scale().x
 		var local := t.origin - position
 		var col := CollisionShape3D.new()
 		col.set_meta("resource_index", k)
 		_colliders[k] = col
-		col.shape = flora.shapes[cat]
-		var lift := 2.0 if cat == "tree" else (0.25 if cat == "rock" else 0.6)
-		col.transform = Transform3D(Basis.from_scale(Vector3.ONE * s), local + Vector3.UP * lift * s)
+		col.shape = flora.shapes[info.shape]
+		var lift: float = FloraLibrary.SHAPE_LIFT[info.shape]
+		# Logs are long boxes that turn with the log; other shapes only need position + size.
+		var rot := Basis(Vector3.UP, t.basis.get_euler().y) if info.shape == "log" else Basis()
+		if r.kind == "boulder":
+			s *= 1.6
+		col.transform = Transform3D(rot * Basis.from_scale(Vector3.ONE * s), local + Vector3.UP * lift * s)
 		(solid if FloraLibrary.KINDS[r.kind].solid else soft).add_child(col)
 	add_child(solid)
 	add_child(soft)
@@ -156,7 +160,7 @@ func remove_resource(index: int) -> void:
 
 
 func get_resource_mesh(index: int) -> Mesh:
-	var key: String = resources[index].key
+	var key: String = resources[index].get("mm_key", resources[index].key)
 	return _mmis[key].multimesh.mesh if _mmis.has(key) else null
 
 
@@ -186,6 +190,13 @@ func _process(delta: float) -> void:
 
 func _set_instance(index: int, xf: Transform3D) -> void:
 	var r := resources[index]
-	if not r.has("mm_index") or not _mmis.has(r.key):
+	if not r.has("mm_index") or not _mmis.has(r.mm_key):
 		return
-	_mmis[r.key].multimesh.set_instance_transform(r.mm_index, xf)
+	_mmis[r.mm_key].multimesh.set_instance_transform(r.mm_index, xf)
+
+
+## Point every MultiMesh at freshly generated meshes (after the model detail setting changes).
+func swap_meshes(flora: FloraLibrary) -> void:
+	for key: String in _mmis:
+		if flora.meshes.has(key):
+			_mmis[key].multimesh.mesh = flora.meshes[key]

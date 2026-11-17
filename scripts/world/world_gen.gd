@@ -4,23 +4,28 @@ extends RefCounted
 ## No nodes and no hidden randomness, so it gives identical results on every machine
 ## and is safe to call from worker threads.
 
-enum Biome { MEADOW, FOREST, AUTUMN, DRYLANDS, BEACH, HIGHLANDS, SNOW }
-const BIOME_NAMES := ["Meadow", "Forest", "Autumn Grove", "Drylands", "Beach", "Highlands", "Snowfields"]
+enum Biome { MEADOW, FOREST, AUTUMN, DRYLANDS, BEACH, HIGHLANDS, SNOW, TAIGA, MARSH, DESERT }
+const BIOME_NAMES := ["Meadow", "Forest", "Autumn Grove", "Savanna", "Beach", "Highlands", "Snowfields", "Taiga", "Marsh", "Desert"]
 
-## Biome "centers" in (temperature, moisture) space. Ground colors blend between them smoothly.
-const _BIOME_CLIMATE := {
-	Biome.MEADOW: Vector2(0.55, 0.35),
-	Biome.FOREST: Vector2(0.55, 0.75),
-	Biome.AUTUMN: Vector2(0.2, 0.55),
-	Biome.DRYLANDS: Vector2(0.9, 0.15),
+## Climate biomes: their "centers" in (temperature, moisture) space. Ground colors and plant
+## choice blend between neighbours smoothly.
+const CLIMATE_BIOMES := {
+	Biome.MEADOW: Vector2(0.55, 0.4),
+	Biome.FOREST: Vector2(0.48, 0.72),
+	Biome.AUTUMN: Vector2(0.28, 0.5),
+	Biome.DRYLANDS: Vector2(0.8, 0.25),
+	Biome.TAIGA: Vector2(0.08, 0.62),
+	Biome.MARSH: Vector2(0.62, 0.96),
+	Biome.DESERT: Vector2(0.98, 0.02),
 }
 
 var palette: WorldPalette
 var mountain_scale: float
 var hill_scale: float
 
-var _continent := FastNoiseLite.new()  # big rolling hills
-var _ridge := FastNoiseLite.new()      # mountain ridges
+var _continent := FastNoiseLite.new()  # big rolling lowlands
+var _ranges := FastNoiseLite.new()     # where mountain ranges run
+var _ridge := FastNoiseLite.new()      # warped, weighted ridges (range crests + spurs)
 var _detail := FastNoiseLite.new()     # small bumps + coastline wobble
 var _temperature := FastNoiseLite.new()
 var _moisture := FastNoiseLite.new()
@@ -32,29 +37,45 @@ func _init(seed_value: int, pal: WorldPalette) -> void:
 	var rng := RandomNumberGenerator.new()
 	rng.seed = seed_value
 	# Each world has its own "personality": flatter or more mountainous.
-	mountain_scale = rng.randf_range(70.0, 140.0)
-	hill_scale = rng.randf_range(18.0, 34.0)
+	mountain_scale = rng.randf_range(60.0, 115.0)
+	hill_scale = rng.randf_range(16.0, 30.0)
 
 	_continent.seed = seed_value
 	_continent.noise_type = FastNoiseLite.TYPE_SIMPLEX_SMOOTH
 	_continent.frequency = rng.randf_range(0.0014, 0.0022)
 	_continent.fractal_octaves = 4
 
+	_ranges.seed = seed_value + 6
+	_ranges.noise_type = FastNoiseLite.TYPE_SIMPLEX_SMOOTH
+	_ranges.frequency = rng.randf_range(0.0011, 0.0016)
+	_ranges.fractal_octaves = 2
+
+	# Ridged multifractal with domain warping: long, bending crests with branching spurs
+	# and broad shoulders, instead of isolated spikes.
 	_ridge.seed = seed_value + 1
-	_ridge.frequency = rng.randf_range(0.0035, 0.005)
+	_ridge.noise_type = FastNoiseLite.TYPE_SIMPLEX_SMOOTH
+	_ridge.frequency = rng.randf_range(0.0026, 0.0036)
 	_ridge.fractal_type = FastNoiseLite.FRACTAL_RIDGED
-	_ridge.fractal_octaves = 4
+	_ridge.fractal_octaves = 5
+	_ridge.fractal_gain = 0.5
+	_ridge.fractal_weighted_strength = 0.7
+	_ridge.domain_warp_enabled = true
+	_ridge.domain_warp_type = FastNoiseLite.DOMAIN_WARP_SIMPLEX
+	_ridge.domain_warp_amplitude = 55.0
+	_ridge.domain_warp_frequency = 0.004
+	_ridge.domain_warp_fractal_type = FastNoiseLite.DOMAIN_WARP_FRACTAL_PROGRESSIVE
+	_ridge.domain_warp_fractal_octaves = 2
 
 	_detail.seed = seed_value + 2
 	_detail.frequency = 0.02
 	_detail.fractal_octaves = 2
 
 	_temperature.seed = seed_value + 3
-	_temperature.frequency = 0.0016
+	_temperature.frequency = 0.0015
 	_temperature.fractal_octaves = 2
 
 	_moisture.seed = seed_value + 4
-	_moisture.frequency = 0.0022
+	_moisture.frequency = 0.002
 	_moisture.fractal_octaves = 3
 
 	_forest.seed = seed_value + 5
@@ -72,13 +93,24 @@ func get_height(x: float, z: float) -> float:
 	var mask := 1.0 - smoothstep(0.55, 0.92, coast)
 
 	var c := _continent.get_noise_2d(x, z) * 0.5 + 0.5          # 0..1
-	var hills := c * hill_scale
-	var ridge := maxf(0.0, _ridge.get_noise_2d(x, z) * 0.5 + 0.5 - 0.45) * 1.8
-	var mountains := ridge * ridge * smoothstep(0.5, 0.8, c) * mountain_scale * 1.6
-	var bumps := _detail.get_noise_2d(x, z) * 1.0
+	var lowlands := c * hill_scale
+	# Mountains only where a range runs, rising through foothills to the crest.
+	var range_t := smoothstep(0.42, 0.72, _ranges.get_noise_2d(x, z) * 0.5 + 0.5) * smoothstep(0.15, 0.4, mask)
+	var ridge := clampf(_ridge.get_noise_2d(x, z) * 0.5 + 0.5, 0.0, 1.0)
+	var crest := pow(ridge, 2.4)                                   # sharp crest, wide shoulders
+	var mountains := (crest * 0.85 + ridge * 0.15) * range_t * mountain_scale
+	var foothills := range_t * hill_scale * 0.6 * ridge
+	# Soften the very tops so peaks are rounded-sharp rather than needles.
+	var peak_cap := mountain_scale * 0.9
+	if mountains > peak_cap * 0.7:
+		var over := mountains - peak_cap * 0.7
+		mountains = peak_cap * 0.7 + over / (1.0 + over / (peak_cap * 0.5))
+	var bumps := _detail.get_noise_2d(x, z) * 0.9
 
-	var land := 3.0 + hills + mountains + bumps
-	# Flatten a little right at the shore so beaches are walkable.
+	var land := 3.0 + lowlands + foothills + mountains + bumps
+	# Marshes sit low and flat.
+	var wet := smoothstep(0.82, 0.95, get_moisture(x, z))
+	land = lerpf(land, 2.4 + bumps * 0.5, wet * (1.0 - range_t) * 0.85)
 	return lerpf(-25.0, land, mask)
 
 
@@ -92,19 +124,22 @@ func get_normal(x: float, z: float) -> Vector3:
 	return Vector3(hl - hr, 2.0 * e, hd - hu).normalized()
 
 
+func get_moisture(x: float, z: float) -> float:
+	return clampf(_moisture.get_noise_2d(x, z) * 0.8 + 0.5, 0.0, 1.0)
+
+
 ## Temperature and moisture (both 0..1). Higher ground is colder.
 func get_climate(x: float, z: float, height: float) -> Vector2:
-	var t := clampf(_temperature.get_noise_2d(x, z) * 0.75 + 0.5 - maxf(height - 20.0, 0.0) * 0.006, 0.0, 1.0)
-	var m := clampf(_moisture.get_noise_2d(x, z) * 0.75 + 0.5, 0.0, 1.0)
-	return Vector2(t, m)
+	var t := clampf(_temperature.get_noise_2d(x, z) * 0.8 + 0.5 - maxf(height - 20.0, 0.0) * 0.007, 0.0, 1.0)
+	return Vector2(t, get_moisture(x, z))
 
 
-## Soft weights for the 4 climate biomes (sum to 1). Used for color blending + flora choice.
+## Soft weights for the climate biomes (sum to 1). Used for color blending + plant choice.
 func get_biome_weights(climate: Vector2) -> Dictionary:
 	var weights := {}
 	var total := 0.0
-	for b: int in _BIOME_CLIMATE:
-		var d: float = climate.distance_squared_to(_BIOME_CLIMATE[b])
+	for b: int in CLIMATE_BIOMES:
+		var d: float = climate.distance_squared_to(CLIMATE_BIOMES[b])
 		var w := 1.0 / pow(d + 0.002, 2.0)
 		weights[b] = w
 		total += w
@@ -120,7 +155,7 @@ func get_biome(x: float, z: float) -> int:
 		return Biome.BEACH
 	if h > 78.0:
 		return Biome.SNOW
-	if h > 50.0:
+	if h > 52.0:
 		return Biome.HIGHLANDS
 	var w := get_biome_weights(get_climate(x, z, h))
 	var best := Biome.MEADOW
@@ -137,8 +172,13 @@ func get_surface(x: float, z: float) -> String:
 		return "sand"
 	if h > 74.0:
 		return "snow"
-	if h > 50.0 or get_normal(x, z).y < 0.72:
+	if h > 52.0 or get_normal(x, z).y < 0.72:
 		return "rock"
+	var w := get_biome_weights(get_climate(x, z, h))
+	if w[Biome.DESERT] > 0.5:
+		return "sand"
+	if w[Biome.TAIGA] > 0.6 and h > 30.0:
+		return "snow"
 	return "grass"
 
 
@@ -147,24 +187,26 @@ func get_forest_clump(x: float, z: float) -> float:
 	return clampf(_forest.get_noise_2d(x, z) * 0.8 + 0.55, 0.0, 1.0)
 
 
-## Stylized flat colors (sRGB) from height, steepness and biome.
+## Stylized ground colors (sRGB) from height, steepness and biome.
 func get_terrain_color(height: float, normal_y: float, x: float, z: float) -> Color:
 	var jitter := (fposmod(sin(x * 12.9898 + z * 78.233) * 43758.5453, 1.0) - 0.5) * 0.02
 	var pal := palette
-	var col: Color
 	var w := get_biome_weights(get_climate(x, z, height))
-	var grass: Color = pal.meadow_grass * w[Biome.MEADOW] + pal.forest_grass * w[Biome.FOREST] \
-		+ pal.autumn_grass * w[Biome.AUTUMN] + pal.dry_grass * w[Biome.DRYLANDS]
+	var ground := Color(0, 0, 0)
+	for b: int in w:
+		ground += pal.ground[b] * w[b]
 	# Darker patches under dense forest clumps.
-	grass = grass.darkened(get_forest_clump(x, z) * 0.08)
+	ground = ground.darkened(get_forest_clump(x, z) * 0.08 * (1.0 - w[Biome.DESERT]))
 
 	var sand_t := 1.0 - smoothstep(1.0, 2.6, height)
-	var steep_t := smoothstep(0.80, 0.68, normal_y)
-	var high_t := smoothstep(44.0, 56.0, height)
-	col = grass.lerp(pal.sand, sand_t)
-	col = col.lerp(pal.rock, maxf(steep_t, high_t))
-	if height > 72.0 and normal_y > 0.62:
-		col = col.lerp(pal.snow, smoothstep(72.0, 82.0, height))
+	var steep_t := smoothstep(0.80, 0.66, normal_y)
+	var high_t := smoothstep(46.0, 60.0, height)
+	# Alpine meadows: grass on gentle high slopes, rock on steep ones.
+	var rock_t := maxf(steep_t, high_t * smoothstep(0.95, 0.8, normal_y))
+	var col := ground.lerp(pal.sand, sand_t)
+	col = col.lerp(pal.rock.lerp(pal.rock_light, smoothstep(0.6, 0.9, normal_y)), rock_t)
+	if height > 70.0 and normal_y > 0.6:
+		col = col.lerp(pal.snow, smoothstep(70.0, 82.0, height) * smoothstep(0.6, 0.75, normal_y))
 	if height < -0.5:
 		col = pal.sand.darkened(0.25)   # seabed
 	return Color(col.r + jitter, col.g + jitter, col.b + jitter)

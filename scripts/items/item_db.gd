@@ -14,6 +14,7 @@ const ITEMS := {
 	"hide": {"name": "Hide", "kind": "resource", "stack": 500},
 	"bone": {"name": "Bone", "kind": "resource", "stack": 500},
 	"berries": {"name": "Berries", "kind": "food", "stack": 100, "food": 9.0, "health": 2.0},
+	"mushroom": {"name": "Mushroom", "kind": "food", "stack": 100, "food": 6.0, "health": 1.0},
 	"raw_meat": {"name": "Raw Meat", "kind": "food", "stack": 100, "food": 16.0, "health": -4.0},
 	"rock": {"name": "Rock", "kind": "tool", "stack": 1,
 		"tool": {"tree": 1.0, "rock": 1.0, "bush": 1.0, "carcass": 1.0, "damage": 14.0, "cooldown": 0.7}},
@@ -30,6 +31,13 @@ const YIELDS := {
 	"bush": [["fiber", 2, 3]],
 	"berry": [["fiber", 1, 2], ["berries", 2, 4]],
 	"carcass": [["raw_meat", 1, 2], ["hide", 0, 1], ["bone", 0, 1]],
+	"boulder": [["stone", 4, 6]],
+	"cactus": [["fiber", 2, 3]],
+	"reeds": [["fiber", 2, 4]],
+	"dead_bush": [["fiber", 1, 2], ["wood", 1, 1]],
+	"log": [["wood", 3, 5]],
+	"mushroom": [["mushroom", 1, 2]],
+	"pebbles": [["stone", 1, 2]],
 }
 ## Extra reward for finishing a node off.
 const BONUS := {
@@ -37,6 +45,11 @@ const BONUS := {
 	"rock": [["stone", 6, 9]],
 	"ore": [["metal_ore", 4, 6]],
 	"carcass": [["raw_meat", 1, 3], ["hide", 1, 1]],
+	"boulder": [["stone", 10, 14], ["metal_ore", 0, 2]],
+	"cactus": [["fiber", 3, 5]],
+	"log": [["wood", 6, 9]],
+	"mushroom": [["mushroom", 1, 2]],
+	"pebbles": [["stone", 1, 3]],
 }
 ## HP damage per hit at multiplier 1.0 (trees have 100 HP -> 5 hits with a rock).
 const HIT_DAMAGE := 20.0
@@ -57,13 +70,8 @@ static func tool_stats(id: String) -> Dictionary:
 
 ## Map a resource kind (pine, oak, rock, ore, bush, berry...) to its gather target type.
 static func target_type(kind: String) -> String:
-	match FloraLibrary.category_of(kind):
-		"tree": return "tree"
-		"rock": return "rock"
-		_: return "bush"
+	return FloraLibrary.KINDS[kind].get("target", "bush")
 
 
 static func yield_key(kind: String) -> String:
-	if kind in ["ore", "berry", "bush", "rock"]:
-		return kind
-	return "tree"
+	return FloraLibrary.KINDS[kind].get("yield", "bush")

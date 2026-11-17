@@ -8,6 +8,9 @@ var verts := PackedVector3Array()
 var normals := PackedVector3Array()
 var colors := PackedColorArray()
 var force_up_normals := false   ## grass: light it like the ground under it
+
+## Global polygon multiplier (the "Model detail" setting). Set while building assets.
+static var detail := 1.0
 var _noise: FastNoiseLite
 
 
@@ -91,7 +94,7 @@ static func cylinder(top: float, bottom: float, height: float, segments: int, ca
 	m.top_radius = top
 	m.bottom_radius = bottom
 	m.height = height
-	m.radial_segments = segments
+	m.radial_segments = maxi(4, int(round(segments * detail)))
 	m.rings = 1
 	m.cap_top = caps and top > 0.0
 	m.cap_bottom = caps
@@ -102,6 +105,6 @@ static func sphere(radius: float, segments := 10, rings := 6) -> SphereMesh:
 	var m := SphereMesh.new()
 	m.radius = radius
 	m.height = radius * 2.0
-	m.radial_segments = segments
-	m.rings = rings
+	m.radial_segments = maxi(4, int(round(segments * detail)))
+	m.rings = maxi(2, int(round(rings * detail)))
 	return m

@@ -18,7 +18,9 @@ void vertex() {
 
 void fragment() {
 	vec3 wpos = (INV_VIEW_MATRIX * vec4(VERTEX, 1.0)).xyz;
-	ALBEDO = brush(COLOR.rgb, wpos, vec3(0.0, 1.0, 0.0));
+	float stroke;
+	ALBEDO = brush(COLOR.rgb, wpos, vec3(0.0, 1.0, 0.0), stroke);
+	paint_stroke = stroke;
 	ROUGHNESS = 1.0;
 	BACKLIGHT = COLOR.rgb * 0.3;
 }

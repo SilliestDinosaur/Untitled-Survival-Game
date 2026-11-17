@@ -5,7 +5,6 @@ extends Node
 var sun: DirectionalLight3D
 var environment: Environment
 var sky_material: ShaderMaterial
-var _post: ColorRect
 
 
 func _ready() -> void:
@@ -53,17 +52,6 @@ func _ready() -> void:
 	world_env.environment = environment
 	add_child(world_env)
 
-	# Painterly screen filter. Layer -1 draws over the 3D world but under the HUD.
-	var post_layer := CanvasLayer.new()
-	post_layer.layer = -1
-	add_child(post_layer)
-	_post = ColorRect.new()
-	_post.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
-	_post.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	_post.material = ArtStyle.material(preload("res://shaders/paint_post.gdshader"))
-	(_post.material as ShaderMaterial).set_shader_parameter("paper", ArtStyle.paper_texture())
-	post_layer.add_child(_post)
-
 	Game.world_changed.connect(apply_palette)
 	Settings.changed.connect(apply_settings)
 	apply_palette()
@@ -98,7 +86,6 @@ func apply_settings() -> void:
 			environment.glow_enabled = false
 			environment.ssao_enabled = false
 			viewport.msaa_3d = Viewport.MSAA_DISABLED
-			_set_paint_radius(0)
 		"Medium":
 			sun.directional_shadow_max_distance = 110.0
 			sun.directional_shadow_mode = DirectionalLight3D.SHADOW_PARALLEL_4_SPLITS
@@ -106,7 +93,6 @@ func apply_settings() -> void:
 			environment.glow_enabled = true
 			environment.ssao_enabled = false
 			viewport.msaa_3d = Viewport.MSAA_2X
-			_set_paint_radius(3)
 		_:
 			sun.directional_shadow_max_distance = 160.0
 			sun.directional_shadow_mode = DirectionalLight3D.SHADOW_PARALLEL_4_SPLITS
@@ -114,13 +100,8 @@ func apply_settings() -> void:
 			environment.glow_enabled = true
 			environment.ssao_enabled = true
 			viewport.msaa_3d = Viewport.MSAA_4X
-			_set_paint_radius(4)
 	environment.glow_intensity = 0.35
 	environment.glow_bloom = 0.05
-
-
-func _set_paint_radius(r: int) -> void:
-	(_post.material as ShaderMaterial).set_shader_parameter("radius", r)
 
 
 func _cloud_texture() -> NoiseTexture2D:

@@ -28,6 +28,8 @@ var _hotbar: InventoryUI.Hotbar
 var _held_name: Label
 var _feed: InventoryUI.PickupFeed
 var _hint: Label
+var _target_bar: StatBar
+var _hit_marker := 0.0
 
 
 func setup(p: CharacterBody3D, w: Node) -> void:
@@ -37,6 +39,7 @@ func setup(p: CharacterBody3D, w: Node) -> void:
 	_hotbar.setup(player.inventory, _held_name)
 	player.inventory.item_added.connect(_feed.add_item)
 	player.hint.connect(show_hint)
+	player.hit_landed.connect(hit_marker)
 
 
 func _ready() -> void:
@@ -57,11 +60,15 @@ func _ready() -> void:
 	UITheme.place(target, Control.PRESET_CENTER, Vector2(-200, 26), Vector2(400, 0))
 	target.add_theme_constant_override("separation", 0)
 	add_child(target)
-	_target_name = UITheme.label("", 19, UITheme.TEXT, 5)
-	_target_kind = UITheme.label("", 13, UITheme.TEXT_DIM, 4)
+	_target_name = UITheme.label("", 24, UITheme.TEXT, 6, true)
+	_target_kind = UITheme.label("", 14, UITheme.TEXT_DIM, 4)
 	for l in [_target_name, _target_kind]:
 		l.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 		target.add_child(l)
+	_target_bar = StatBar.new(Color(0.92, 0.82, 0.55), "")
+	_target_bar.custom_minimum_size = Vector2(150, 22)
+	_target_bar.size_flags_horizontal = Control.SIZE_SHRINK_CENTER
+	target.add_child(_target_bar)
 
 	# Stat bars, bottom-left.
 	var bars := VBoxContainer.new()
@@ -83,7 +90,7 @@ func _ready() -> void:
 	add_child(top)
 	_compass = Compass.new()
 	top.add_child(_compass)
-	_biome = UITheme.label("", 15, UITheme.TEXT_DIM, 4)
+	_biome = UITheme.label("", 19, UITheme.TEXT, 5, true)
 	_biome.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	top.add_child(_biome)
 
@@ -92,8 +99,8 @@ func _ready() -> void:
 	UITheme.place(_banner, Control.PRESET_CENTER, Vector2(-400, -230), Vector2(800, 0))
 	_banner.modulate.a = 0.0
 	add_child(_banner)
-	var welcome := UITheme.label("YOU HAVE WASHED ASHORE ON", 15, UITheme.TEXT_DIM, 4)
-	_banner_name = UITheme.label("", 46, Color.WHITE, 8)
+	var welcome := UITheme.label("You have washed ashore on", 22, UITheme.TEXT_DIM, 5, true)
+	_banner_name = UITheme.label("", 64, UITheme.TEXT, 10, true)
 	for l in [welcome, _banner_name]:
 		l.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 		_banner.add_child(l)
@@ -104,7 +111,7 @@ func _ready() -> void:
 	bottom.add_theme_constant_override("separation", 6)
 	bottom.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	add_child(bottom)
-	_held_name = UITheme.label("", 14, UITheme.TEXT_DIM, 4)
+	_held_name = UITheme.label("", 17, UITheme.TEXT, 5)
 	_held_name.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	bottom.add_child(_held_name)
 	_hotbar = InventoryUI.Hotbar.new()
@@ -115,7 +122,7 @@ func _ready() -> void:
 	UITheme.place(_feed, Control.PRESET_CENTER_RIGHT, Vector2(-320, -40), Vector2(290, 0))
 	add_child(_feed)
 
-	_hint = UITheme.label("", 16, Color(1, 0.9, 0.75), 4)
+	_hint = UITheme.label("", 19, Color(1, 0.88, 0.7), 5)
 	_hint.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	UITheme.place(_hint, Control.PRESET_CENTER, Vector2(-300, 70), Vector2(600, 0))
 	_hint.modulate.a = 0.0
@@ -181,7 +188,7 @@ func _process(delta: float) -> void:
 		var b: int = Game.world_gen.get_biome(p.x, p.z)
 		if b != _last_biome:
 			_last_biome = b
-			_biome.text = WorldGen.BIOME_NAMES[b].to_upper()
+			_biome.text = WorldGen.BIOME_NAMES[b]
 			_biome.modulate = Color(1.6, 1.4, 1.1)
 	_biome.modulate = _biome.modulate.lerp(Color.WHITE, 1.0 - exp(-1.5 * delta))
 
@@ -189,6 +196,11 @@ func _process(delta: float) -> void:
 	var look: Dictionary = player.looking_at
 	_target_name.text = look.get("name", "")
 	_target_kind.text = String(look.get("label", "")).to_upper()
+	var frac := _target_health(look)
+	_target_bar.visible = frac >= 0.0 and frac < 0.999
+	if _target_bar.visible:
+		_target_bar.value = frac
+	_hit_marker = maxf(_hit_marker - delta * 3.0, 0.0)
 	_crosshair_scale = lerpf(_crosshair_scale, 1.0 if look.is_empty() else 2.4, 1.0 - exp(-14.0 * delta))
 	_crosshair.queue_redraw()
 
@@ -209,7 +221,30 @@ func _process(delta: float) -> void:
 			_debug.text += "\npos %.0f, %.0f, %.0f\nchunks %d\nseed %d" % [p.x, p.y, p.z, world.get_chunk_count(), Game.world_seed]
 
 
+## 0..1 health of what the crosshair is on (-1 if it has none).
+func _target_health(look: Dictionary) -> float:
+	if look.has("animal"):
+		if not is_instance_valid(look.animal):
+			return -1.0
+		var a: Node = look.animal
+		return a.carcass_hp / (60.0 * a.species.yield_scale) if a.dead else a.hp / a.species.hp
+	if look.has("resource"):
+		var r: Dictionary = look.resource
+		return float(r.hp) / float(FloraLibrary.KINDS[r.kind].hp)
+	return -1.0
+
+
+## Flash an "x" on the crosshair when a hit lands.
+func hit_marker() -> void:
+	_hit_marker = 1.0
+
+
 func _draw_crosshair() -> void:
+	if _hit_marker > 0.0:
+		var k := 6.0 + (1.0 - _hit_marker) * 4.0
+		var c := Color(1, 0.92, 0.8, _hit_marker)
+		for d in [Vector2(1, 1), Vector2(1, -1), Vector2(-1, 1), Vector2(-1, -1)]:
+			_crosshair.draw_line(d * k, d * (k + 6.0), c, 2.0, true)
 	var r := 2.5 * _crosshair_scale
 	if _crosshair_scale > 1.3:
 		_crosshair.draw_arc(Vector2.ZERO, r, 0, TAU, 32, Color(0, 0, 0, 0.4), 3.0, true)

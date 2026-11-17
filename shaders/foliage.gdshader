@@ -20,7 +20,9 @@ void vertex() {
 void fragment() {
 	vec3 wpos = (INV_VIEW_MATRIX * vec4(VERTEX, 1.0)).xyz;
 	vec3 wn = (INV_VIEW_MATRIX * vec4(NORMAL, 0.0)).xyz;
-	ALBEDO = brush(COLOR.rgb, wpos * 1.6, wn);
+	float stroke;
+	ALBEDO = pool_edges(brush(COLOR.rgb, wpos * 1.6, wn, stroke), NORMAL, VIEW);
+	paint_stroke = stroke;
 	ROUGHNESS = 1.0;
 	BACKLIGHT = COLOR.rgb * backlight;
 	RIM = 0.25;

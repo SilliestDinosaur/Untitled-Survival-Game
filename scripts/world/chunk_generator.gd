@@ -13,8 +13,10 @@ const TIER_SKIRT := [3.0, 6.0, 10.0]   ## depth of the edge "skirt" that hides g
 const TREE_ATTEMPTS := 110
 const ROCK_ATTEMPTS := 10
 const BUSH_ATTEMPTS := 26
+const CLUTTER_ATTEMPTS := 22
 const GRASS_ATTEMPTS := 650
 const FLOWER_ATTEMPTS := 70
+const FERN_ATTEMPTS := 90
 
 
 ## job: {coord, tier, gen, flora, removed (Dictionary of ids), grass_density}
@@ -158,93 +160,117 @@ static func _place_resources(coord: Vector2i, origin: Vector3, gen: WorldGen, fl
 	var size := Game.CHUNK_SIZE
 	var counter := [0]
 
-	var add := func(kind: String, variant: int, pos: Vector3, yaw: float, scl: float) -> void:
+	var add := func(kind: String, variant: int, pos: Vector3, yaw: float, scl: Vector3) -> void:
 		var id := "%d_%d_%d" % [coord.x, coord.y, counter[0]]
 		counter[0] += 1
 		if removed.has(id):
 			return
-		var basis := Basis(Vector3.UP, yaw).scaled(Vector3.ONE * scl)
 		out.append({
 			"id": id,
 			"kind": kind,
 			"key": flora.variants[kind][variant % flora.variants[kind].size()],
-			"transform": Transform3D(basis, pos),
+			"transform": Transform3D(Basis(Vector3.UP, yaw).scaled(scl), pos),
 			"hp": FloraLibrary.KINDS[kind].hp,
 		})
 
 	# Every attempt draws the same number of random values, whether it succeeds or not,
-	# so placement is identical on every machine.
+	# so placement is identical on every machine. (Ids are numbered in a fixed order too.)
 	for i in TREE_ATTEMPTS:
-		var wx := origin.x + rng.randf() * size
-		var wz := origin.z + rng.randf() * size
-		var r_biome := rng.randf()
-		var r_place := rng.randf()
-		var r_kind := rng.randf()
-		var variant := rng.randi()
-		var yaw := rng.randf() * TAU
-		var scl := rng.randf_range(0.8, 1.3)
-		var h := gen.get_height(wx, wz)
-		if h < 2.6 or h > 58.0:
+		var a := _attempt(rng, origin, size)
+		var h := gen.get_height(a.x, a.z)
+		if h < 2.6 or h > 60.0:
+			counter[0] += 1
 			continue
-		var nrm := gen.get_normal(wx, wz)
-		if nrm.y < 0.82:
-			continue
-		var biome := _pick_biome(gen.get_biome_weights(gen.get_climate(wx, wz, h)), r_biome)
-		var density: float = FloraLibrary.BIOME_TREE_DENSITY[biome] * gen.get_forest_clump(wx, wz) * 1.6
-		if h > 44.0:
+		var nrm := gen.get_normal(a.x, a.z)
+		var biome := _pick_biome(gen.get_biome_weights(gen.get_climate(a.x, a.z, h)), a.r_biome)
+		var density: float = FloraLibrary.BIOME_TREE_DENSITY[biome] * gen.get_forest_clump(a.x, a.z) * 1.6
+		if h > 46.0:
 			density *= 0.35   # sparse up in the highlands
-		if r_place < density:
-			var kind := "pine" if h > 44.0 else _pick_weighted(FloraLibrary.BIOME_TREES[biome], r_kind)
-			add.call(kind, variant, Vector3(wx, h - 0.15, wz), yaw, scl)
+		if nrm.y < 0.82 or a.r_place >= density:
+			counter[0] += 1
+			continue
+		var kind := "fir" if h > 46.0 else _pick_weighted(FloraLibrary.BIOME_TREES[biome], a.r_kind)
+		add.call(kind, a.variant, Vector3(a.x, h - 0.15, a.z), a.yaw, Vector3.ONE * a.scl)
 
 	for i in ROCK_ATTEMPTS:
-		var wx := origin.x + rng.randf() * size
-		var wz := origin.z + rng.randf() * size
-		var r_place := rng.randf()
-		var r_ore := rng.randf()
-		var variant := rng.randi()
-		var yaw := rng.randf() * TAU
-		var scl := rng.randf_range(0.5, 1.6)
-		var h := gen.get_height(wx, wz)
-		if h < 0.8 or gen.get_normal(wx, wz).y < 0.55:
+		var a := _attempt(rng, origin, size)
+		var h := gen.get_height(a.x, a.z)
+		var chance := 0.35 + clampf(h / 60.0, 0.0, 0.5)   # more rocks (and ore) up high
+		if h < 0.8 or gen.get_normal(a.x, a.z).y < 0.55 or a.r_place >= chance:
+			counter[0] += 1
 			continue
-		# More rocks (and more ore) up high.
-		var chance := 0.35 + clampf(h / 60.0, 0.0, 0.5)
-		if r_place < chance:
-			var ore_chance := 0.06 + clampf((h - 30.0) / 80.0, 0.0, 0.25)
-			add.call("ore" if r_ore < ore_chance else "rock", variant, Vector3(wx, h - 0.2 * scl, wz), yaw, scl)
+		var ore_chance := 0.06 + clampf((h - 30.0) / 80.0, 0.0, 0.25)
+		var s := lerpf(0.5, 1.6, a.scl - 0.8)
+		add.call("ore" if a.r_kind < ore_chance else "rock", a.variant, Vector3(a.x, h - 0.2 * s, a.z), a.yaw, Vector3.ONE * s)
 
 	for i in BUSH_ATTEMPTS:
-		var wx := origin.x + rng.randf() * size
-		var wz := origin.z + rng.randf() * size
-		var r_biome := rng.randf()
-		var r_place := rng.randf()
-		var r_berry := rng.randf()
-		var variant := rng.randi()
-		var yaw := rng.randf() * TAU
-		var scl := rng.randf_range(0.7, 1.25)
-		var h := gen.get_height(wx, wz)
-		if h < 2.2 or h > 46.0 or gen.get_normal(wx, wz).y < 0.8:
+		var a := _attempt(rng, origin, size)
+		var h := gen.get_height(a.x, a.z)
+		if h < 2.2 or h > 50.0 or gen.get_normal(a.x, a.z).y < 0.8:
+			counter[0] += 1
 			continue
-		var biome := _pick_biome(gen.get_biome_weights(gen.get_climate(wx, wz, h)), r_biome)
-		if r_place < FloraLibrary.BIOME_BUSH_DENSITY[biome]:
-			add.call("berry" if r_berry < 0.25 else "bush", variant, Vector3(wx, h - 0.1, wz), yaw, scl)
+		var biome := _pick_biome(gen.get_biome_weights(gen.get_climate(a.x, a.z, h)), a.r_biome)
+		if a.r_place >= FloraLibrary.BIOME_BUSH_DENSITY[biome]:
+			counter[0] += 1
+			continue
+		add.call(_pick_weighted(FloraLibrary.BIOME_BUSHES[biome], a.r_kind), a.variant, Vector3(a.x, h - 0.1, a.z), a.yaw, Vector3.ONE * a.scl)
+
+	for i in CLUTTER_ATTEMPTS:
+		var a := _attempt(rng, origin, size)
+		var h := gen.get_height(a.x, a.z)
+		var nrm := gen.get_normal(a.x, a.z)
+		if h < 2.0 or nrm.y < 0.82:
+			counter[0] += 1
+			continue
+		var biome := _pick_biome(gen.get_biome_weights(gen.get_climate(a.x, a.z, h)), a.r_biome)
+		if h > 50.0:
+			biome = Biome.DESERT if a.r_biome < 0.5 else Biome.DRYLANDS   # rocky highlands: stones & boulders
+		if a.r_place >= FloraLibrary.BIOME_CLUTTER_DENSITY[biome]:
+			counter[0] += 1
+			continue
+		var kind := _pick_weighted(FloraLibrary.BIOME_CLUTTER[biome], a.r_kind)
+		var sink := 0.05
+		var scl: Vector3 = Vector3.ONE * a.scl
+		if kind == "boulder":
+			scl = Vector3.ONE * (a.scl * 1.3)
+			sink = 0.5
+		# Logs lie along the slope's flat direction; everything else just turns.
+		add.call(kind, a.variant, Vector3(a.x, h - sink, a.z), a.yaw, scl)
 	return out
 
 
+## One placement attempt's random values (always the same count, for determinism).
+static func _attempt(rng: RandomNumberGenerator, origin: Vector3, size: float) -> Dictionary:
+	return {
+		"x": origin.x + rng.randf() * size,
+		"z": origin.z + rng.randf() * size,
+		"r_biome": rng.randf(),
+		"r_place": rng.randf(),
+		"r_kind": rng.randf(),
+		"variant": rng.randi(),
+		"yaw": rng.randf() * TAU,
+		"scl": rng.randf_range(0.8, 1.3),
+	}
+
+
 ## MultiMesh buffers: 12 floats of transform + 4 floats of color per instance.
+## Far chunks (tier 2) only draw trees, using their low-poly twins.
 static func _resource_buffers(resources: Array[Dictionary], origin: Vector3, tier: int) -> Dictionary:
 	var buffers := {}
 	for r in resources:
 		var cat := FloraLibrary.category_of(r.kind)
 		if tier == 2 and cat != "tree":
 			continue
+		if tier == 1 and cat == "clutter" and r.kind != "boulder" and r.kind != "log":
+			continue
+		var key: String = r.key + ("_lod" if tier == 2 else "")
 		var t: Transform3D = r.transform
 		t.origin -= origin
 		var shade := 0.92 + fposmod(t.origin.x * 3.17 + t.origin.z * 1.31, 0.16)
 		# Remember which instance this is, so it can be shaken / hidden when gathered.
-		r.mm_index = buffers[r.key].size() / 16 if buffers.has(r.key) else 0
-		_append_instance(buffers, r.key, t, Color(shade, shade, shade))
+		r.mm_key = key
+		r.mm_index = buffers[key].size() / 16 if buffers.has(key) else 0
+		_append_instance(buffers, key, t, Color(shade, shade, shade))
 	return buffers
 
 
@@ -256,7 +282,7 @@ static func _append_instance(buffers: Dictionary, key: String, t: Transform3D, c
 	buffers[key].append_array([b.x.x, b.y.x, b.z.x, o.x, b.x.y, b.y.y, b.z.y, o.y, b.x.z, b.y.z, b.z.z, o.z, col.r, col.g, col.b, col.a])
 
 
-# --- Grass and flowers (near the player only) ---------------------------------
+# --- Grass, flowers and ferns (near the player only) ---------------------------------
 
 static func _place_ground_cover(coord: Vector2i, origin: Vector3, gen: WorldGen, flora: FloraLibrary, density: float, buffers: Dictionary) -> void:
 	var rng := RandomNumberGenerator.new()
@@ -264,6 +290,7 @@ static func _place_ground_cover(coord: Vector2i, origin: Vector3, gen: WorldGen,
 	var size := Game.CHUNK_SIZE
 	var grass_keys: Array = flora.variants["grass"]
 	var flower_keys: Array = flora.variants["flower"]
+	var fern_keys: Array = flora.variants["fern"]
 
 	for i in int(GRASS_ATTEMPTS * density):
 		var lx := rng.randf() * size
@@ -275,14 +302,43 @@ static func _place_ground_cover(coord: Vector2i, origin: Vector3, gen: WorldGen,
 		var wx := origin.x + lx
 		var wz := origin.z + lz
 		var h := gen.get_height(wx, wz)
-		if h < 1.9 or h > 48.0:
+		if h < 1.9 or h > 62.0:
 			continue
 		var nrm := gen.get_normal(wx, wz)
-		if nrm.y < 0.8 or keep > 0.85:
+		if nrm.y < 0.8:
+			continue
+		var w := gen.get_biome_weights(gen.get_climate(wx, wz, h))
+		var amount := 0.0
+		for b: int in w:
+			amount += w[b] * FloraLibrary.BIOME_GRASS[b]
+		if keep > amount * 0.85:
 			continue
 		var col := gen.get_terrain_color(h, nrm.y, wx, wz).srgb_to_linear()
 		var t := Transform3D(Basis(Vector3.UP, yaw).scaled(Vector3.ONE * scl), Vector3(lx, h, lz))
 		_append_instance(buffers, grass_keys[variant % grass_keys.size()], t, col)
+
+	for i in int(FERN_ATTEMPTS * density):
+		var lx := rng.randf() * size
+		var lz := rng.randf() * size
+		var keep := rng.randf()
+		var variant := rng.randi()
+		var yaw := rng.randf() * TAU
+		var scl := rng.randf_range(0.7, 1.4)
+		var wx := origin.x + lx
+		var wz := origin.z + lz
+		var h := gen.get_height(wx, wz)
+		if h < 2.0 or h > 55.0 or gen.get_normal(wx, wz).y < 0.8:
+			continue
+		var w := gen.get_biome_weights(gen.get_climate(wx, wz, h))
+		var amount := 0.0
+		for b: int in w:
+			amount += w[b] * FloraLibrary.BIOME_FERNS[b]
+		# Ferns like shade: more of them where trees clump.
+		if keep > amount * gen.get_forest_clump(wx, wz):
+			continue
+		var t := Transform3D(Basis(Vector3.UP, yaw).scaled(Vector3.ONE * scl), Vector3(lx, h, lz))
+		var shade := rng.randf_range(0.85, 1.1)
+		_append_instance(buffers, fern_keys[variant % fern_keys.size()], t, Color(shade, shade, shade))
 
 	for i in int(FLOWER_ATTEMPTS * density):
 		var lx := rng.randf() * size
@@ -293,10 +349,12 @@ static func _place_ground_cover(coord: Vector2i, origin: Vector3, gen: WorldGen,
 		var wx := origin.x + lx
 		var wz := origin.z + lz
 		var h := gen.get_height(wx, wz)
-		if h < 2.2 or h > 40.0:
+		if h < 2.2 or h > 58.0:
 			continue
 		var w := gen.get_biome_weights(gen.get_climate(wx, wz, h))
-		if keep > w[Biome.MEADOW] * 0.7 + w[Biome.AUTUMN] * 0.2 or gen.get_normal(wx, wz).y < 0.85:
+		# Flowers in meadows and autumn groves, plus alpine flowers on high gentle slopes.
+		var alpine := smoothstep(40.0, 55.0, h) * 0.5
+		if keep > w[Biome.MEADOW] * 0.7 + w[Biome.AUTUMN] * 0.2 + alpine or gen.get_normal(wx, wz).y < 0.85:
 			continue
 		# Flowers of one color grow in patches.
 		var patch := int(floor(wx / 9.0) * 7.0 + floor(wz / 9.0) * 13.0)

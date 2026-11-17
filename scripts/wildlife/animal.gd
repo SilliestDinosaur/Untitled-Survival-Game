@@ -57,10 +57,11 @@ func setup(sp: FaunaLibrary.Species, pos: Vector3, p: Node3D) -> void:
 	_collider.collision_mask = 0
 	_collider.set_meta("animal", self)
 	var shape := BoxShape3D.new()
-	shape.size = Vector3(sp.body_w * 1.1, sp.body_h + sp.leg_len * 0.6, sp.body_len * 1.3)
+	# Covers the body plus the upper legs (the box hangs below the body, which sits atop the legs).
+	shape.size = Vector3(maxf(sp.body_w * 1.2, 0.4), sp.body_h * 1.2 + sp.leg_len * 0.6, maxf(sp.body_len * 1.3, 0.5))
 	var cs := CollisionShape3D.new()
 	cs.shape = shape
-	cs.position = Vector3(0, sp.leg_len * 0.7 + sp.body_h * 0.2, -sp.body_len * 0.1)
+	cs.position = Vector3(0, sp.body_h * 0.6 - shape.size.y * 0.5, -sp.body_len * 0.1)
 	_collider.add_child(cs)
 	_body.add_child(_collider)
 	_enter(State.GRAZE)
@@ -184,7 +185,7 @@ func _animate(delta: float, graze: float) -> void:
 	_gait += delta * (2.0 + _speed * 2.2 / maxf(species.size, 0.3))
 	var swing := (0.25 + stride * 0.45) * minf(_speed / 0.3, 1.0)
 	# Diagonal legs move together (trot).
-	var phases := [0.0, PI, PI, 0.0]
+	var phases := [0.0, PI, PI, 0.0] if _legs.size() == 4 else [0.0, PI]
 	for i in _legs.size():
 		_legs[i].rotation.x = sin(_gait + phases[i]) * swing
 	_body.position.y = species.leg_len + species.body_h * 0.2 + absf(sin(_gait)) * 0.04 * species.size * stride

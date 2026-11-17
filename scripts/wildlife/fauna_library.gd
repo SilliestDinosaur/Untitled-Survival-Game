@@ -42,19 +42,47 @@ var material: ShaderMaterial
 var _pal: WorldPalette
 
 
+## Body plans. Each species picks one, then randomizes within its ranges.
+## size, leg (x size), body_h (x size), neck (x size), neck_angle (degrees), legs, and favorite biomes.
+const ARCHETYPES := {
+	"slender": {"role": "grazer", "size": [0.55, 0.8], "leg": [0.85, 1.05], "body_h": [0.36, 0.44], "neck": [0.35, 0.55], "angle": [45, 65], "legs": 4,
+		"biomes": {Biome.MEADOW: 1.0, Biome.FOREST: 0.7, Biome.AUTUMN: 0.8, Biome.DRYLANDS: 0.6}},
+	"stocky": {"role": "grazer", "size": [0.9, 1.2], "leg": [0.55, 0.75], "body_h": [0.4, 0.5], "neck": [0.25, 0.45], "angle": [35, 55], "legs": 4,
+		"biomes": {Biome.MEADOW: 0.8, Biome.FOREST: 1.0, Biome.AUTUMN: 1.0, Biome.TAIGA: 0.5}},
+	"bulky": {"role": "grazer", "size": [1.4, 1.8], "leg": [0.42, 0.55], "body_h": [0.55, 0.65], "neck": [0.08, 0.18], "angle": [10, 25], "legs": 4,
+		"biomes": {Biome.TAIGA: 1.0, Biome.MEADOW: 0.5, Biome.FOREST: 0.6}},
+	"shellback": {"role": "grazer", "size": [0.7, 1.0], "leg": [0.18, 0.25], "body_h": [0.42, 0.5], "neck": [0.15, 0.25], "angle": [10, 25], "legs": 4,
+		"biomes": {Biome.DRYLANDS: 1.0, Biome.DESERT: 1.0, Biome.MARSH: 0.8}},
+	"strider": {"role": "grazer", "size": [0.9, 1.2], "leg": [1.0, 1.25], "body_h": [0.5, 0.6], "neck": [0.6, 0.8], "angle": [70, 80], "legs": 2,
+		"biomes": {Biome.DRYLANDS: 1.0, Biome.DESERT: 0.8, Biome.MEADOW: 0.5}},
+	"wader": {"role": "grazer", "size": [0.7, 0.95], "leg": [1.1, 1.35], "body_h": [0.34, 0.4], "neck": [0.7, 0.95], "angle": [55, 70], "legs": 4,
+		"biomes": {Biome.MARSH: 1.0, Biome.FOREST: 0.3}},
+	"boar": {"role": "defensive", "size": [0.85, 1.15], "leg": [0.32, 0.45], "body_h": [0.5, 0.62], "neck": [0.1, 0.2], "angle": [15, 35], "legs": 4,
+		"biomes": {Biome.FOREST: 1.0, Biome.AUTUMN: 0.8, Biome.TAIGA: 0.6, Biome.MEADOW: 0.4}},
+	"horned": {"role": "defensive", "size": [1.1, 1.4], "leg": [0.45, 0.6], "body_h": [0.55, 0.65], "neck": [0.1, 0.2], "angle": [15, 30], "legs": 4,
+		"biomes": {Biome.DRYLANDS: 1.0, Biome.MEADOW: 0.6, Biome.DESERT: 0.4}},
+	"hopper": {"role": "critter", "size": [0.26, 0.36], "leg": [0.18, 0.3], "body_h": [0.38, 0.5], "neck": [0.22, 0.4], "angle": [35, 60], "legs": 4,
+		"biomes": {Biome.MEADOW: 1.0, Biome.FOREST: 0.7, Biome.AUTUMN: 0.8, Biome.DRYLANDS: 0.6, Biome.TAIGA: 0.5}},
+	"ferret": {"role": "critter", "size": [0.3, 0.4], "leg": [0.14, 0.2], "body_h": [0.28, 0.34], "neck": [0.15, 0.25], "angle": [15, 30], "legs": 4,
+		"biomes": {Biome.FOREST: 1.0, Biome.TAIGA: 0.9, Biome.MARSH: 0.8, Biome.AUTUMN: 0.6}},
+}
+
+
 func _init(seed_value: int, pal: WorldPalette) -> void:
 	_pal = pal
 	material = ArtStyle.painted({"brush_strength": 0.22, "rim_amount": 0.25})
 	var rng := RandomNumberGenerator.new()
 	rng.seed = seed_value * 977 + 3
-	# Three grazers of different sizes, one or two territorial beasts, critters and birds.
-	for size_class in [0.6, 1.0, 1.55]:
-		species.append(_make_quadruped(rng, "grazer", size_class * rng.randf_range(0.9, 1.15)))
-	for i in rng.randi_range(1, 2):
-		species.append(_make_quadruped(rng, "defensive", rng.randf_range(0.85, 1.15)))
-	for i in 2:
-		species.append(_make_quadruped(rng, "critter", rng.randf_range(0.26, 0.36)))
-	for i in 2:
+	# Each world gets 4 of the 6 grazer body plans, both beasts, both critters and 2-3 birds.
+	var grazers := ["slender", "stocky", "bulky", "shellback", "strider", "wader"]
+	for i in range(grazers.size() - 1, 0, -1):
+		var j := rng.randi_range(0, i)
+		var tmp: String = grazers[i]
+		grazers[i] = grazers[j]
+		grazers[j] = tmp
+	for arch in grazers.slice(0, 4) + ["boar", "horned", "hopper", "ferret"]:
+		species.append(_make_quadruped(rng, arch))
+	for i in rng.randi_range(2, 3):
 		species.append(_make_bird(rng))
 
 
@@ -74,28 +102,37 @@ func _coat(rng: RandomNumberGenerator) -> Color:
 	return Color.from_hsv(hue, rng.randf_range(0.2, 0.6), rng.randf_range(0.35, 0.8))
 
 
-func _make_quadruped(rng: RandomNumberGenerator, role: String, size: float) -> Species:
+func _make_quadruped(rng: RandomNumberGenerator, arch: String) -> Species:
+	var a: Dictionary = ARCHETYPES[arch]
+	var role: String = a.role
 	var s := Species.new()
 	s.role = role
 	s.label = ROLE_LABELS[role]
-	s.id = "%s_%d" % [role, species.size()]
+	s.id = "%s_%d" % [arch, species.size()]
+	var size := rng.randf_range(a.size[0], a.size[1])
 	s.size = size
 	s.name = NameGen.species_name(rng, role)
-	for b in [Biome.MEADOW, Biome.FOREST, Biome.AUTUMN, Biome.DRYLANDS]:
-		s.biome_pref[b] = rng.randf_range(0.1, 1.0)
+	for b: int in a.biomes:
+		s.biome_pref[b] = a.biomes[b] * rng.randf_range(0.7, 1.0)
 
 	# --- Proportions ---
-	var stocky := role == "defensive"
-	s.body_len = size * rng.randf_range(0.9, 1.25)
-	s.body_h = size * (rng.randf_range(0.5, 0.62) if stocky else rng.randf_range(0.38, 0.5))
+	var stocky := role == "defensive" or arch == "bulky"
+	s.body_h = size * rng.randf_range(a.body_h[0], a.body_h[1])
+	s.body_len = s.body_h * rng.randf_range(1.9, 2.5)
+	if arch == "strider":
+		s.body_len = s.body_h * 1.4
+	elif arch == "ferret":
+		s.body_len = s.body_h * 2.9
+	elif arch == "shellback":
+		s.body_len = s.body_h * 2.1
 	s.body_w = s.body_h * rng.randf_range(0.75, 0.95)
-	s.leg_len = size * (rng.randf_range(0.32, 0.45) if stocky else rng.randf_range(0.5, 0.85))
-	if role == "critter":
-		s.leg_len = size * rng.randf_range(0.18, 0.3)
-	var leg_r := size * (0.085 if stocky else 0.065) * rng.randf_range(0.9, 1.2)
-	var neck_len := size * (rng.randf_range(0.1, 0.2) if stocky else rng.randf_range(0.22, 0.5))
-	var neck_angle := deg_to_rad(rng.randf_range(15, 35) if stocky else rng.randf_range(35, 65))
-	var head_len := size * rng.randf_range(0.34, 0.46)
+	s.leg_len = size * rng.randf_range(a.leg[0], a.leg[1])
+	var leg_r := size * (0.085 if stocky else 0.06) * rng.randf_range(0.9, 1.2)
+	if arch in ["wader", "strider"]:
+		leg_r *= 0.7
+	var neck_len := size * rng.randf_range(a.neck[0], a.neck[1])
+	var neck_angle := deg_to_rad(rng.randf_range(a.angle[0], a.angle[1]))
+	var head_len := size * rng.randf_range(0.34, 0.46) * (0.7 if arch in ["strider", "wader", "shellback"] else 1.0)
 
 	# --- Behavior ---
 	match role:
@@ -106,12 +143,19 @@ func _make_quadruped(rng: RandomNumberGenerator, role: String, size: float) -> S
 			s.flee_radius = rng.randf_range(11.0, 18.0)
 			s.herd = Vector2i(1, 3) if size > 1.3 else Vector2i(2, 5)
 			s.yield_scale = size
+			if arch == "shellback":   # slow and tough
+				s.hp *= 2.0
+				s.walk_speed = 0.6
+				s.run_speed = 1.8
+				s.flee_radius = 6.0
+			elif arch == "strider":
+				s.run_speed += 2.5
 		"defensive":
 			s.hp = 70.0 * size
 			s.walk_speed = 1.1
 			s.run_speed = 6.5
 			s.flee_radius = 0.0
-			s.damage = rng.randf_range(10.0, 15.0)
+			s.damage = rng.randf_range(10.0, 15.0) * (1.25 if arch == "horned" else 1.0)
 			s.herd = Vector2i(1, 2)
 			s.yield_scale = 1.2 * size
 		"critter":
@@ -151,10 +195,25 @@ func _make_quadruped(rng: RandomNumberGenerator, role: String, size: float) -> S
 	# --- Body: torso (+ optional hump) + tail ---
 	var kit := MeshKit.new(rng.randi())
 	kit.add_primitive(MeshKit.sphere(0.5, 14, 8), Transform3D(Basis().scaled(Vector3(s.body_w, s.body_h, s.body_len)), Vector3.ZERO), coat, 0.02, 0.05, null, coat_fn)
-	if stocky or rng.randf() < 0.25:
-		kit.add_primitive(MeshKit.sphere(0.5, 12, 7), Transform3D(Basis().scaled(Vector3(s.body_w * 0.9, s.body_h * 0.8, s.body_len * 0.5)), Vector3(0, s.body_h * 0.25, -s.body_len * 0.18)), coat, 0.02, 0.05, null, coat_fn)
+	if (stocky or rng.randf() < 0.25) and arch != "shellback":
+		# Shoulder hump (big and shaggy on bulky grazers).
+		var hump := 1.0 if arch != "bulky" else 1.35
+		kit.add_primitive(MeshKit.sphere(0.5, 12, 7), Transform3D(Basis().scaled(Vector3(s.body_w * 0.9, s.body_h * 0.8 * hump, s.body_len * 0.5)), Vector3(0, s.body_h * 0.25 * hump, -s.body_len * 0.18)), coat, 0.06 if arch == "bulky" else 0.02, 0.05, null, coat_fn)
+	if arch == "shellback":
+		# A domed, plated shell.
+		var shell := accent.lerp(coat, 0.35)
+		var plates := func(p: Vector3) -> Color:
+			return shell.darkened(0.25) if sin(p.x * 18.0 / size) * sin(p.z * 18.0 / size) > 0.55 else shell
+		kit.add_primitive(MeshKit.sphere(0.5, 14, 8), Transform3D(Basis().scaled(Vector3(s.body_w * 1.35, s.body_h * 1.25, s.body_len * 1.12)), Vector3(0, s.body_h * 0.28, 0)), shell, 0.03, 0.05, null, plates)
 	var tail_len := size * rng.randf_range(0.1, 0.5)
-	if role == "critter" or rng.randf() < 0.3:
+	if arch == "ferret":
+		tail_len = s.body_len * 0.8
+	if arch == "strider":
+		# Fan of tail plumes.
+		for i in 5:
+			var tb := Basis(Vector3.UP, (i - 2) * 0.3) * Basis(Vector3.RIGHT, deg_to_rad(-120))
+			kit.add_primitive(MeshKit.sphere(0.5, 7, 4), Transform3D(tb * Basis.from_scale(Vector3(size * 0.08, size * 0.35, size * 0.03)), Vector3(0, s.body_h * 0.3, s.body_len * 0.45) + tb.y * size * 0.15), accent, 0.0, 0.04)
+	elif (role == "critter" and arch != "ferret") or (rng.randf() < 0.3 and arch != "ferret"):
 		kit.add_primitive(MeshKit.sphere(size * 0.12, 9, 6), Transform3D(Basis(), Vector3(0, s.body_h * 0.15, s.body_len * 0.5)), belly, 0.03, 0.05)   # puff tail
 	else:
 		var tb := Basis(Vector3.RIGHT, deg_to_rad(rng.randf_range(-130, -160)))
@@ -173,14 +232,17 @@ func _make_quadruped(rng: RandomNumberGenerator, role: String, size: float) -> S
 	kit.add_primitive(MeshKit.sphere(0.5, 12, 7), Transform3D(head_tilt * Basis.from_scale(Vector3(head_len * 0.62, head_len * 0.6, head_len)), head_c), coat, 0.0, 0.05)
 	var snout_c := head_c + head_tilt * Vector3(0, -head_len * 0.12, -head_len * 0.5)
 	var snout_len := head_len * rng.randf_range(0.35, 0.7)
+	if arch in ["wader", "strider"]:
+		snout_len = head_len * (1.6 if arch == "wader" else 0.6)   # beak
 	kit.add_primitive(MeshKit.sphere(0.5, 10, 6), Transform3D(head_tilt * Basis.from_scale(Vector3(head_len * 0.4, head_len * 0.36, snout_len)), snout_c), belly.lerp(coat, 0.4), 0.0, 0.04)
 	kit.add_primitive(MeshKit.sphere(head_len * 0.06, 8, 5), Transform3D(Basis(), snout_c + head_tilt * Vector3(0, head_len * 0.05, -snout_len * 0.48)), Color(0.12, 0.1, 0.1), 0.0, 0.0)  # nose
 	for side in [-1.0, 1.0]:
 		var eye := head_c + head_tilt * Vector3(side * head_len * 0.3, head_len * 0.12, -head_len * 0.18)
 		kit.add_primitive(MeshKit.sphere(head_len * 0.075, 8, 5), Transform3D(Basis(), eye), Color(0.06, 0.05, 0.05), 0.0, 0.0)
 		kit.add_primitive(MeshKit.sphere(head_len * 0.025, 6, 4), Transform3D(Basis(), eye + Vector3(side * 0.01, head_len * 0.03, -head_len * 0.05)), Color(1, 1, 1), 0.0, 0.0)  # glint
-	_ears(kit, rng, role, head_c, head_len, coat, belly)
-	_horns(kit, rng, role, head_c, head_len, size, snout_c)
+	if not arch in ["shellback", "strider", "wader"]:
+		_ears(kit, rng, role, head_c, head_len, coat, belly)
+	_horns(kit, rng, arch, head_c, head_len, size, snout_c)
 	s.head_mesh = kit.commit(material)
 
 	# --- Leg (shared by all four) ---
@@ -193,6 +255,8 @@ func _make_quadruped(rng: RandomNumberGenerator, role: String, size: float) -> S
 	var lz := s.body_len * 0.32
 	var ly := -s.body_h * 0.2
 	s.leg_offsets = [Vector3(-lx, ly, -lz), Vector3(lx, ly, -lz), Vector3(-lx, ly, lz), Vector3(lx, ly, lz)]
+	if a.legs == 2:
+		s.leg_offsets = [Vector3(-lx, ly, 0), Vector3(lx, ly, 0)]
 
 	s.call_sound = SoundGen.creature_call(role, size, rng)
 	return s
@@ -211,18 +275,37 @@ func _ears(kit: MeshKit, rng: RandomNumberGenerator, role: String, head_c: Vecto
 				null, func(p: Vector3) -> Color: return inner if p.z < base.z - head_len * 0.01 else coat)
 
 
-func _horns(kit: MeshKit, rng: RandomNumberGenerator, role: String, head_c: Vector3, head_len: float, size: float, snout_c: Vector3) -> void:
+func _horns(kit: MeshKit, rng: RandomNumberGenerator, arch: String, head_c: Vector3, head_len: float, size: float, snout_c: Vector3) -> void:
 	var horn_col := Color.from_hsv(rng.randf_range(0.08, 0.12), 0.2, rng.randf_range(0.7, 0.9))
-	if role == "defensive":
+	if arch in ["shellback", "strider", "wader", "hopper", "ferret"]:
+		return
+	if arch == "horned":
+		# Big forward-sweeping horns.
+		for side in [-1.0, 1.0]:
+			var pos := head_c + Vector3(side * head_len * 0.25, head_len * 0.25, head_len * 0.05)
+			var dir := Vector3(side, 0.35, -0.1).normalized()
+			var r := head_len * 0.14
+			for seg in 6:
+				var seg_len := head_len * 0.26
+				kit.add_primitive(MeshKit.cylinder(r * 0.8, r, seg_len, 8), Transform3D(Basis(Quaternion(Vector3.UP, dir)), pos + dir * seg_len * 0.5), horn_col, 0.0, 0.03)
+				pos += dir * seg_len * 0.9
+				dir = (dir + Vector3(-side * 0.25, 0.15, -0.35)).normalized()
+				r *= 0.8
+		return
+	if arch == "boar":
 		# Tusks curving up from the snout.
 		for side in [-1.0, 1.0]:
 			var b := Basis(Vector3.FORWARD, side * deg_to_rad(-25)) * Basis(Vector3.RIGHT, deg_to_rad(-35))
 			var length := head_len * rng.randf_range(0.45, 0.7)
 			kit.add_primitive(MeshKit.cylinder(0.0, head_len * 0.06, length, 7), Transform3D(b, snout_c + Vector3(side * head_len * 0.15, 0, 0) + b.y * length * 0.45), horn_col, 0.0, 0.03)
 		return
-	if role == "critter" or rng.randf() < 0.35:
+	if rng.randf() < 0.3 and arch != "bulky":
 		return
 	var style: String = ["straight", "curved", "antlers"][rng.randi() % 3]
+	if arch == "bulky":
+		style = "antlers" if rng.randf() < 0.6 else "curved"
+	elif arch == "slender":
+		style = "straight" if rng.randf() < 0.5 else "curved"
 	for side in [-1.0, 1.0]:
 		var root := head_c + Vector3(side * head_len * 0.15, head_len * 0.3, head_len * 0.05)
 		match style:

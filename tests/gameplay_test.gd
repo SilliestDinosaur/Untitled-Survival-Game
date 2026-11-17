@@ -12,6 +12,10 @@ var _target := {}
 var _swings := 0
 var _animal: Node = null
 var _fails: Array[String] = []
+var _saved_items := {}
+var _saved_pos := Vector3.ZERO
+var _saved_removed := 0
+var _save_id := ""
 
 
 func _initialize() -> void:
@@ -27,7 +31,7 @@ func _process(_delta: float) -> bool:
 	match _phase:
 		"load":
 			if _frames == 5:
-				_main._start_loading()
+				_main.create_world("Test World", 629946553)
 			elif _main.state == _main.State.PLAYING:
 				_next("tree")
 		"tree":
@@ -79,15 +83,44 @@ func _process(_delta: float) -> bool:
 			Input.action_press("attack")
 			if _animal.dead:
 				_next("harvest")
-			elif _frames > 1200:
+			elif _frames > 8000:
 				_check(false, "animal never died (hp %.1f)" % _animal.hp)
 				return _finish()
 		"harvest":
+			if is_instance_valid(_animal):
+				_player.get_node("Head").look_at(_animal.global_position + Vector3.UP * 0.3, Vector3.UP)
 			Input.action_press("attack")
-			if not is_instance_valid(_animal) or _animal.carcass_hp <= 0.0 or _frames > 1500:
+			if not is_instance_valid(_animal) or _animal.carcass_hp <= 0.0 or _frames > 8000:
 				Input.action_release("attack")
 				_check(_player.inventory.count("raw_meat") > 0, "raw meat from carcass: %d" % _player.inventory.count("raw_meat"))
 				_check(_player.inventory.count("hide") > 0, "hide from carcass: %d" % _player.inventory.count("hide"))
+				_next("save")
+		"save":
+			# Save, go back to the title, load it again and check everything came back.
+			_saved_items = _player.inventory.counts.duplicate()
+			_saved_pos = _player.global_position
+			_saved_removed = _game.removed_resources.size()
+			_save_id = _game.save_id
+			_main.save_now()
+			_main._to_title()
+			_next("reload")
+		"reload":
+			if _frames == 10:
+				_check(_game.save_id == "", "back on the title screen")
+				_main.load_world(_save_id)
+			elif _frames > 10 and _main.state == _main.State.PLAYING:
+				_check(_player.inventory.counts == _saved_items, "inventory restored: %s" % _player.inventory.counts)
+				_check(_player.global_position.distance_to(_saved_pos) < 1.5, "position restored (%.2f m off)" % _player.global_position.distance_to(_saved_pos))
+				_check(_game.removed_resources.size() == _saved_removed and _saved_removed > 0, "gathered resources stay gone: %d" % _game.removed_resources.size())
+				var listed := false
+				for s in SaveManager.list_saves():
+					if s.id == _save_id:
+						listed = true
+				_check(listed, "save shows up in the world list")
+				SaveManager.delete(_save_id)
+				return _finish()
+			elif _frames > 3000:
+				_check(false, "reload never finished")
 				return _finish()
 	return false
 

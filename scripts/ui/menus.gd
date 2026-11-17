@@ -1,228 +1,435 @@
 class_name Menus
 extends RefCounted
-## Builders for the title screen, pause menu, settings panel and loading screen.
+## Title screen, world list, new-world form, pause menu, settings and loading screen.
+## All drawn as parchment cards (see UITheme).
 
 
-## Title screen: world card with seed controls, Play / Settings / Quit.
+static func _card(parent: Control, min_size: Vector2, seed_value := 1) -> VBoxContainer:
+	var center := CenterContainer.new()
+	center.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
+	parent.add_child(center)
+	var panel := PanelContainer.new()
+	panel.custom_minimum_size = min_size
+	panel.add_theme_stylebox_override("panel", UITheme.paper_box(UITheme.PAPER, seed_value, 34))
+	center.add_child(panel)
+	var col := VBoxContainer.new()
+	col.add_theme_constant_override("separation", 12)
+	panel.add_child(col)
+	return col
+
+
+static func _dim(parent: Control, alpha := 0.45) -> void:
+	var dim := ColorRect.new()
+	dim.color = Color(0.06, 0.04, 0.03, alpha)
+	dim.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
+	parent.add_child(dim)
+
+
+static func _row(children: Array, sep := 10) -> HBoxContainer:
+	var h := HBoxContainer.new()
+	h.add_theme_constant_override("separation", sep)
+	for c in children:
+		h.add_child(c)
+	return h
+
+
+static func _spacer(h := 8, w := 0) -> Control:
+	var c := Control.new()
+	c.custom_minimum_size = Vector2(w, h)
+	if w == 0:
+		c.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	return c
+
+
+static func _world_tags(seed_value: int) -> String:
+	var pal := WorldPalette.new(seed_value)
+	var rng := RandomNumberGenerator.new()
+	rng.seed = seed_value
+	var mountains := rng.randf_range(60.0, 115.0)
+	var tags: Array[String] = ["Seed %d" % seed_value]
+	if pal.exotic:
+		tags.append("Exotic")
+	tags.append("Mountainous" if mountains > 92.0 else "Rolling hills")
+	return "  ·  ".join(tags)
+
+
+## Title screen: a parchment card beside a flyover of the island.
 class TitleScreen extends Control:
-	signal play_pressed
-	signal seed_requested(seed_value: int)
+	signal continue_pressed
+	signal new_world_pressed
+	signal load_world_pressed
 	signal settings_pressed
 
-	var _world_name: Label
-	var _world_info: Label
-	var _seed_edit: LineEdit
+	var _continue: Button
+	var _continue_info: Label
+	var _viewing: Label
 
 	func _ready() -> void:
 		set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
-		# Darken the left side so text reads well over the flyover.
-		var shade := TextureRect.new()
-		shade.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
-		var grad := Gradient.new()
-		grad.set_color(0, Color(0.02, 0.025, 0.035, 0.88))
-		grad.set_color(1, Color(0.02, 0.025, 0.035, 0.0))
-		grad.set_offset(1, 0.62)
-		var gt := GradientTexture2D.new()
-		gt.gradient = grad
-		gt.width = 256
-		gt.height = 4
-		shade.texture = gt
-		shade.stretch_mode = TextureRect.STRETCH_SCALE
-		shade.mouse_filter = Control.MOUSE_FILTER_IGNORE
-		add_child(shade)
-
+		var panel := PanelContainer.new()
+		panel.add_theme_stylebox_override("panel", UITheme.paper_box(UITheme.PAPER, 2, 40))
+		UITheme.place(panel, Control.PRESET_CENTER_LEFT, Vector2(70, -300), Vector2(470, 600))
+		add_child(panel)
 		var col := VBoxContainer.new()
-		UITheme.place(col, Control.PRESET_LEFT_WIDE, Vector2(90, 0), Vector2(470, 0))
+		col.add_theme_constant_override("separation", 10)
 		col.alignment = BoxContainer.ALIGNMENT_CENTER
-		col.add_theme_constant_override("separation", 12)
-		add_child(col)
+		panel.add_child(col)
 
-		col.add_child(UITheme.label("UNTITLED SURVIVAL", 52, Color.WHITE, 10))
-		col.add_child(UITheme.label("Explore by day.  Survive the night.", 19, UITheme.TEXT_DIM, 4))
-		col.add_child(_spacer(34))
+		col.add_child(UITheme.heading("Untitled Survival", 52))
+		col.add_child(UITheme.label("Explore by day.  Survive the night.", 21, UITheme.INK_DIM))
+		col.add_child(UITheme.divider())
+		col.add_child(Menus._spacer(6))
 
-		col.add_child(UITheme.label("WORLD", 13, UITheme.ACCENT, 3))
-		_world_name = UITheme.label("", 34, Color.WHITE, 8)
-		col.add_child(_world_name)
-		_world_info = UITheme.label("", 15, UITheme.TEXT_DIM, 4)
-		col.add_child(_world_info)
-
-		var seed_row := HBoxContainer.new()
-		seed_row.add_theme_constant_override("separation", 8)
-		_seed_edit = LineEdit.new()
-		_seed_edit.placeholder_text = "Seed"
-		_seed_edit.custom_minimum_size = Vector2(200, 44)
-		_seed_edit.max_length = 9
-		_seed_edit.text_submitted.connect(func(t: String) -> void: _submit_seed(t))
-		_seed_edit.focus_exited.connect(func() -> void: _submit_seed(_seed_edit.text))
-		seed_row.add_child(_seed_edit)
-		var dice := UITheme.button("New World", false, 150)
-		dice.pressed.connect(func() -> void: seed_requested.emit(Game.random_seed()))
-		seed_row.add_child(dice)
-		col.add_child(seed_row)
-		col.add_child(_spacer(26))
-
-		var play := UITheme.button("Play", true, 360)
-		play.pressed.connect(func() -> void: play_pressed.emit())
-		col.add_child(play)
-		var settings := UITheme.button("Settings", false, 360)
-		settings.pressed.connect(func() -> void: settings_pressed.emit())
-		col.add_child(settings)
-		var quit := UITheme.button("Quit", false, 360)
+		_continue = UITheme.button("Continue", true, 380)
+		_continue.pressed.connect(func() -> void: continue_pressed.emit())
+		col.add_child(_continue)
+		_continue_info = UITheme.label("", 15, UITheme.INK_DIM)
+		_continue_info.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+		col.add_child(_continue_info)
+		for entry in [["New World", new_world_pressed], ["Load World", load_world_pressed], ["Settings", settings_pressed]]:
+			var b := UITheme.button(entry[0], false, 380)
+			var sig: Signal = entry[1]
+			b.pressed.connect(func() -> void: sig.emit())
+			col.add_child(b)
+		var quit := UITheme.button("Quit", false, 380)
 		quit.pressed.connect(func() -> void: get_tree().quit())
 		col.add_child(quit)
-		for b in [play, settings, quit]:
-			b.size_flags_horizontal = Control.SIZE_SHRINK_BEGIN
 
-		var version := UITheme.label("prototype v0.2", 13, UITheme.TEXT_DIM)
-		UITheme.place(version, Control.PRESET_BOTTOM_LEFT, Vector2(90, -44))
+		_viewing = UITheme.label("", 17, UITheme.TEXT_DIM, 5, true)
+		UITheme.place(_viewing, Control.PRESET_BOTTOM_RIGHT, Vector2(-520, -54), Vector2(490, 30))
+		_viewing.horizontal_alignment = HORIZONTAL_ALIGNMENT_RIGHT
+		add_child(_viewing)
+		var version := UITheme.label("prototype v0.3", 14, UITheme.TEXT_DIM, 4)
+		UITheme.place(version, Control.PRESET_BOTTOM_LEFT, Vector2(76, -40))
 		add_child(version)
 		refresh()
 
 	func refresh() -> void:
-		_world_name.text = Game.world_name
-		var tags: Array[String] = ["Seed %d" % Game.world_seed]
-		if Game.palette.exotic:
-			tags.append("Exotic world")
-		tags.append("Mountainous" if Game.world_gen.mountain_scale > 110.0 else "Rolling hills")
-		_world_info.text = "  ·  ".join(tags)
-		_seed_edit.text = str(Game.world_seed)
+		var saves := SaveManager.list_saves()
+		_continue.visible = not saves.is_empty()
+		_continue_info.visible = not saves.is_empty()
+		if not saves.is_empty():
+			var s: Dictionary = saves[0]
+			_continue_info.text = "%s  ·  %s" % [s.name, SaveManager.format_when(s.last_played)]
+		_viewing.text = Game.world_name
 
-	func _submit_seed(t: String) -> void:
-		var v := t.strip_edges()
-		if v.is_valid_int() and int(v) > 0 and int(v) != Game.world_seed:
-			seed_requested.emit(int(v))
-		elif not v.is_valid_int() and v != "":
-			# Any text works as a seed too.
-			seed_requested.emit(absi(hash(v)) % Game.MAX_SEED + 1)
 
-	func _spacer(h: int) -> Control:
-		var c := Control.new()
-		c.custom_minimum_size = Vector2(0, h)
-		return c
+## "A New World": name it, pick or roll a seed, preview what it will be.
+class NewWorldPanel extends Control:
+	signal create_pressed(world_label: String, seed_value: int)
+	signal seed_previewed(seed_value: int)
+	signal back_pressed
+
+	var _name: LineEdit
+	var _seed: LineEdit
+	var _preview_name: Label
+	var _preview_tags: Label
+	var _seed_value := 0
+
+	func _ready() -> void:
+		set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
+		Menus._dim(self, 0.25)
+		var col := Menus._card(self, Vector2(560, 0), 3)
+		col.add_child(UITheme.heading("A New World", 40))
+		col.add_child(UITheme.divider())
+		col.add_child(UITheme.label("Name", 16, UITheme.INK_DIM))
+		_name = LineEdit.new()
+		_name.placeholder_text = "My island"
+		_name.max_length = 32
+		col.add_child(_name)
+		col.add_child(UITheme.label("Seed (a number or any word)", 16, UITheme.INK_DIM))
+		_seed = LineEdit.new()
+		_seed.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+		_seed.text_submitted.connect(func(_t: String) -> void: _apply_seed_text())
+		_seed.focus_exited.connect(_apply_seed_text)
+		var reroll := UITheme.button("Reroll", false, 130)
+		reroll.pressed.connect(func() -> void: set_seed(Game.random_seed()))
+		col.add_child(Menus._row([_seed, reroll]))
+		col.add_child(Menus._spacer(4))
+		_preview_name = UITheme.label("", 30, UITheme.ACCENT, 0, true)
+		col.add_child(_preview_name)
+		_preview_tags = UITheme.label("", 16, UITheme.INK_DIM)
+		col.add_child(_preview_tags)
+		col.add_child(Menus._spacer(8))
+		var back := UITheme.button("Back", false, 160)
+		back.pressed.connect(func() -> void: back_pressed.emit())
+		var create := UITheme.button("Create World", true, 240)
+		create.pressed.connect(func() -> void:
+			_apply_seed_text()
+			create_pressed.emit(_name.text.strip_edges(), _seed_value))
+		col.add_child(Menus._row([back, Menus._spacer(), create]))
+
+	func open() -> void:
+		_name.text = ""
+		set_seed(Game.random_seed())
+		show()
+
+	func set_seed(v: int) -> void:
+		_seed_value = v
+		_seed.text = str(v)
+		_preview_name.text = NameGen.world_name(v)
+		_preview_tags.text = Menus._world_tags(v)
+		seed_previewed.emit(v)
+
+	func _apply_seed_text() -> void:
+		var t := _seed.text.strip_edges()
+		var v := _seed_value
+		if t.is_valid_int() and int(t) > 0:
+			v = clampi(int(t), 1, Game.MAX_SEED)
+		elif t != "":
+			v = absi(hash(t)) % Game.MAX_SEED + 1   # any word works as a seed
+		if v != _seed_value:
+			set_seed(v)
+
+
+## List of saved worlds: play, rename, delete.
+class LoadPanel extends Control:
+	signal play_pressed(save_id: String)
+	signal back_pressed
+
+	var _list: VBoxContainer
+
+	func _ready() -> void:
+		set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
+		Menus._dim(self, 0.25)
+		var col := Menus._card(self, Vector2(720, 520), 4)
+		col.add_child(UITheme.heading("Your Worlds", 40))
+		col.add_child(UITheme.divider())
+		var scroll := ScrollContainer.new()
+		scroll.custom_minimum_size = Vector2(0, 380)
+		scroll.size_flags_vertical = Control.SIZE_EXPAND_FILL
+		scroll.horizontal_scroll_mode = ScrollContainer.SCROLL_MODE_DISABLED
+		col.add_child(scroll)
+		_list = VBoxContainer.new()
+		_list.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+		_list.add_theme_constant_override("separation", 8)
+		scroll.add_child(_list)
+		var back := UITheme.button("Back", false, 160)
+		back.pressed.connect(func() -> void: back_pressed.emit())
+		col.add_child(Menus._row([back]))
+
+	func open() -> void:
+		refresh()
+		show()
+
+	func refresh() -> void:
+		for c in _list.get_children():
+			c.queue_free()
+		var saves := SaveManager.list_saves()
+		if saves.is_empty():
+			_list.add_child(UITheme.label("No saved worlds yet. Start a new one!", 19, UITheme.INK_DIM))
+			return
+		for i in saves.size():
+			_list.add_child(_make_row(saves[i], i))
+
+	func _make_row(s: Dictionary, i: int) -> Control:
+		var panel := PanelContainer.new()
+		panel.add_theme_stylebox_override("panel", UITheme.paper_box(UITheme.PAPER_DARK, 80 + i, 16, 22, 128))
+		var h := HBoxContainer.new()
+		h.add_theme_constant_override("separation", 8)
+		panel.add_child(h)
+		var info := VBoxContainer.new()
+		info.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+		info.add_theme_constant_override("separation", 0)
+		var title := UITheme.label(s.name, 25, UITheme.INK, 0, true)
+		var rename_edit := LineEdit.new()
+		rename_edit.text = s.name
+		rename_edit.max_length = 32
+		rename_edit.visible = false
+		info.add_child(title)
+		info.add_child(rename_edit)
+		info.add_child(UITheme.label("%s  ·  seed %d" % [s.world_name, s.seed], 15, UITheme.INK_DIM))
+		info.add_child(UITheme.label("%s played  ·  %s" % [SaveManager.format_play_time(s.play_time), SaveManager.format_when(s.last_played)], 15, UITheme.INK_DIM))
+		h.add_child(info)
+
+		var play := UITheme.button("Play", true, 100)
+		play.pressed.connect(func() -> void: play_pressed.emit(s.id))
+		var rename := UITheme.button("Rename", false, 110)
+		var commit_rename := func() -> void:
+			SaveManager.rename(s.id, rename_edit.text)
+			refresh()
+		rename.pressed.connect(func() -> void:
+			if rename_edit.visible:
+				commit_rename.call()
+			else:
+				title.visible = false
+				rename_edit.visible = true
+				rename_edit.grab_focus()
+				rename_edit.select_all()
+				rename.text = "Save")
+		rename_edit.text_submitted.connect(func(_t: String) -> void: commit_rename.call())
+		var delete := UITheme.button("Delete", false, 100)
+		delete.theme_type_variation = "DangerButton"
+		delete.pressed.connect(func() -> void:
+			if delete.text == "Sure?":
+				SaveManager.delete(s.id)
+				refresh()
+			else:
+				delete.text = "Sure?"
+				get_tree().create_timer(3.0).timeout.connect(func() -> void:
+					if is_instance_valid(delete):
+						delete.text = "Delete"))
+		for b in [play, rename, delete]:
+			b.size_flags_vertical = Control.SIZE_SHRINK_CENTER
+			h.add_child(b)
+		return panel
 
 
 ## Pause menu.
 class PauseMenu extends Control:
 	signal resume_pressed
+	signal save_pressed
 	signal settings_pressed
 	signal quit_to_title_pressed
+	signal quit_game_pressed
+
+	var _sub: Label
+	var _status: Label
 
 	func _ready() -> void:
 		set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
-		var dim := ColorRect.new()
-		dim.color = Color(0, 0, 0, 0.5)
-		dim.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
-		add_child(dim)
-		var center := CenterContainer.new()
-		center.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
-		add_child(center)
-		var panel := PanelContainer.new()
-		center.add_child(panel)
-		var col := VBoxContainer.new()
-		col.add_theme_constant_override("separation", 10)
-		panel.add_child(col)
-		var title := UITheme.label("PAUSED", 30, Color.WHITE)
+		Menus._dim(self)
+		var col := Menus._card(self, Vector2(420, 0), 5)
+		var title := UITheme.heading("Paused", 44)
 		title.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 		col.add_child(title)
-		var sub := UITheme.label(Game.world_name, 15, UITheme.TEXT_DIM)
-		sub.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-		col.add_child(sub)
-		visibility_changed.connect(func() -> void: sub.text = "%s  ·  seed %d" % [Game.world_name, Game.world_seed])
-		var gap := Control.new()
-		gap.custom_minimum_size = Vector2(0, 10)
-		col.add_child(gap)
-		var resume := UITheme.button("Resume", true, 300)
-		resume.pressed.connect(func() -> void: resume_pressed.emit())
-		var settings := UITheme.button("Settings", false, 300)
-		settings.pressed.connect(func() -> void: settings_pressed.emit())
-		var title_btn := UITheme.button("Quit to Title", false, 300)
-		title_btn.pressed.connect(func() -> void: quit_to_title_pressed.emit())
-		var quit := UITheme.button("Quit Game", false, 300)
-		quit.pressed.connect(func() -> void: get_tree().quit())
-		for b in [resume, settings, title_btn, quit]:
+		_sub = UITheme.label("", 17, UITheme.INK_DIM)
+		_sub.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+		col.add_child(_sub)
+		col.add_child(UITheme.divider())
+		for entry in [["Resume", resume_pressed, true], ["Save Game", save_pressed, false], ["Settings", settings_pressed, false],
+				["Save & Quit to Title", quit_to_title_pressed, false], ["Save & Quit Game", quit_game_pressed, false]]:
+			var b := UITheme.button(entry[0], entry[2], 340)
+			var sig: Signal = entry[1]
+			b.pressed.connect(func() -> void: sig.emit())
 			col.add_child(b)
+		_status = UITheme.label("", 15, UITheme.ACCENT)
+		_status.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+		col.add_child(_status)
+		visibility_changed.connect(func() -> void:
+			if visible:
+				_sub.text = "%s  ·  %s played" % [Game.save_name, SaveManager.format_play_time(Game.play_time)]
+				_status.text = "")
+
+	func show_status(text: String) -> void:
+		_status.text = text
 
 
-## Settings panel; changes apply and save immediately.
+## Settings, in tabs. Changes apply and save immediately.
 class SettingsPanel extends Control:
 	signal closed
 
+	var _waiting_action := ""
+	var _bind_buttons := {}
+
 	func _ready() -> void:
 		set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
-		var dim := ColorRect.new()
-		dim.color = Color(0, 0, 0, 0.55)
-		dim.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
-		add_child(dim)
-		var center := CenterContainer.new()
-		center.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
-		add_child(center)
-		var panel := PanelContainer.new()
-		panel.custom_minimum_size = Vector2(560, 0)
-		center.add_child(panel)
-		var col := VBoxContainer.new()
-		col.add_theme_constant_override("separation", 14)
-		panel.add_child(col)
-		col.add_child(UITheme.label("SETTINGS", 28, Color.WHITE))
+		Menus._dim(self, 0.5)
+		var col := Menus._card(self, Vector2(700, 560), 6)
+		col.add_child(UITheme.heading("Settings", 40))
+		var tabs := TabContainer.new()
+		tabs.size_flags_vertical = Control.SIZE_EXPAND_FILL
+		col.add_child(tabs)
 
+		var game := _tab(tabs, "Game")
+		_slider(game, "Mouse sensitivity", 0.2, 3.0, 0.05, Settings.mouse_sensitivity, "%.2fx",
+			func(v: float) -> void: Settings.mouse_sensitivity = v)
+		_check(game, "Invert mouse Y", Settings.invert_y, func(on: bool) -> void: Settings.invert_y = on)
+		_slider(game, "Field of view", 60.0, 110.0, 1.0, Settings.fov, "%d°", func(v: float) -> void: Settings.fov = v)
+		_check(game, "Show FPS", Settings.show_fps, func(on: bool) -> void: Settings.show_fps = on)
+
+		var gfx := _tab(tabs, "Graphics")
+		_options(gfx, "View distance", Settings.VIEW_DISTANCES.keys(), Settings.view_distance,
+			func(v: String) -> void: Settings.view_distance = v)
+		_options(gfx, "Graphics quality", Settings.QUALITY_LEVELS, Settings.quality,
+			func(v: String) -> void: Settings.quality = v)
+		_options(gfx, "Model detail", Settings.MODEL_DETAIL.keys(), Settings.model_detail,
+			func(v: String) -> void: Settings.model_detail = v)
+		var note := UITheme.label("Model detail sets how many polygons plants, rocks and animals have.\nQuality sets shadows, ambient occlusion, anti-aliasing and grass.", 14, UITheme.INK_DIM)
+		gfx.get_parent().add_child(note)
+
+		var audio := _tab(tabs, "Audio")
+		_slider(audio, "Master volume", 0.0, 1.0, 0.01, Settings.master_volume, "%d%%",
+			func(v: float) -> void: Settings.master_volume = v, 100.0)
+
+		var controls := _tab(tabs, "Controls", true)
+		for entry: Array in Settings.ACTIONS:
+			controls.add_child(UITheme.label(entry[1], 17))
+			var b := UITheme.button("", false, 200)
+			b.custom_minimum_size = Vector2(200, 40)
+			var action: String = entry[0]
+			b.pressed.connect(func() -> void: _start_rebind(action))
+			controls.add_child(b)
+			_bind_buttons[action] = b
+		var reset := UITheme.button("Reset to defaults", false, 220)
+		reset.size_flags_horizontal = Control.SIZE_SHRINK_BEGIN
+		reset.pressed.connect(func() -> void:
+			Settings.reset_bindings()
+			_refresh_bindings())
+		controls.get_parent().get_parent().add_child(reset)
+		_refresh_bindings()
+
+		var back := UITheme.button("Done", true, 180)
+		back.pressed.connect(func() -> void:
+			_waiting_action = ""
+			closed.emit())
+		col.add_child(Menus._row([Menus._spacer(), back]))
+
+	func _tab(tabs: TabContainer, title: String, scroll := false) -> GridContainer:
+		var page := VBoxContainer.new()
+		page.name = title
+		page.add_theme_constant_override("separation", 12)
+		tabs.add_child(page)
+		page.add_child(Menus._spacer(6))
 		var grid := GridContainer.new()
 		grid.columns = 2
-		grid.add_theme_constant_override("h_separation", 24)
-		grid.add_theme_constant_override("v_separation", 14)
-		col.add_child(grid)
-
-		_slider(grid, "Mouse sensitivity", 0.2, 3.0, 0.05, Settings.mouse_sensitivity, "%.2fx",
-			func(v: float) -> void: Settings.mouse_sensitivity = v)
-		_slider(grid, "Field of view", 60.0, 110.0, 1.0, Settings.fov, "%d°",
-			func(v: float) -> void: Settings.fov = v)
-		_options(grid, "View distance", Settings.VIEW_DISTANCES.keys(), Settings.view_distance,
-			func(v: String) -> void: Settings.view_distance = v)
-		_options(grid, "Graphics quality", Settings.QUALITY_LEVELS, Settings.quality,
-			func(v: String) -> void: Settings.quality = v)
-		_slider(grid, "Master volume", 0.0, 1.0, 0.01, Settings.master_volume, "%d%%",
-			func(v: float) -> void: Settings.master_volume = v, 100.0)
-		grid.add_child(UITheme.label("Show FPS", 17))
-		var fps := CheckButton.new()
-		fps.button_pressed = Settings.show_fps
-		fps.toggled.connect(func(on: bool) -> void:
-			Settings.show_fps = on
-			_changed())
-		grid.add_child(fps)
-
-		var back := UITheme.button("Back", true, 200)
-		back.size_flags_horizontal = Control.SIZE_SHRINK_END
-		back.pressed.connect(func() -> void: closed.emit())
-		col.add_child(back)
+		grid.add_theme_constant_override("h_separation", 28)
+		grid.add_theme_constant_override("v_separation", 10)
+		if scroll:
+			var sc := ScrollContainer.new()
+			sc.custom_minimum_size = Vector2(0, 300)
+			sc.size_flags_vertical = Control.SIZE_EXPAND_FILL
+			sc.horizontal_scroll_mode = ScrollContainer.SCROLL_MODE_DISABLED
+			page.add_child(sc)
+			sc.add_child(grid)
+		else:
+			page.add_child(grid)
+		return grid
 
 	func _changed() -> void:
 		Settings.apply()
 		Settings.save_settings()
 
 	func _slider(grid: GridContainer, title: String, lo: float, hi: float, step: float, value: float, fmt: String, setter: Callable, display_mul := 1.0) -> void:
-		grid.add_child(UITheme.label(title, 17))
-		var row := HBoxContainer.new()
-		row.add_theme_constant_override("separation", 12)
+		grid.add_child(UITheme.label(title, 18))
 		var s := HSlider.new()
 		s.min_value = lo
 		s.max_value = hi
 		s.step = step
 		s.value = value
-		s.custom_minimum_size = Vector2(210, 24)
+		s.custom_minimum_size = Vector2(230, 24)
 		s.size_flags_vertical = Control.SIZE_SHRINK_CENTER
-		var lbl := UITheme.label(fmt % (value * display_mul), 15, UITheme.TEXT_DIM)
-		lbl.custom_minimum_size = Vector2(56, 0)
+		var lbl := UITheme.label(fmt % (value * display_mul), 16, UITheme.INK_DIM)
+		lbl.custom_minimum_size = Vector2(60, 0)
 		s.value_changed.connect(func(v: float) -> void:
 			setter.call(v)
 			lbl.text = fmt % (v * display_mul)
 			_changed())
-		row.add_child(s)
-		row.add_child(lbl)
-		grid.add_child(row)
+		grid.add_child(Menus._row([s, lbl], 12))
+
+	func _check(grid: GridContainer, title: String, value: bool, setter: Callable) -> void:
+		grid.add_child(UITheme.label(title, 18))
+		var c := CheckButton.new()
+		c.button_pressed = value
+		c.toggled.connect(func(on: bool) -> void:
+			setter.call(on)
+			_changed())
+		grid.add_child(c)
 
 	func _options(grid: GridContainer, title: String, items: Array, current: String, setter: Callable) -> void:
-		grid.add_child(UITheme.label(title, 17))
+		grid.add_child(UITheme.label(title, 18))
 		var ob := OptionButton.new()
-		ob.custom_minimum_size = Vector2(210, 40)
+		ob.custom_minimum_size = Vector2(230, 42)
 		for i in items.size():
 			ob.add_item(items[i])
 			if items[i] == current:
@@ -232,50 +439,78 @@ class SettingsPanel extends Control:
 			_changed())
 		grid.add_child(ob)
 
+	# --- Rebinding -----------------------------------------------------------------
 
-## Loading screen shown while the area around the spawn point generates.
+	func _start_rebind(action: String) -> void:
+		_refresh_bindings()
+		_waiting_action = action
+		_bind_buttons[action].text = "Press a key..."
+
+	func _input(event: InputEvent) -> void:
+		if _waiting_action == "" or not visible:
+			return
+		var pressed: bool = (event is InputEventKey and event.pressed and not event.echo) or (event is InputEventMouseButton and event.pressed)
+		if not pressed:
+			return
+		get_viewport().set_input_as_handled()
+		if event is InputEventKey and event.physical_keycode == KEY_ESCAPE:
+			_waiting_action = ""   # cancel
+		else:
+			var code := Settings.code_from_event(event)
+			if code != "":
+				Settings.rebind(_waiting_action, code)
+			_waiting_action = ""
+		_refresh_bindings()
+
+	func _refresh_bindings() -> void:
+		for action: String in _bind_buttons:
+			_bind_buttons[action].text = Settings.code_label(Settings.binding_of(action))
+
+
+## Loading screen shown while the area around the player generates.
 class LoadingScreen extends Control:
 	const TIPS := [
-		"Every seed is a different island: new terrain, colors, plants and names.",
+		"Every seed is a different island: new terrain, colors, plants, animals and names.",
 		"Shadow creatures come at night. They will break through weak walls.",
-		"Sprinting burns food faster. Pace yourself.",
+		"Sprinting burns food faster, and animals hear you coming.",
 		"Ore deposits are more common high in the mountains.",
 		"Falling from high places hurts. Water breaks your fall.",
-		"Type any word into the seed box to turn it into a world.",
+		"Territorial beasts leave you alone... until you hit them.",
+		"Mushrooms grow near fallen logs in damp forests.",
+		"Gathered trees and rocks grow back after a while.",
+		"Your world saves when you pause, quit, and every couple of minutes.",
 	]
 	var _bar: ProgressBar
 	var _name: Label
 	var _heading: Label
+	var _tip: Label
 
 	func _ready() -> void:
 		set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
 		var bg := ColorRect.new()
-		bg.color = Color(0.03, 0.035, 0.05)
+		bg.color = Color(0.13, 0.1, 0.08)
 		bg.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
 		add_child(bg)
-		var center := CenterContainer.new()
-		center.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
-		add_child(center)
-		var col := VBoxContainer.new()
-		col.add_theme_constant_override("separation", 14)
-		center.add_child(col)
-		_heading = UITheme.label("GENERATING", 14, UITheme.ACCENT)
-		var gen := _heading
-		_name = UITheme.label("", 40, Color.WHITE)
+		var col := Menus._card(self, Vector2(640, 0), 7)
+		_heading = UITheme.label("Generating", 18, UITheme.ACCENT)
+		_name = UITheme.heading("", 56)
 		_bar = ProgressBar.new()
-		_bar.custom_minimum_size = Vector2(460, 8)
+		_bar.custom_minimum_size = Vector2(560, 26)
 		_bar.show_percentage = false
 		_bar.max_value = 1.0
-		var tip := UITheme.label(TIPS[randi() % TIPS.size()], 15, UITheme.TEXT_DIM)
-		for c in [gen, _name, _bar, tip]:
+		_tip = UITheme.label("", 17, UITheme.INK_DIM)
+		_tip.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+		_tip.custom_minimum_size = Vector2(560, 0)
+		for c in [_heading, _name, _bar, _tip]:
 			if c is Label:
 				c.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 			col.add_child(c)
 
-	func set_world(world_name: String, heading := "GENERATING") -> void:
+	func set_world(world_name: String, heading := "Generating") -> void:
 		_name.text = world_name
-		_heading.text = heading.to_upper()
+		_heading.text = heading
 		_bar.value = 0.0
+		_tip.text = TIPS[randi() % TIPS.size()]
 
 	func set_progress(p: float) -> void:
 		_bar.value = lerpf(_bar.value, p, 0.25)

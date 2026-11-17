@@ -22,7 +22,7 @@ func count(id: String) -> int:
 	return counts.get(id, 0)
 
 
-func add(id: String, amount: int) -> int:
+func add(id: String, amount: int, silent := false) -> int:
 	if amount <= 0:
 		return 0
 	var cap: int = ItemDB.info(id).stack
@@ -35,7 +35,8 @@ func add(id: String, amount: int) -> int:
 		var free := hotbar.find("")
 		if free >= 0:
 			hotbar[free] = id
-	item_added.emit(id, added)
+	if not silent:
+		item_added.emit(id, added)
 	changed.emit()
 	return added
 

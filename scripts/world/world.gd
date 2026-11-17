@@ -19,6 +19,9 @@ var _water: MeshInstance3D
 func _ready() -> void:
 	view_radius = Settings.view_radius()
 	_build_water()
+	Game.assets_rebuilt.connect(func() -> void:
+		for c: Vector2i in _chunks:
+			_chunks[c].swap_meshes(Game.flora))
 	Settings.changed.connect(func() -> void: view_radius = Settings.view_radius())
 
 
@@ -130,11 +133,20 @@ func _start_job(c: Vector2i, tier: int) -> void:
 		"tier": tier,
 		"gen": Game.world_gen,
 		"flora": Game.flora,
-		"removed": Game.removed_resources,
+		"removed": _removed_snapshot(),
 		"grass_density": Settings.grass_density(),
 	}
 	var task := WorkerThreadPool.add_task(ChunkGenerator.generate.bind(job), false, "chunk")
 	_jobs[c] = {"task": task, "job": job}
+
+
+## Ids that are currently gathered (not yet regrown). Copied so worker threads can read it safely.
+func _removed_snapshot() -> Dictionary:
+	var out := {}
+	for id: String in Game.removed_resources:
+		if Game.is_removed(id):
+			out[id] = true
+	return out
 
 
 func _collect_jobs() -> void:
