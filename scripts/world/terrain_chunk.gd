@@ -12,6 +12,10 @@ var tier := 0
 ## Plain data so it can be saved or synced over the network later.
 var resources: Array[Dictionary] = []
 
+var _mmis := {}          # mesh key -> MultiMeshInstance3D
+var _colliders := {}     # resource index -> CollisionShape3D
+var _wobbles := {}       # resource index -> time left
+
 
 func apply(c: Vector2i, t: int, data: Dictionary, flora: FloraLibrary) -> void:
 	coord = c
@@ -19,6 +23,12 @@ func apply(c: Vector2i, t: int, data: Dictionary, flora: FloraLibrary) -> void:
 	name = "Chunk_%d_%d" % [c.x, c.y]
 	position = Vector3(c.x * Game.CHUNK_SIZE, 0.0, c.y * Game.CHUNK_SIZE)
 	resources = data.resources
+	for k in resources.size():
+		var r := resources[k]
+		r.index = k
+		# Damage survives the chunk being rebuilt at a different detail level.
+		if Game.resource_hp.has(r.id):
+			r.hp = Game.resource_hp[r.id]
 
 	_build_terrain(data, flora)
 	_build_multimeshes(data.multimesh, flora)
@@ -32,6 +42,7 @@ func _build_terrain(data: Dictionary, flora: FloraLibrary) -> void:
 	arrays[Mesh.ARRAY_VERTEX] = data.mesh[0]
 	arrays[Mesh.ARRAY_NORMAL] = data.mesh[1]
 	arrays[Mesh.ARRAY_COLOR] = data.mesh[2]
+	arrays[Mesh.ARRAY_INDEX] = data.mesh[3]
 	var mesh := ArrayMesh.new()
 	mesh.add_surface_from_arrays(Mesh.PRIMITIVE_TRIANGLES, arrays)
 	mesh.surface_set_material(0, flora.terrain_material)
@@ -76,6 +87,7 @@ func _build_multimeshes(buffers: Dictionary, flora: FloraLibrary) -> void:
 		var mmi := MultiMeshInstance3D.new()
 		mmi.name = key
 		mmi.multimesh = mm
+		_mmis[key] = mmi
 		var vis: float = FloraLibrary.VIS_RANGE[cat]
 		if vis > 0.0:
 			mmi.visibility_range_end = vis
@@ -104,6 +116,7 @@ func _build_resource_colliders(flora: FloraLibrary) -> void:
 		var local := t.origin - position
 		var col := CollisionShape3D.new()
 		col.set_meta("resource_index", k)
+		_colliders[k] = col
 		col.shape = flora.shapes[cat]
 		var lift := 2.0 if cat == "tree" else (0.25 if cat == "rock" else 0.6)
 		col.transform = Transform3D(Basis.from_scale(Vector3.ONE * s), local + Vector3.UP * lift * s)
@@ -119,3 +132,60 @@ func resource_from_hit(body: CollisionObject3D, shape_idx: int) -> Dictionary:
 	if node and node.has_meta("resource_index"):
 		return resources[node.get_meta("resource_index")]
 	return {}
+
+
+# --- Gathering feedback -----------------------------------------------------------
+
+const WOBBLE_TIME := 0.45
+
+
+## Shake a tree / bush / rock that was just hit.
+func wobble(index: int) -> void:
+	_wobbles[index] = WOBBLE_TIME
+	set_process(true)
+
+
+## Hide a gathered resource and remove its collider.
+func remove_resource(index: int) -> void:
+	_wobbles.erase(index)
+	_set_instance(index, Transform3D(Basis().scaled(Vector3.ZERO), Vector3.ZERO))
+	if _colliders.has(index):
+		_colliders[index].queue_free()
+		_colliders.erase(index)
+	resources[index].removed = true
+
+
+func get_resource_mesh(index: int) -> Mesh:
+	var key: String = resources[index].key
+	return _mmis[key].multimesh.mesh if _mmis.has(key) else null
+
+
+func _ready() -> void:
+	set_process(false)
+
+
+func _process(delta: float) -> void:
+	for index: int in _wobbles.keys():
+		var t: float = _wobbles[index] - delta
+		var r := resources[index]
+		var xf: Transform3D = r.transform
+		xf.origin -= position
+		if t <= 0.0:
+			_wobbles.erase(index)
+			_set_instance(index, xf)
+			continue
+		_wobbles[index] = t
+		# Damped sway, stronger for tall things.
+		var k := t / WOBBLE_TIME
+		var amount := sin((1.0 - k) * 28.0) * k * (0.06 if FloraLibrary.category_of(r.kind) == "tree" else 0.03)
+		var axis := Vector3(cos(index * 1.7), 0, sin(index * 1.7)).normalized()
+		_set_instance(index, Transform3D(Basis(axis, amount) * xf.basis, xf.origin))
+	if _wobbles.is_empty():
+		set_process(false)
+
+
+func _set_instance(index: int, xf: Transform3D) -> void:
+	var r := resources[index]
+	if not r.has("mm_index") or not _mmis.has(r.key):
+		return
+	_mmis[r.key].multimesh.set_instance_transform(r.mm_index, xf)

@@ -18,6 +18,10 @@ const _ROOTS := {
 	"berry": ["berry", "berrybush", "currant", "sloe"],
 	"rock": ["stone", "boulder", "rock"],
 	"ore": ["ore", "lode", "vein"],
+	"grazer": ["hart", "strider", "grazer", "elk", "ram", "bok", "doe"],
+	"defensive": ["boar", "tusker", "brute", "hog", "ox"],
+	"critter": ["hopper", "vole", "skitter", "burrower", "kit"],
+	"bird": ["finch", "lark", "swift", "warbler", "crow", "wing"],
 }
 
 

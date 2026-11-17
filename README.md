@@ -8,7 +8,8 @@ Day: explore and gather. Night: defend your base from shadow creatures that brea
 2. Open Godot -> Import -> select this folder's `project.godot`.
 3. Press F5.
 
-**Controls:** WASD move · Shift sprint · Space jump / swim up · Esc pause · F3 debug info
+**Controls:** WASD move · Shift sprint · Space jump / swim up · Left click swing / eat ·
+1-6 or mouse wheel hotbar · Tab inventory · Esc pause · F3 debug info
 
 ## Everything is generated from the seed
 Each seed produces its own:
@@ -17,6 +18,22 @@ Each seed produces its own:
 - **Palette**: grass, foliage, rock, sky, water, flower colors (~1 in 5 worlds is "exotic")
 - **Species**: tree/bush/rock/ore shapes and their names
 - **World name**
+- **Wildlife**: grazers, territorial beasts, critters and birds with generated bodies
+  (legs, neck, ears, horns/antlers/tusks, tail, coat pattern), behaviors, calls and names
+
+## Gameplay so far
+- **Gathering (Rust-style):** hit trees, rocks, ore and bushes; each hit gives resources and
+  the node breaks when its HP runs out (trees topple over). You start with a rock;
+  bare hands are slow on wood and can't break stone.
+- **Hunting:** grazers flee, territorial beasts fight back when hit. Dead animals become
+  carcasses you harvest for raw meat, hide and bone.
+- **Food:** select berries or meat on the hotbar and click to eat (raw meat hurts a little).
+- **Death:** you drop everything and wake up back at the spawn point with a rock.
+
+## Art style
+Painterly / gouache: soft two-band lighting with warm light and cool shadows, world-space
+brush-stroke color variation, "puffy" canopies lit as one volume, painted two-tone clouds,
+and a screen filter (Kuwahara + paper grain) whose strength follows the quality setting.
 
 Type a number or any word into the seed box on the title screen.
 Sounds (footsteps, wind, ocean, UI) are synthesized at startup, so there are no audio files.
@@ -36,11 +53,16 @@ Sounds (footsteps, wind, ocean, UI) are synthesized at startup, so there are no 
 | `scripts/world/terrain_chunk.gd` | Turns chunk data into meshes/colliders |
 | `scripts/world/world.gd` | Streams chunks with 3 detail tiers, ocean |
 | `scripts/world/atmosphere.gd` | Sun, sky, fog, graphics quality |
-| `scripts/player/` | First-person controller + stats |
+| `scripts/player/` | First-person controller, stats, viewmodel (held item + swing) |
+| `scripts/items/` | Item definitions and the inventory/hotbar |
+| `scripts/gameplay/` | Gathering rules and hit effects |
+| `scripts/wildlife/` | Species generation, animal/critter/bird behavior, spawning |
+| `scripts/world/art_style.gd` | Shared painterly textures and materials |
 | `scripts/audio/` | Procedural sound generation + playback |
 | `scripts/ui/` | Theme, HUD, compass, stat bars, menus |
-| `shaders/` | Sky, water, foliage, grass, vignette |
+| `shaders/` | Painterly include + terrain, painted, foliage, grass, sky, water, post filter |
 | `tests/smoke_test.gd` | `godot --headless --path . -s tests/smoke_test.gd` |
+| `tests/gameplay_test.gd` | Chops, mines, eats, hunts and harvests headlessly |
 
 ## Performance notes
 - Chunks are generated on worker threads, so streaming doesn't stutter.

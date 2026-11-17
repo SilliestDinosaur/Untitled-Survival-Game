@@ -21,6 +21,10 @@ var flora: FloraLibrary
 
 ## Resource ids that were gathered/destroyed (chunks skip these when regenerating).
 var removed_resources := {}
+## Resource id -> remaining HP for things that were hit but not finished off.
+var resource_hp := {}
+## Every creature species on this world (built from the seed).
+var fauna: FaunaLibrary
 
 
 func _ready() -> void:
@@ -42,6 +46,8 @@ func new_world(seed_value: int) -> void:
 	world_gen = WorldGen.new(world_seed, palette)
 	flora = FloraLibrary.new(world_seed, palette)
 	removed_resources = {}
+	resource_hp = {}
+	fauna = FaunaLibrary.new(world_seed, palette)
 	Settings.last_seed = world_seed
 	Settings.save_settings()
 	world_changed.emit()
@@ -58,6 +64,9 @@ func _setup_input() -> void:
 		"sprint": [KEY_SHIFT],
 		"pause": [KEY_ESCAPE],
 		"toggle_debug": [KEY_F3],
+		"inventory": [KEY_TAB, KEY_I],
+		"slot_1": [KEY_1], "slot_2": [KEY_2], "slot_3": [KEY_3],
+		"slot_4": [KEY_4], "slot_5": [KEY_5], "slot_6": [KEY_6],
 	}
 	for action: String in bindings:
 		if not InputMap.has_action(action):
@@ -66,3 +75,8 @@ func _setup_input() -> void:
 			var ev := InputEventKey.new()
 			ev.physical_keycode = key
 			InputMap.action_add_event(action, ev)
+	if not InputMap.has_action("attack"):
+		InputMap.add_action("attack")
+		var mb := InputEventMouseButton.new()
+		mb.button_index = MOUSE_BUTTON_LEFT
+		InputMap.action_add_event("attack", mb)

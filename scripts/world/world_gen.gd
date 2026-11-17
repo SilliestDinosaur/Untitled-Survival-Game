@@ -149,7 +149,7 @@ func get_forest_clump(x: float, z: float) -> float:
 
 ## Stylized flat colors (sRGB) from height, steepness and biome.
 func get_terrain_color(height: float, normal_y: float, x: float, z: float) -> Color:
-	var jitter := (fposmod(sin(x * 12.9898 + z * 78.233) * 43758.5453, 1.0) - 0.5) * 0.045
+	var jitter := (fposmod(sin(x * 12.9898 + z * 78.233) * 43758.5453, 1.0) - 0.5) * 0.02
 	var pal := palette
 	var col: Color
 	var w := get_biome_weights(get_climate(x, z, height))

@@ -1,11 +1,12 @@
-// Trees and bushes: vertex-colored, flat-shaded, gently swaying in the wind.
+// Trees and bushes: soft "puffy" canopies with backlight and rim, swaying in the wind.
 shader_type spatial;
-render_mode cull_back, diffuse_burley;
+render_mode cull_back;
+#include "res://shaders/painterly.gdshaderinc"
 
 uniform float sway_strength = 0.022;
 uniform float sway_start = 1.5;
 uniform float sway_speed = 1.1;
-uniform float backlight = 0.3;
+uniform float backlight = 0.35;
 
 void vertex() {
 	vec3 o = MODEL_MATRIX[3].xyz;
@@ -17,8 +18,11 @@ void vertex() {
 }
 
 void fragment() {
-	ALBEDO = COLOR.rgb;
-	ROUGHNESS = 0.9;
-	SPECULAR = 0.15;
+	vec3 wpos = (INV_VIEW_MATRIX * vec4(VERTEX, 1.0)).xyz;
+	vec3 wn = (INV_VIEW_MATRIX * vec4(NORMAL, 0.0)).xyz;
+	ALBEDO = brush(COLOR.rgb, wpos * 1.6, wn);
+	ROUGHNESS = 1.0;
 	BACKLIGHT = COLOR.rgb * backlight;
+	RIM = 0.25;
+	RIM_TINT = 0.7;
 }

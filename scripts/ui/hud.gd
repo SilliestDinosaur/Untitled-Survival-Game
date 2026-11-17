@@ -24,12 +24,19 @@ var _last_biome := -1
 var _biome_timer := 0.0
 var _debug_on := false
 var _crosshair_scale := 1.0
+var _hotbar: InventoryUI.Hotbar
+var _held_name: Label
+var _feed: InventoryUI.PickupFeed
+var _hint: Label
 
 
 func setup(p: CharacterBody3D, w: Node) -> void:
 	player = p
 	world = w
 	player.stats.damaged.connect(func(amount: float) -> void: _damage = minf(_damage + amount / 25.0, 1.0))
+	_hotbar.setup(player.inventory, _held_name)
+	player.inventory.item_added.connect(_feed.add_item)
+	player.hint.connect(show_hint)
 
 
 func _ready() -> void:
@@ -91,6 +98,29 @@ func _ready() -> void:
 		l.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 		_banner.add_child(l)
 
+	# Hotbar, bottom-center, with the held item's name above it.
+	var bottom := VBoxContainer.new()
+	UITheme.place(bottom, Control.PRESET_CENTER_BOTTOM, Vector2(-190, -108), Vector2(380, 0))
+	bottom.add_theme_constant_override("separation", 6)
+	bottom.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	add_child(bottom)
+	_held_name = UITheme.label("", 14, UITheme.TEXT_DIM, 4)
+	_held_name.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	bottom.add_child(_held_name)
+	_hotbar = InventoryUI.Hotbar.new()
+	_hotbar.alignment = BoxContainer.ALIGNMENT_CENTER
+	bottom.add_child(_hotbar)
+
+	_feed = InventoryUI.PickupFeed.new()
+	UITheme.place(_feed, Control.PRESET_CENTER_RIGHT, Vector2(-320, -40), Vector2(290, 0))
+	add_child(_feed)
+
+	_hint = UITheme.label("", 16, Color(1, 0.9, 0.75), 4)
+	_hint.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	UITheme.place(_hint, Control.PRESET_CENTER, Vector2(-300, 70), Vector2(600, 0))
+	_hint.modulate.a = 0.0
+	add_child(_hint)
+
 	_debug = UITheme.label("", 14, UITheme.TEXT, 4)
 	_debug.position = Vector2(14, 10)
 	add_child(_debug)
@@ -108,6 +138,14 @@ func _overlay(tint: Color, intensity: float, softness: float) -> ColorRect:
 	r.material = mat
 	add_child(r)
 	return r
+
+
+func show_hint(text: String) -> void:
+	_hint.text = text
+	_hint.modulate.a = 1.0
+	var tw := create_tween()
+	tw.tween_interval(1.6)
+	tw.tween_property(_hint, "modulate:a", 0.0, 0.6)
 
 
 func show_arrival(world_name: String) -> void:

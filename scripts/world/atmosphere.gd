@@ -5,6 +5,7 @@ extends Node
 var sun: DirectionalLight3D
 var environment: Environment
 var sky_material: ShaderMaterial
+var _post: ColorRect
 
 
 func _ready() -> void:
@@ -13,7 +14,8 @@ func _ready() -> void:
 	sun.rotation_degrees = Vector3(-42.0, -35.0, 0.0)
 	sun.light_energy = 1.2
 	sun.shadow_enabled = true
-	sun.shadow_blur = 1.5
+	sun.shadow_blur = 2.5
+	sun.shadow_opacity = 0.85
 	sun.directional_shadow_mode = DirectionalLight3D.SHADOW_PARALLEL_4_SPLITS
 	sun.directional_shadow_fade_start = 0.75
 	add_child(sun)
@@ -39,17 +41,28 @@ func _ready() -> void:
 	environment.fog_enabled = true
 	environment.fog_mode = Environment.FOG_MODE_DEPTH
 	environment.fog_density = 1.0
-	environment.fog_sun_scatter = 0.25
+	environment.fog_sun_scatter = 0.35
 	environment.fog_sky_affect = 0.0
 	environment.adjustment_enabled = true
-	environment.adjustment_saturation = 1.08
-	environment.adjustment_contrast = 1.04
+	environment.adjustment_saturation = 1.1
+	environment.adjustment_contrast = 0.98
 	environment.ssao_radius = 1.5
 	environment.ssao_intensity = 1.6
 
 	var world_env := WorldEnvironment.new()
 	world_env.environment = environment
 	add_child(world_env)
+
+	# Painterly screen filter. Layer -1 draws over the 3D world but under the HUD.
+	var post_layer := CanvasLayer.new()
+	post_layer.layer = -1
+	add_child(post_layer)
+	_post = ColorRect.new()
+	_post.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
+	_post.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	_post.material = ArtStyle.material(preload("res://shaders/paint_post.gdshader"))
+	(_post.material as ShaderMaterial).set_shader_parameter("paper", ArtStyle.paper_texture())
+	post_layer.add_child(_post)
 
 	Game.world_changed.connect(apply_palette)
 	Settings.changed.connect(apply_settings)
@@ -72,7 +85,7 @@ func apply_palette() -> void:
 
 func apply_settings() -> void:
 	var dist := Settings.view_radius() * Game.CHUNK_SIZE
-	environment.fog_depth_begin = dist * 0.45
+	environment.fog_depth_begin = dist * 0.42   # strong aerial perspective = painted depth
 	environment.fog_depth_end = dist * 0.95
 
 	var q := Settings.quality
@@ -85,6 +98,7 @@ func apply_settings() -> void:
 			environment.glow_enabled = false
 			environment.ssao_enabled = false
 			viewport.msaa_3d = Viewport.MSAA_DISABLED
+			_set_paint_radius(0)
 		"Medium":
 			sun.directional_shadow_max_distance = 110.0
 			sun.directional_shadow_mode = DirectionalLight3D.SHADOW_PARALLEL_4_SPLITS
@@ -92,6 +106,7 @@ func apply_settings() -> void:
 			environment.glow_enabled = true
 			environment.ssao_enabled = false
 			viewport.msaa_3d = Viewport.MSAA_2X
+			_set_paint_radius(3)
 		_:
 			sun.directional_shadow_max_distance = 160.0
 			sun.directional_shadow_mode = DirectionalLight3D.SHADOW_PARALLEL_4_SPLITS
@@ -99,8 +114,13 @@ func apply_settings() -> void:
 			environment.glow_enabled = true
 			environment.ssao_enabled = true
 			viewport.msaa_3d = Viewport.MSAA_4X
+			_set_paint_radius(4)
 	environment.glow_intensity = 0.35
 	environment.glow_bloom = 0.05
+
+
+func _set_paint_radius(r: int) -> void:
+	(_post.material as ShaderMaterial).set_shader_parameter("radius", r)
 
 
 func _cloud_texture() -> NoiseTexture2D:

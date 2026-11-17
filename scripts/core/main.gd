@@ -14,6 +14,8 @@ var _title: Menus.TitleScreen
 var _pause: Menus.PauseMenu
 var _settings: Menus.SettingsPanel
 var _loading: Menus.LoadingScreen
+var _inventory: InventoryUI.InventoryPanel
+var _wildlife: Node3D
 var _spawn := Vector3.ZERO
 var _orbit := 0.0
 var _ambience_timer := 0.0
@@ -34,8 +36,11 @@ func _ready() -> void:
 	_ui.add_child(root)
 
 	_hud = HUD.new()
-	_hud.setup(player, world)
 	root.add_child(_hud)
+	_hud.setup(player, world)
+	_inventory = InventoryUI.InventoryPanel.new()
+	root.add_child(_inventory)
+	_inventory.setup(player.inventory)
 	_title = Menus.TitleScreen.new()
 	root.add_child(_title)
 	_pause = Menus.PauseMenu.new()
@@ -53,12 +58,25 @@ func _ready() -> void:
 	_pause.quit_to_title_pressed.connect(_to_title)
 	_settings.closed.connect(func() -> void: _settings.hide())
 
-	# Dying sends you back through the loading screen so the spawn area is ready.
-	player.stats.died.connect(func() -> void: _start_loading("You collapsed... waking up on"))
+	# Dying drops everything you carried and sends you back through the loading screen.
+	player.stats.died.connect(func() -> void:
+		player.reset_inventory()
+		_start_loading("You collapsed... waking up on"))
 
-	world.focus = menu_camera
+	_wildlife = preload("res://scripts/wildlife/wildlife_manager.gd").new()
+	_wildlife.name = "Wildlife"
+	_wildlife.process_mode = Node.PROCESS_MODE_PAUSABLE
+	_wildlife.player = player
+	add_child(_wildlife)
+
+	_set_focus(menu_camera)
 	_new_world_loaded()
 	_to_title()
+
+
+func _set_focus(n: Node3D) -> void:
+	world.focus = n
+	_wildlife.focus = n
 
 
 func _change_seed(seed_value: int) -> void:
@@ -77,12 +95,13 @@ func _to_title() -> void:
 	get_tree().paused = false
 	state = State.TITLE
 	player.set_active(false)
-	world.focus = menu_camera
+	_set_focus(menu_camera)
 	menu_camera.current = true
 	Input.mouse_mode = Input.MOUSE_MODE_VISIBLE
 	_hud.hide()
 	_pause.hide()
 	_settings.hide()
+	_inventory.hide()
 	_loading.hide()
 	_title.show()
 	_title.refresh()
@@ -100,7 +119,7 @@ func _start_loading(heading := "GENERATING") -> void:
 	player.velocity = Vector3.ZERO
 	player.rotation = Vector3(0, randf() * TAU, 0)
 	player.stats.reset()
-	world.focus = player
+	_set_focus(player)
 
 
 func _start_playing() -> void:
@@ -111,6 +130,11 @@ func _start_playing() -> void:
 	var tw := create_tween()
 	tw.tween_property(_loading, "modulate:a", 0.0, 0.8)
 	tw.tween_callback(_loading.hide)
+
+
+func _toggle_inventory(open: bool) -> void:
+	_inventory.visible = open
+	Input.mouse_mode = Input.MOUSE_MODE_VISIBLE if open else Input.MOUSE_MODE_CAPTURED
 
 
 func _pause_game() -> void:
@@ -129,9 +153,15 @@ func _resume() -> void:
 
 
 func _unhandled_input(event: InputEvent) -> void:
+	if event.is_action_pressed("inventory") and state == State.PLAYING:
+		_toggle_inventory(not _inventory.visible)
+		get_viewport().set_input_as_handled()
+		return
 	if not event.is_action_pressed("pause"):
 		return
-	if _settings.visible:
+	if _inventory.visible:
+		_toggle_inventory(false)
+	elif _settings.visible:
 		_settings.hide()
 	elif state == State.PLAYING:
 		_pause_game()
@@ -148,7 +178,7 @@ func _process(delta: float) -> void:
 			_loading.set_progress(world.area_progress(_spawn, 1))
 			if world.is_area_ready(_spawn, 1):
 				_start_playing()
-	if state == State.PLAYING and Input.mouse_mode != Input.MOUSE_MODE_CAPTURED and not _settings.visible:
+	if state == State.PLAYING and Input.mouse_mode != Input.MOUSE_MODE_CAPTURED and not _settings.visible and not _inventory.visible:
 		# Clicking back into the game window recaptures the mouse.
 		if Input.is_mouse_button_pressed(MOUSE_BUTTON_LEFT):
 			Input.mouse_mode = Input.MOUSE_MODE_CAPTURED

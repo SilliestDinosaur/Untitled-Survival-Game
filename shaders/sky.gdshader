@@ -22,14 +22,20 @@ void sky() {
 
 	if (h > 0.0) {
 		vec2 uv = d.xz / (h + 0.12) * 0.16;
-		float n = texture(cloud_noise, uv + TIME * cloud_speed).r;
-		float n2 = texture(cloud_noise, uv * 2.7 - TIME * cloud_speed * 1.7).r;
-		float dens = n * 0.72 + n2 * 0.28;
-		float c = smoothstep(1.0 - cloud_coverage, 1.0 - cloud_coverage + 0.22, dens);
+		// Warp the lookup so cloud edges look brushed rather than noisy.
+		uv += (texture(cloud_noise, uv * 0.6 + 0.3).r - 0.5) * 0.12;
+		vec2 drift = vec2(TIME * cloud_speed);
+		float dens = texture(cloud_noise, uv + drift).r * 0.72 + texture(cloud_noise, uv * 2.7 - drift * 1.7).r * 0.28;
+		float c = smoothstep(1.0 - cloud_coverage, 1.0 - cloud_coverage + 0.16, dens);
 		c *= smoothstep(0.0, 0.14, h);
-		vec3 cc = cloud_color * (0.8 + 0.3 * pow(sd, 4.0));
+		// Two-tone painted shading: compare density a little toward the sun.
+		vec2 to_sun = normalize(LIGHT0_DIRECTION.xz + vec2(0.0001)) * 0.035;
+		float dens_sun = texture(cloud_noise, uv + drift + to_sun).r * 0.72 + texture(cloud_noise, (uv + to_sun) * 2.7 - drift * 1.7).r * 0.28;
+		float lit = smoothstep(-0.02, 0.03, dens - dens_sun + 0.01);
+		vec3 shade = mix(top_color, horizon_color, 0.55) * 0.92;
+		vec3 cc = mix(shade, cloud_color * (1.0 + 0.25 * pow(sd, 4.0)), 0.35 + 0.65 * lit);
 		cc = mix(cc, horizon_color, 0.3 * (1.0 - smoothstep(0.0, 0.3, h)));
-		col = mix(col, cc, c * 0.92);
+		col = mix(col, cc, c * 0.95);
 	}
 	COLOR = col;
 }

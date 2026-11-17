@@ -1,6 +1,8 @@
 class_name MeshKit
 extends RefCounted
-## Tiny helper for building low-poly meshes in code: flat-shaded triangles with vertex colors.
+## Helper for building stylized meshes in code, with vertex colors.
+## Normals are smooth by default (painterly look). A `puff_center` makes a group of shapes
+## light as one soft volume, which is what makes tree canopies look painted and fluffy.
 
 var verts := PackedVector3Array()
 var normals := PackedVector3Array()
@@ -15,7 +17,7 @@ func _init(noise_seed := 0) -> void:
 	_noise.frequency = 0.9
 
 
-## Colors are given in sRGB (what you'd pick in a color picker) and stored linear.
+## A single triangle (used for grass blades). Colors are sRGB and stored linear.
 func add_tri(a: Vector3, b: Vector3, c: Vector3, ca: Color, cb := Color(-1, 0, 0), cc := Color(-1, 0, 0)) -> void:
 	var n := (c - a).cross(b - a)   # Godot front faces are clockwise
 	if n.length_squared() < 1e-10:
@@ -28,27 +30,44 @@ func add_tri(a: Vector3, b: Vector3, c: Vector3, ca: Color, cb := Color(-1, 0, 0
 	colors.append_array([ca.srgb_to_linear(), cb.srgb_to_linear(), cc.srgb_to_linear()])
 
 
-## Adds a primitive (cylinder, sphere...) with a transform, a color, and optional lumpy noise.
-## `lumpy` pushes vertices in/out along their direction from the primitive's center.
-## Shared vertices get the same push, so the mesh stays watertight.
-func add_primitive(prim: PrimitiveMesh, xf: Transform3D, color: Color, lumpy := 0.0, shade_jitter := 0.04) -> void:
+## Adds a primitive (cylinder, sphere...) with a transform and color.
+## lumpy:        pushes vertices in/out with noise (stays watertight).
+## shade_jitter: soft blotchy color variation across the surface.
+## puff_center:  if set, normals point away from this point (soft, volumetric lighting).
+## color_fn:     optional Callable(local_pos: Vector3) -> Color for patterns (stripes, bellies).
+func add_primitive(prim: PrimitiveMesh, xf: Transform3D, color: Color, lumpy := 0.0, shade_jitter := 0.05,
+		puff_center: Variant = null, color_fn := Callable()) -> void:
 	var arrays := prim.get_mesh_arrays()
 	var src: PackedVector3Array = arrays[Mesh.ARRAY_VERTEX]
+	var src_n: PackedVector3Array = arrays[Mesh.ARRAY_NORMAL]
 	var idx: PackedInt32Array = arrays[Mesh.ARRAY_INDEX]
+	var normal_basis := xf.basis.inverse().transposed()
 	var moved := PackedVector3Array()
+	var nrm := PackedVector3Array()
+	var col := PackedColorArray()
 	moved.resize(src.size())
+	nrm.resize(src.size())
+	col.resize(src.size())
 	for i in src.size():
 		var v := src[i]
 		if lumpy > 0.0 and v.length_squared() > 1e-6:
-			var key := v * 3.0 + xf.origin
-			v += v.normalized() * _noise.get_noise_3dv(key) * lumpy
-		moved[i] = xf * v
-	for t in range(0, idx.size(), 3):
-		var c := color
+			v += v.normalized() * _noise.get_noise_3dv(v * 3.0 + xf.origin) * lumpy
+		var p := xf * v
+		moved[i] = p
+		if puff_center != null:
+			nrm[i] = (p - (puff_center as Vector3)).normalized()
+		else:
+			nrm[i] = (normal_basis * src_n[i]).normalized()
+		var c: Color = color_fn.call(p) if color_fn.is_valid() else color
 		if shade_jitter > 0.0:
-			var j := _noise.get_noise_1d(t * 7.31 + xf.origin.x * 13.0) * shade_jitter
+			var j := _noise.get_noise_3dv(p * 1.7) * shade_jitter
 			c = Color(c.r + j, c.g + j, c.b + j)
-		add_tri(moved[idx[t]], moved[idx[t + 1]], moved[idx[t + 2]], c)
+		col[i] = c.srgb_to_linear()
+	for t in idx.size():
+		var k := idx[t]
+		verts.append(moved[k])
+		normals.append(nrm[k])
+		colors.append(col[k])
 
 
 func commit(material: Material) -> ArrayMesh:
@@ -63,6 +82,10 @@ func commit(material: Material) -> ArrayMesh:
 	return mesh
 
 
+func is_empty() -> bool:
+	return verts.is_empty()
+
+
 static func cylinder(top: float, bottom: float, height: float, segments: int, caps := true) -> CylinderMesh:
 	var m := CylinderMesh.new()
 	m.top_radius = top
@@ -75,7 +98,7 @@ static func cylinder(top: float, bottom: float, height: float, segments: int, ca
 	return m
 
 
-static func sphere(radius: float, segments := 7, rings := 4) -> SphereMesh:
+static func sphere(radius: float, segments := 10, rings := 6) -> SphereMesh:
 	var m := SphereMesh.new()
 	m.radius = radius
 	m.height = radius * 2.0

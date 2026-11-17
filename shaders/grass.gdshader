@@ -1,6 +1,7 @@
 // Grass tufts and flowers: double-sided, lit like the ground, swaying more than trees.
 shader_type spatial;
-render_mode cull_disabled, diffuse_burley;
+render_mode cull_disabled;
+#include "res://shaders/painterly.gdshaderinc"
 
 uniform float sway_strength = 0.28;
 uniform float sway_speed = 1.8;
@@ -16,8 +17,8 @@ void vertex() {
 }
 
 void fragment() {
-	ALBEDO = COLOR.rgb;
+	vec3 wpos = (INV_VIEW_MATRIX * vec4(VERTEX, 1.0)).xyz;
+	ALBEDO = brush(COLOR.rgb, wpos, vec3(0.0, 1.0, 0.0));
 	ROUGHNESS = 1.0;
-	SPECULAR = 0.05;
-	BACKLIGHT = COLOR.rgb * 0.25;
+	BACKLIGHT = COLOR.rgb * 0.3;
 }

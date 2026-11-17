@@ -1,8 +1,11 @@
 extends CharacterBody3D
 ## First-person player: mouse look, walk/sprint/jump, swimming, fall damage,
-## head bob, footsteps, and "what am I looking at".
+## head bob, footsteps, gathering / hunting with the held tool, and "what am I looking at".
 
 signal landed(impact: float)
+signal hint(text: String)   ## short messages for the HUD ("Too hard to break by hand")
+
+const REACH := 3.2
 
 @export var walk_speed := 5.0
 @export var sprint_speed := 8.5
@@ -26,6 +29,11 @@ var swimming := false
 var underwater := false
 ## What the crosshair is on: {} or {"name", "label", "resource"}.
 var looking_at := {}
+var inventory := Inventory.new()
+var viewmodel: Viewmodel
+var _rng := RandomNumberGenerator.new()
+var _swing_cooldown := 0.0
+var is_sprinting := false   ## animals hear you from farther away
 
 var _gravity: float = ProjectSettings.get_setting("physics/3d/default_gravity")
 var _exhausted := false
@@ -41,7 +49,20 @@ var _fov_kick := 0.0
 
 func _ready() -> void:
 	ray.add_exception(self)
+	_rng.randomize()
+	viewmodel = Viewmodel.new()
+	camera.add_child(viewmodel)
+	viewmodel.strike.connect(_on_strike)
+	inventory.changed.connect(func() -> void: viewmodel.hold(inventory.selected_item()))
+	reset_inventory()
 	set_active(false)
+
+
+## Fresh start: just a rock in hand (also used after dying).
+func reset_inventory() -> void:
+	inventory.clear()
+	inventory.add("rock", 1)
+	inventory.select(0)
 
 
 func set_active(on: bool) -> void:
@@ -60,6 +81,15 @@ func _unhandled_input(event: InputEvent) -> void:
 		rotate_y(-event.relative.x * sens)
 		head.rotate_x(-event.relative.y * sens)
 		head.rotation.x = clampf(head.rotation.x, deg_to_rad(-89), deg_to_rad(89))
+		viewmodel.add_sway(event.relative)
+	elif event is InputEventMouseButton and event.pressed and Input.mouse_mode == Input.MOUSE_MODE_CAPTURED:
+		if event.button_index == MOUSE_BUTTON_WHEEL_DOWN:
+			inventory.select(inventory.selected + 1)
+		elif event.button_index == MOUSE_BUTTON_WHEEL_UP:
+			inventory.select(inventory.selected - 1)
+	for i in Inventory.HOTBAR_SIZE:
+		if event.is_action_pressed("slot_%d" % (i + 1)):
+			inventory.select(i)
 
 
 func _physics_process(delta: float) -> void:
@@ -122,9 +152,11 @@ func _physics_process(delta: float) -> void:
 	if global_position.y < -40.0:
 		respawn()
 
-	stats.tick(delta, sprinting and input != Vector2.ZERO)
+	is_sprinting = sprinting and input != Vector2.ZERO
+	stats.tick(delta, is_sprinting)
 	_update_camera(delta, sprinting, input)
 	_update_looking_at()
+	_update_actions(delta)
 
 
 func _update_camera(delta: float, sprinting: bool, input: Vector2) -> void:
@@ -149,6 +181,7 @@ func _update_camera(delta: float, sprinting: bool, input: Vector2) -> void:
 
 	_fov_kick = lerpf(_fov_kick, 9.0 if sprinting and horizontal > 6.0 else 0.0, 1.0 - exp(-6.0 * delta))
 	camera.fov = Settings.fov + _fov_kick
+	viewmodel.update_motion(delta, _bob_time, _bob_amount)
 	underwater = camera.global_position.y < Game.SEA_LEVEL - 0.05
 
 
@@ -157,6 +190,14 @@ func _update_looking_at() -> void:
 	if not ray.is_colliding():
 		return
 	var body := ray.get_collider() as CollisionObject3D
+	if body and body.has_meta("animal"):
+		var animal: Node = body.get_meta("animal")
+		looking_at = {
+			"name": animal.species.name,
+			"label": "Carcass" if animal.dead else animal.species.label,
+			"animal": animal,
+		}
+		return
 	if body and body.get_parent() is TerrainChunk:
 		var res: Dictionary = (body.get_parent() as TerrainChunk).resource_from_hit(body, ray.get_collider_shape())
 		if not res.is_empty():
@@ -164,6 +205,7 @@ func _update_looking_at() -> void:
 				"name": Game.flora.display_name(res.kind),
 				"label": FloraLibrary.KINDS[res.kind].label,
 				"resource": res,
+				"chunk": body.get_parent(),
 			}
 
 
@@ -172,3 +214,92 @@ func respawn() -> void:
 	velocity = Vector3.ZERO
 	stats.reset()
 
+
+
+# --- Gathering, hunting, eating -------------------------------------------------
+
+func _update_actions(delta: float) -> void:
+	_swing_cooldown = maxf(_swing_cooldown - delta, 0.0)
+	var focused := Input.mouse_mode == Input.MOUSE_MODE_CAPTURED or DisplayServer.get_name() == "headless"
+	if not focused or not Input.is_action_pressed("attack"):
+		return
+	if viewmodel.is_busy() or _swing_cooldown > 0.0:
+		return
+	var item := inventory.selected_item()
+	if item != "" and ItemDB.info(item).kind == "food":
+		_eat(item)
+		return
+	var tool := ItemDB.tool_stats(item)
+	_swing_cooldown = tool.cooldown
+	viewmodel.swing(tool.cooldown)
+	Audio.play("swoosh", -10.0)
+
+
+func _eat(item: String) -> void:
+	var info := ItemDB.info(item)
+	viewmodel.eat(func() -> void:
+		if not inventory.remove(item, 1):
+			return
+		stats.eat(info.get("food", 0.0))
+		var hp: float = info.get("health", 0.0)
+		if hp > 0.0:
+			stats.health = minf(stats.max_health, stats.health + hp)
+		elif hp < 0.0:
+			stats.take_damage(-hp)
+			hint.emit("Raw meat doesn't sit well...")
+		Audio.play(Audio.sfx.munch, -4.0))
+
+
+## Called by the viewmodel at the moment the swing lands.
+func _on_strike() -> void:
+	if not ray.is_colliding() or ray.get_collision_point().distance_to(camera.global_position) > REACH:
+		return
+	var point := ray.get_collision_point()
+	var item := inventory.selected_item()
+	var look := looking_at
+	if look.has("animal"):
+		var animal: Node = look.animal
+		if animal.dead:
+			var res := Gathering.hit_carcass(animal, item, inventory, _rng)
+			Audio.play_3d("thud", point, -2.0)
+			Effects.chips(get_parent(), point, Color(0.6, 0.15, 0.15), 8, 0.06)
+			if res.destroyed:
+				animal.consume_carcass()
+		else:
+			animal.take_hit(ItemDB.tool_stats(item).damage, global_position)
+			Audio.play_3d("thud", point)
+			Effects.chips(get_parent(), point, Color(0.65, 0.12, 0.12), 6, 0.05)
+		return
+	if look.has("resource"):
+		_hit_resource(look.chunk, look.resource, item, point)
+
+
+func _hit_resource(chunk: TerrainChunk, r: Dictionary, item: String, point: Vector3) -> void:
+	var res := Gathering.hit_resource(chunk, r.index, item, inventory, _rng)
+	var target: String = res.target
+	var pal: WorldPalette = Game.palette
+	if res.blocked:
+		Audio.play_3d("clink", point, -6.0, 0.7)
+		hint.emit("Too hard to break by hand - use a rock")
+		return
+	match target:
+		"tree":
+			Audio.play_3d("chop", point)
+			Effects.chips(get_parent(), point, pal.bark.lightened(0.15), 8, 0.07)
+		"rock":
+			Audio.play_3d("clink", point, -2.0)
+			Effects.chips(get_parent(), point, pal.ore_crystal if r.kind == "ore" else pal.rock.lightened(0.1), 9, 0.07, 4.0)
+		_:
+			Audio.play_3d("rustle", point)
+			Effects.chips(get_parent(), point, pal.bush_leaves, 10, 0.06, 2.5)
+	if res.destroyed:
+		var mesh := chunk.get_resource_mesh(r.index)
+		var xf: Transform3D = r.transform
+		chunk.remove_resource(r.index)
+		if mesh:
+			if target == "tree":
+				Effects.fall_tree(get_parent(), mesh, xf, xf.origin - global_position, pal.bark)
+			else:
+				Effects.crumble(get_parent(), mesh, xf)
+	else:
+		chunk.wobble(r.index)

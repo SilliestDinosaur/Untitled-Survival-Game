@@ -52,33 +52,49 @@ static func generate(job: Dictionary) -> void:
 # --- Terrain ------------------------------------------------------------------
 
 static func _terrain_arrays(heights: PackedFloat32Array, n: int, res: int, step: float, origin: Vector3, gen: WorldGen, skirt: float) -> Array:
+	# Smooth, shared vertices (painterly look). Normals come from a grid padded by one
+	# sample on every side, so lighting matches seamlessly across chunk borders.
+	var pn := n + 2
+	var pad := PackedFloat32Array()
+	pad.resize(pn * pn)
+	for z in pn:
+		for x in pn:
+			var gx := x - 1
+			var gz := z - 1
+			if gx >= 0 and gx < n and gz >= 0 and gz < n:
+				pad[z * pn + x] = heights[gz * n + gx]
+			else:
+				pad[z * pn + x] = gen.get_height(origin.x + gx * step, origin.z + gz * step)
+
 	var verts := PackedVector3Array()
 	var normals := PackedVector3Array()
 	var colors := PackedColorArray()
-	var count := res * res * 6 + res * 4 * 6
-	verts.resize(count)
-	normals.resize(count)
-	colors.resize(count)
-	var i := 0
+	var indices := PackedInt32Array()
+	verts.resize(n * n)
+	normals.resize(n * n)
+	colors.resize(n * n)
+	for z in n:
+		for x in n:
+			var i := z * n + x
+			var hl := pad[(z + 1) * pn + x]
+			var hr := pad[(z + 1) * pn + x + 2]
+			var hd := pad[z * pn + x + 1]
+			var hu := pad[(z + 2) * pn + x + 1]
+			var nrm := Vector3(hl - hr, 2.0 * step, hd - hu).normalized()
+			var h := heights[i]
+			verts[i] = Vector3(x * step, h, z * step)
+			normals[i] = nrm
+			colors[i] = gen.get_terrain_color(h, nrm.y, origin.x + x * step, origin.z + z * step).srgb_to_linear()
 	for z in res:
 		for x in res:
-			var p00 := Vector3(x * step, heights[z * n + x], z * step)
-			var p10 := Vector3((x + 1) * step, heights[z * n + x + 1], z * step)
-			var p01 := Vector3(x * step, heights[(z + 1) * n + x], (z + 1) * step)
-			var p11 := Vector3((x + 1) * step, heights[(z + 1) * n + x + 1], (z + 1) * step)
-			# Alternate the diagonal for a less "gridded" look.
-			var tris := [[p00, p10, p01], [p10, p11, p01]] if (x + z) % 2 == 0 else [[p00, p10, p11], [p00, p11, p01]]
-			for tri: Array in tris:
-				var a: Vector3 = tri[0]
-				var b: Vector3 = tri[1]
-				var c: Vector3 = tri[2]
-				var nrm := (c - a).cross(b - a).normalized()
-				var mid := (a + b + c) / 3.0
-				var col := gen.get_terrain_color(mid.y, nrm.y, origin.x + mid.x, origin.z + mid.z).srgb_to_linear()
-				verts[i] = a; verts[i + 1] = b; verts[i + 2] = c
-				normals[i] = nrm; normals[i + 1] = nrm; normals[i + 2] = nrm
-				colors[i] = col; colors[i + 1] = col; colors[i + 2] = col
-				i += 3
+			var i00 := z * n + x
+			var i10 := i00 + 1
+			var i01 := i00 + n
+			var i11 := i01 + 1
+			if (x + z) % 2 == 0:
+				indices.append_array([i00, i10, i01, i10, i11, i01])
+			else:
+				indices.append_array([i00, i10, i11, i00, i11, i01])
 
 	# Skirts: short walls hanging down from each edge. Neighbouring chunks at different
 	# detail levels don't line up exactly; the skirts hide the tiny gaps.
@@ -89,20 +105,17 @@ static func _terrain_arrays(heights: PackedFloat32Array, n: int, res: int, step:
 		edges.append([Vector2i(k + 1, res), Vector2i(k, res)])
 		edges.append([Vector2i(0, k + 1), Vector2i(0, k)])
 	for e: Array in edges:
-		var g0: Vector2i = e[0]
-		var g1: Vector2i = e[1]
-		var a := Vector3(g0.x * step, heights[g0.y * n + g0.x], g0.y * step)
-		var b := Vector3(g1.x * step, heights[g1.y * n + g1.x], g1.y * step)
-		var a2 := a - Vector3(0, skirt, 0)
-		var b2 := b - Vector3(0, skirt, 0)
-		var mid := (a + b) * 0.5
-		var col := gen.get_terrain_color(mid.y, 0.9, origin.x + mid.x, origin.z + mid.z).darkened(0.1).srgb_to_linear()
-		for v: Vector3 in [a, b, a2, b, b2, a2]:
-			verts[i] = v
-			normals[i] = Vector3.UP
-			colors[i] = col
-			i += 1
-	return [verts, normals, colors]
+		var a: int = e[0].y * n + e[0].x
+		var b: int = e[1].y * n + e[1].x
+		var base := verts.size()
+		verts.append(verts[a] - Vector3(0, skirt, 0))
+		verts.append(verts[b] - Vector3(0, skirt, 0))
+		normals.append(normals[a])
+		normals.append(normals[b])
+		colors.append(colors[a])
+		colors.append(colors[b])
+		indices.append_array([a, b, base, b, base + 1, base])
+	return [verts, normals, colors, indices]
 
 
 static func _collision_data(heights: PackedFloat32Array, step: float) -> PackedFloat32Array:
@@ -229,6 +242,8 @@ static func _resource_buffers(resources: Array[Dictionary], origin: Vector3, tie
 		var t: Transform3D = r.transform
 		t.origin -= origin
 		var shade := 0.92 + fposmod(t.origin.x * 3.17 + t.origin.z * 1.31, 0.16)
+		# Remember which instance this is, so it can be shaken / hidden when gathered.
+		r.mm_index = buffers[r.key].size() / 16 if buffers.has(r.key) else 0
 		_append_instance(buffers, r.key, t, Color(shade, shade, shade))
 	return buffers
 
