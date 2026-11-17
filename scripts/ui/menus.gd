@@ -707,6 +707,7 @@ class MultiplayerPanel extends Control:
 	var _code: LineEdit
 	var _status: Label
 	var _join: Button
+	var _games: VBoxContainer
 	var _swatches: Array[Button] = []
 
 	func _ready() -> void:
@@ -748,6 +749,11 @@ class MultiplayerPanel extends Control:
 		_join.pressed.connect(_do_join)
 		_code.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 		col.add_child(Menus._row([_code, _join]))
+		col.add_child(Menus._spacer(4))
+		col.add_child(UITheme.label("Games on this Wi-Fi", 16, UITheme.INK_DIM))
+		_games = VBoxContainer.new()
+		_games.add_theme_constant_override("separation", 6)
+		col.add_child(_games)
 		_status = UITheme.label("", 15, UITheme.ACCENT)
 		_status.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 		_status.custom_minimum_size = Vector2(520, 0)
@@ -760,6 +766,7 @@ class MultiplayerPanel extends Control:
 		col.add_child(Menus._spacer(6))
 		var back := UITheme.button("Back", false, 160)
 		back.pressed.connect(func() -> void:
+			Net.stop_listening()
 			if Net.is_client():
 				Net.stop()
 			back_pressed.emit())
@@ -767,13 +774,46 @@ class MultiplayerPanel extends Control:
 		Net.status_changed.connect(func(t: String) -> void:
 			_status.text = t
 			_join.disabled = Net.is_client())
+		Net.games_changed.connect(_refresh_games)
+		_refresh_games()
 
 	func open() -> void:
 		_name.text = Settings.player_name
 		_status.text = ""
 		_join.disabled = false
 		_mark_swatch()
+		Net.start_listening()
+		_refresh_games()
 		show()
+
+	## Rebuild the list of games heard on the local network: one tap joins, no code needed.
+	func _refresh_games() -> void:
+		if not _games:
+			return
+		for c in _games.get_children():
+			c.queue_free()
+		var keys: Array = Net.found_games.keys()
+		if keys.is_empty():
+			_games.add_child(UITheme.label("No games found yet. Ask your friend to open their world to friends (pause menu > Open to Friends).", 14, UITheme.INK_DIM))
+			return
+		for ip: String in keys:
+			var g: Dictionary = Net.found_games[ip]
+			var row := HBoxContainer.new()
+			row.add_theme_constant_override("separation", 10)
+			var info := UITheme.label("%s  ·  %s" % [g.name, g.world], 17, UITheme.INK)
+			info.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+			row.add_child(info)
+			var b := UITheme.button("Join", true, 110)
+			b.custom_minimum_size = Vector2(110, 38)
+			b.disabled = Net.is_online()
+			var address := "%s:%d" % [ip, int(g.port)]
+			b.pressed.connect(func() -> void:
+				if Settings.player_name.strip_edges() == "":
+					Settings.player_name = "Wanderer"
+				b.disabled = true
+				Net.join(address))
+			row.add_child(b)
+			_games.add_child(row)
 
 	func _mark_swatch() -> void:
 		for i in _swatches.size():

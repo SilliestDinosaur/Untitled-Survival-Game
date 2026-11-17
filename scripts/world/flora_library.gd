@@ -687,7 +687,9 @@ func _stump(kit: MeshKit, rng: RandomNumberGenerator) -> void:
 		var a := TAU * i / 4.0 + rng.randf_range(-0.3, 0.3)
 		var d := Vector3(cos(a), 0, sin(a))
 		var root := [d * r * 0.7 + Vector3(0, h * 0.25, 0), d * r * 1.3 + Vector3(0, 0.08, 0), d * r * 1.9 + Vector3(0, -0.05, 0)]
-		kit.loft(root, [r * 0.28, r * 0.16, r * 0.05], 7, bark.darkened(0.05), Callable(), Callable(), false, true, 0.01)
+		# Roots flare out from the trunk base and sink into the ground: closed at both ends.
+		var root_path: Array = [d * r * 0.5 + Vector3(0, h * 0.12, 0), d * r * 1.2 + Vector3(0, 0.02, 0), d * r * 1.9 + Vector3(0, -0.08, 0)]
+		kit.loft(root_path, [r * 0.3, r * 0.17, r * 0.06], 7, bark.darkened(0.05), Callable(), Callable(), true, true, 0.01)
 
 
 func _mushrooms(kit: MeshKit, rng: RandomNumberGenerator, index: int) -> void:
@@ -780,7 +782,7 @@ func _palm(kit: MeshKit, rng: RandomNumberGenerator) -> void:
 	var trunk := Color(0.62, 0.5, 0.36)
 	var bands := func(t: float, a: float) -> Color:
 		return trunk.darkened(0.18) if fposmod(t * 22.0, 1.0) < 0.3 else trunk
-	kit.loft(path, radii, 9, trunk, bands, Callable(), false, true, 0.01)
+	kit.loft(path, radii, 9, trunk, bands, Callable(), true, true, 0.01)
 	var top: Vector3 = path[8]
 	var leaf := _vary(_pal.oak_leaves, rng).lightened(0.05)
 	var fronds := rng.randi_range(9, 12)

@@ -19,6 +19,11 @@ signal joined(snapshot: Dictionary)          ## guest: the host's world arrived
 signal session_ended(reason: String)         ## disconnected, kicked, or host left
 signal roster_changed                        ## someone joined or left
 signal player_message(text: String)          ## "X joined" etc. for the HUD
+signal games_changed                         ## the list of games on this network changed
+
+const DISCOVERY_PORT := 24681                ## LAN beacon: hosts announce here, menus listen
+const BEACON_SECONDS := 1.0
+const BEACON_TIMEOUT := 4.0
 
 const PORT := 24680
 const MAX_PLAYERS := 4
@@ -41,6 +46,11 @@ var players := {}            ## peer id -> {name, uid, color}
 var use_upnp := true         ## tests turn this off
 var host_on_start := false   ## "Open to friends" switch on the New World / Load screens
 var _host_name := ""
+## Games heard on this network: ip -> {name, world, port, seen}
+var found_games := {}
+var _beacon: PacketPeerUDP
+var _beacon_timer := 0.0
+var _listener: PacketPeerUDP
 
 ## Set by Main.
 var main: Node
@@ -127,6 +137,7 @@ func host() -> bool:
 	multiplayer.multiplayer_peer = peer
 	mode = Mode.HOST
 	players.clear()
+	_start_beacon()
 	_make_avatar_root()
 	lan_code = encode_code(_local_ip(), port)
 	invite_code = ""
@@ -166,7 +177,7 @@ func _upnp_done(ok: bool, ip: String, u: UPNP) -> void:
 	public_ip = ip
 	invite_code = encode_code(ip, port) if ok else ""
 	status_changed.emit("Ready: share your invite code." if ok else
-		"Your router didn't allow automatic setup. Friends on your network can use the LAN code; for internet play, forward UDP port %d or use a virtual LAN (Tailscale, ZeroTier, Radmin) and share that address." % port)
+		"Friends on this Wi-Fi can join automatically (no code needed). For internet play, forward UDP port %d or use a virtual LAN (Tailscale, ZeroTier, Radmin) and share that address." % port)
 	invite_ready.emit()
 
 
@@ -339,6 +350,7 @@ func stop() -> void:
 	if is_host():
 		for p: int in players:
 			_store_guest(p)
+		_stop_beacon()
 		if _upnp:
 			_upnp.delete_port_mapping(port, "UDP")
 			_upnp = null
@@ -376,6 +388,8 @@ func _end(reason: String) -> void:
 
 
 func _exit_tree() -> void:
+	_stop_beacon()
+	stop_listening()
 	if _upnp_thread:
 		_upnp_thread.wait_to_finish()
 	if _upnp:
@@ -579,7 +593,80 @@ func _set_inventory(data: Dictionary, added: Dictionary, broke: String) -> void:
 
 # --- Poses, time, animals ------------------------------------------------------------------
 
+## Host: announce this game to everyone on the local network, every second.
+func _start_beacon() -> void:
+	_beacon = PacketPeerUDP.new()
+	_beacon.set_broadcast_enabled(true)
+	if _beacon.set_dest_address("255.255.255.255", DISCOVERY_PORT) != OK:
+		_beacon = null
+		return
+	_beacon_timer = 0.0
+
+
+func _stop_beacon() -> void:
+	if _beacon:
+		_beacon.close()
+		_beacon = null
+
+
+## Menus: start listening for games on this network (cheap; stop when the menu closes).
+func start_listening() -> void:
+	if _listener:
+		return
+	_listener = PacketPeerUDP.new()
+	# Several hosts can share the machine (tests); if the port is busy, we just can't listen.
+	if _listener.bind(DISCOVERY_PORT, "*") != OK:
+		_listener = null
+
+
+func stop_listening() -> void:
+	if _listener:
+		_listener.close()
+		_listener = null
+	found_games.clear()
+
+
+func _listen_for_games(delta: float) -> void:
+	if not _listener:
+		return
+	var changed := false
+	while _listener.get_available_packet_count() > 0:
+		var msg := _listener.get_packet().get_string_from_utf8()
+		var ip := _listener.get_packet_ip()
+		var data = JSON.parse_string(msg)
+		if typeof(data) != TYPE_DICTIONARY or int(data.get("v", 0)) != PROTOCOL:
+			continue
+		if is_host() and ip == _local_ip():   # my own announcement
+			continue
+		var entry := {"name": String(data.get("n", "Friend")), "world": String(data.get("w", "")), "port": int(data.get("p", PORT)), "seen": 0.0}
+		if not found_games.has(ip) or found_games[ip].name != entry.name or found_games[ip].world != entry.world:
+			changed = true
+		found_games[ip] = entry
+	for ip: String in found_games.keys():
+		found_games[ip].seen += delta
+		if found_games[ip].seen > BEACON_TIMEOUT:
+			found_games.erase(ip)
+			changed = true
+		else:
+			found_games[ip].seen = minf(found_games[ip].seen, BEACON_TIMEOUT)
+	if changed:
+		games_changed.emit()
+
+
+func _send_beacon() -> void:
+	if not _beacon:
+		return
+	var msg := JSON.stringify({"v": PROTOCOL, "n": Settings.player_name, "w": Game.save_name, "p": port})
+	_beacon.put_packet(msg.to_utf8_buffer())
+
+
 func _process(delta: float) -> void:
+	_listen_for_games(delta)
+	if _beacon:
+		_beacon_timer -= delta
+		if _beacon_timer <= 0.0:
+			_beacon_timer = BEACON_SECONDS
+			_send_beacon()
 	if _join_timeout > 0.0:
 		_join_timeout -= delta
 		if _join_timeout <= 0.0 and is_client():

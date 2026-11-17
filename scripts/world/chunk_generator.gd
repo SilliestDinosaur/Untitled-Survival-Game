@@ -192,7 +192,9 @@ static func _place_resources(coord: Vector2i, origin: Vector3, gen: WorldGen, fl
 		if nrm.y < 0.82 or a.r_place >= density:
 			counter[0] += 1
 			continue
-		var kind := "fir" if h > 46.0 else _pick_weighted(FloraLibrary.BIOME_TREES[biome], a.r_kind)
+		# Conifers climb the high ground only in the cold and forested biomes.
+		var high_conifer := h > 46.0 and biome in [Biome.TAIGA, Biome.TUNDRA, Biome.FOREST]
+		var kind := "fir" if high_conifer else _pick_weighted(FloraLibrary.BIOME_TREES[biome], a.r_kind)
 		add.call(kind, a.variant, Vector3(a.x, h - 0.15, a.z), a.yaw, Vector3.ONE * a.scl)
 
 	# Palms along warm coasts (just above the beach).
@@ -200,6 +202,10 @@ static func _place_resources(coord: Vector2i, origin: Vector3, gen: WorldGen, fl
 		var a := _attempt(rng, origin, size)
 		var h := gen.get_height(a.x, a.z)
 		if h < 1.4 or h > 6.0 or gen.get_normal(a.x, a.z).y < 0.85 or gen.get_climate(a.x, a.z, h).x < 0.45 or a.r_place > 0.35:
+			counter[0] += 1
+			continue
+		# Palms belong to the jungle: only where it's the dominant climate.
+		if gen.get_biome_weights(gen.get_climate(a.x, a.z, h))[Biome.JUNGLE] < 0.45:
 			counter[0] += 1
 			continue
 		add.call("palm", a.variant, Vector3(a.x, h - 0.1, a.z), a.yaw, Vector3.ONE * a.scl)
