@@ -45,6 +45,7 @@ const ROLE_LABELS := {"grazer": "Grazer", "defensive": "Territorial beast", "cri
 var species: Array[Species] = []
 var material: ShaderMaterial
 var _pal: WorldPalette
+var _exotic_shift := 0.0   ## exotic worlds: every coat's hue is rotated by this
 
 
 ## Body plans. Each species picks one, then randomizes within its ranges.
@@ -114,6 +115,7 @@ func _init(seed_value: int, pal: WorldPalette) -> void:
 	material = ArtStyle.painted({"brush_strength": 0.22, "rim_amount": 0.25})
 	var rng := RandomNumberGenerator.new()
 	rng.seed = seed_value * 977 + 3
+	_exotic_shift = rng.randf_range(0.25, 0.75)
 	# One grazer adapted to each biome, territorial beasts and critters in some of them,
 	# and 2-3 birds. A body plan that suits the biome is picked, then its coat, fur, build
 	# and habits are shaped by where it lives.
@@ -160,8 +162,14 @@ func _coat(rng: RandomNumberGenerator) -> Color:
 
 ## A coat that fits the biome (natural worlds); exotic worlds keep their strange colors.
 func _biome_coat(rng: RandomNumberGenerator, scheme: String) -> Color:
-	if _pal.exotic and scheme != "snow":
-		return _coat(rng)
+	var c := _natural_coat(rng, scheme)
+	# Exotic worlds keep the biome's light/dark and saturation, but in the world's strange hue.
+	if _pal.exotic and scheme not in ["snow", "fungal"]:
+		c = Color.from_hsv(fposmod(c.h + _exotic_shift, 1.0), minf(c.s * 1.25 + 0.1, 1.0), c.v)
+	return c
+
+
+func _natural_coat(rng: RandomNumberGenerator, scheme: String) -> Color:
 	match scheme:
 		"dark": return Color.from_hsv(rng.randf_range(0.05, 0.1), rng.randf_range(0.3, 0.5), rng.randf_range(0.28, 0.45))
 		"russet": return Color.from_hsv(rng.randf_range(0.02, 0.06), rng.randf_range(0.5, 0.7), rng.randf_range(0.5, 0.7))
@@ -290,7 +298,7 @@ func _make_quadruped(rng: RandomNumberGenerator, arch: String, home := -1) -> Sp
 		"vivid": accent = Color.from_hsv(fposmod(coat.h + 0.5, 1.0), 0.3, 0.15) if rng.randf() < 0.5 else coat.darkened(0.6)   # bold markings
 		"fungal": accent = _pal.glow   # glowing spots
 		"snow": accent = coat.darkened(0.2)
-		"rust": accent = _pal.badlands_cream if not _pal.exotic else accent
+		"rust": accent = _pal.badlands_cream
 	var fur: bool = tr.get("fur", false)
 	var noise := FastNoiseLite.new()
 	noise.seed = rng.randi()
