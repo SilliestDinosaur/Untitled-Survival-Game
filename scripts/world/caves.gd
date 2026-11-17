@@ -191,9 +191,11 @@ static func _base_grad(gen: WorldGen, x: float, z: float) -> Vector2:
 ## deeper than MAX_DEPTH. Null if there's no rock deep enough here (the tunnel stops).
 static func _fit(gen: WorldGen, p: Vector3, r: float) -> Variant:
 	var top := gen.get_base_height(p.x, p.z) - r - CLEARANCE
-	if top < Game.SEA_LEVEL + 2.0:
+	# Tunnels stay dry: the floor (y - r) is never under the sea, and the rock is never too deep.
+	var low := maxf(top - MAX_DEPTH, Game.SEA_LEVEL + r + 1.0)
+	if top < low:
 		return null
-	return Vector3(p.x, clampf(p.y, top - MAX_DEPTH, top), p.z)
+	return Vector3(p.x, clampf(p.y, low, top), p.z)
 
 
 static func _add_node(nodes: Array, p: Vector3, r: float, tree: int) -> int:
