@@ -21,6 +21,9 @@ class Species:
 	var herd := Vector2i(1, 1)
 	var yield_scale := 1.0
 	var biome_pref := {}      ## Biome -> weight
+	var home := -1            ## the biome this species is adapted to (-1 = none, e.g. birds)
+	var active := "any"       ## any | day | night: when it's out and about
+	var habitat := ""         ## "" | water (stays near water) | steep (climbs slopes)
 	# Body layout (meters, already scaled by size)
 	var leg_len := 0.7
 	var body_len := 1.0
@@ -70,20 +73,67 @@ const ARCHETYPES := {
 }
 
 
+## Which body plans live in each biome.
+const BIOME_FAUNA := {
+	Biome.MEADOW: {"grazer": ["slender", "stocky"], "beast": ["horned"]},
+	Biome.FOREST: {"grazer": ["stocky", "slender"], "beast": ["boar"]},
+	Biome.AUTUMN: {"grazer": ["slender", "stocky"], "beast": ["boar"]},
+	Biome.DRYLANDS: {"grazer": ["strider", "slender"], "beast": ["horned"]},
+	Biome.DESERT: {"grazer": ["strider", "shellback"], "beast": []},
+	Biome.TAIGA: {"grazer": ["bulky", "stocky"], "beast": ["boar"]},
+	Biome.MARSH: {"grazer": ["wader", "shellback"], "beast": []},
+	Biome.JUNGLE: {"grazer": ["slender", "strider"], "beast": ["boar"]},
+	Biome.TUNDRA: {"grazer": ["bulky", "stocky"], "beast": ["horned"]},
+	Biome.BADLANDS: {"grazer": ["shellback", "stocky"], "beast": ["horned"]},
+	Biome.FUNGAL: {"grazer": ["shellback", "wader", "slender"], "beast": []},
+	Biome.HIGHLANDS: {"grazer": ["stocky"], "beast": ["horned"]},
+}
+
+## How a biome shapes the animals that live there.
+##  coat: color scheme, size/leg/width: body multipliers, fur: shaggy coat, ears: big | small,
+##  patterns: allowed coat patterns, active: day | night | any (chance), hp/speed multipliers,
+##  habitat: water | steep, words: name prefixes.
+const BIOME_TRAITS := {
+	Biome.MEADOW: {"coat": "earth", "patterns": ["none", "saddle", "spots"], "words": ["Meadow", "Clover", "Sun"]},
+	Biome.FOREST: {"coat": "dark", "patterns": ["spots", "none"], "words": ["Moss", "Bramble", "Shade"]},
+	Biome.AUTUMN: {"coat": "russet", "patterns": ["none", "saddle", "spots"], "words": ["Ember", "Amber", "Rust"]},
+	Biome.DRYLANDS: {"coat": "tan", "patterns": ["stripes", "spots"], "leg": 1.1, "speed": 1.1, "words": ["Grass", "Plains", "Sun"]},
+	Biome.DESERT: {"coat": "sand", "patterns": ["none", "saddle"], "width": 0.85, "ears": "big", "night": 0.8, "hp": 0.9, "words": ["Dune", "Sand", "Mirage"]},
+	Biome.TAIGA: {"coat": "dark", "fur": true, "size": 1.1, "patterns": ["none", "saddle"], "hp": 1.15, "words": ["Pine", "Frost", "Bark"]},
+	Biome.MARSH: {"coat": "olive", "patterns": ["none", "stripes"], "leg": 1.1, "habitat": "water", "words": ["Bog", "Reed", "Mire"]},
+	Biome.JUNGLE: {"coat": "vivid", "patterns": ["stripes", "spots"], "speed": 1.15, "skittish": true, "words": ["Canopy", "Jade", "Vine"]},
+	Biome.TUNDRA: {"coat": "snow", "fur": true, "size": 1.2, "leg": 0.85, "ears": "small", "hp": 1.35, "speed": 0.9, "patterns": ["none"], "words": ["Frost", "Rime", "Snow"]},
+	Biome.BADLANDS: {"coat": "rust", "patterns": ["saddle", "stripes"], "hp": 1.2, "night": 0.4, "habitat": "steep", "words": ["Mesa", "Red", "Cliff"]},
+	Biome.FUNGAL: {"coat": "fungal", "patterns": ["spots"], "night": 0.9, "curious": true, "ears": "big", "words": ["Spore", "Glow", "Gloam"]},
+	Biome.HIGHLANDS: {"coat": "stone", "fur": true, "patterns": ["saddle", "none"], "leg": 0.9, "habitat": "steep", "hp": 1.15, "words": ["Crag", "Ridge", "Stone"]},
+}
+
+
 func _init(seed_value: int, pal: WorldPalette) -> void:
 	_pal = pal
 	material = ArtStyle.painted({"brush_strength": 0.22, "rim_amount": 0.25})
 	var rng := RandomNumberGenerator.new()
 	rng.seed = seed_value * 977 + 3
-	# Each world gets 4 of the 6 grazer body plans, both beasts, both critters and 2-3 birds.
-	var grazers := ["slender", "stocky", "bulky", "shellback", "strider", "wader"]
-	for i in range(grazers.size() - 1, 0, -1):
-		var j := rng.randi_range(0, i)
-		var tmp: String = grazers[i]
-		grazers[i] = grazers[j]
-		grazers[j] = tmp
-	for arch in grazers.slice(0, 4) + ["boar", "horned", "hopper", "ferret"]:
-		species.append(_make_quadruped(rng, arch))
+	# One grazer adapted to each biome, territorial beasts and critters in some of them,
+	# and 2-3 birds. A body plan that suits the biome is picked, then its coat, fur, build
+	# and habits are shaped by where it lives.
+	for home: int in BIOME_FAUNA:
+		var plans: Dictionary = BIOME_FAUNA[home]
+		var g: Array = plans.grazer
+		species.append(_make_quadruped(rng, g[rng.randi() % g.size()], home))
+	var beast_homes: Array = BIOME_FAUNA.keys().filter(func(b: int) -> bool: return not BIOME_FAUNA[b].beast.is_empty())
+	var critter_homes: Array = BIOME_FAUNA.keys()
+	for list: Array in [beast_homes, critter_homes]:
+		for i in range(list.size() - 1, 0, -1):
+			var j := rng.randi_range(0, i)
+			var tmp: int = list[i]
+			list[i] = list[j]
+			list[j] = tmp
+	for home: int in beast_homes.slice(0, 4):
+		var b: Array = BIOME_FAUNA[home].beast
+		species.append(_make_quadruped(rng, b[rng.randi() % b.size()], home))
+	for home: int in critter_homes.slice(0, 5):
+		species.append(_make_quadruped(rng, ["hopper", "ferret"][rng.randi() % 2] if home != Biome.MARSH else "ferret", home))
 	for i in rng.randi_range(2, 3):
 		species.append(_make_bird(rng))
 
@@ -108,18 +158,56 @@ func _coat(rng: RandomNumberGenerator) -> Color:
 	return Color.from_hsv(hue, sat, rng.randf_range(0.35, 0.8))
 
 
-func _make_quadruped(rng: RandomNumberGenerator, arch: String) -> Species:
+## A coat that fits the biome (natural worlds); exotic worlds keep their strange colors.
+func _biome_coat(rng: RandomNumberGenerator, scheme: String) -> Color:
+	if _pal.exotic and scheme != "snow":
+		return _coat(rng)
+	match scheme:
+		"dark": return Color.from_hsv(rng.randf_range(0.05, 0.1), rng.randf_range(0.3, 0.5), rng.randf_range(0.28, 0.45))
+		"russet": return Color.from_hsv(rng.randf_range(0.02, 0.06), rng.randf_range(0.5, 0.7), rng.randf_range(0.5, 0.7))
+		"tan": return Color.from_hsv(rng.randf_range(0.08, 0.12), rng.randf_range(0.35, 0.55), rng.randf_range(0.65, 0.8))
+		"sand": return Color.from_hsv(rng.randf_range(0.09, 0.12), rng.randf_range(0.2, 0.35), rng.randf_range(0.78, 0.9))
+		"olive": return Color.from_hsv(rng.randf_range(0.12, 0.2), rng.randf_range(0.25, 0.4), rng.randf_range(0.35, 0.5))
+		"vivid": return Color.from_hsv(rng.randf_range(0.0, 0.12) if rng.randf() < 0.6 else rng.randf(), rng.randf_range(0.55, 0.8), rng.randf_range(0.6, 0.85))
+		"snow": return Color.from_hsv(rng.randf_range(0.08, 0.6), rng.randf_range(0.0, 0.07), rng.randf_range(0.82, 0.95))
+		"rust": return Color.from_hsv(rng.randf_range(0.02, 0.06), rng.randf_range(0.5, 0.7), rng.randf_range(0.45, 0.62))
+		"fungal": return _pal.fungal_caps[rng.randi() % _pal.fungal_caps.size()].lerp(Color(0.85, 0.85, 0.9), 0.35)
+		"stone": return Color.from_hsv(rng.randf_range(0.06, 0.12), rng.randf_range(0.05, 0.18), rng.randf_range(0.5, 0.7))
+	return _coat(rng)
+
+
+func _make_quadruped(rng: RandomNumberGenerator, arch: String, home := -1) -> Species:
 	var a: Dictionary = ARCHETYPES[arch]
 	var role: String = a.role
+	var tr: Dictionary = BIOME_TRAITS.get(home, {})
 	var s := Species.new()
 	s.role = role
+	s.home = home
 	s.label = ROLE_LABELS[role]
+	if home >= 0:
+		s.label = "%s %s" % [WorldGen.BIOME_NAMES[home], {"grazer": "grazer", "defensive": "beast", "critter": "critter"}[role]]
 	s.id = "%s_%d" % [arch, species.size()]
-	var size := rng.randf_range(a.size[0], a.size[1])
+	var size := rng.randf_range(a.size[0], a.size[1]) * float(tr.get("size", 1.0))
 	s.size = size
 	s.name = NameGen.species_name(rng, role)
-	for b: int in a.biomes:
-		s.biome_pref[b] = a.biomes[b] * rng.randf_range(0.7, 1.0)
+	if tr.has("words") and rng.randf() < 0.6:
+		var words: Array = tr.words
+		s.name = "%s %s" % [words[rng.randi() % words.size()], s.name.get_slice(" ", 1)]
+	if home >= 0:
+		# Lives in its home biome; strays a little into the others.
+		s.biome_pref[home] = 1.0
+		if home == Biome.HIGHLANDS:
+			s.biome_pref[Biome.SNOW] = 0.6
+		if home == Biome.TUNDRA:
+			s.biome_pref[Biome.SNOW] = 0.8
+	else:
+		for b: int in a.biomes:
+			s.biome_pref[b] = a.biomes[b] * rng.randf_range(0.7, 1.0)
+	s.habitat = tr.get("habitat", "")
+	if rng.randf() < float(tr.get("night", 0.0)):
+		s.active = "night"
+	elif role == "grazer" and rng.randf() < 0.2:
+		s.active = "day"
 
 	# --- Proportions ---
 	var stocky := role == "defensive" or arch == "bulky"
@@ -131,8 +219,8 @@ func _make_quadruped(rng: RandomNumberGenerator, arch: String) -> Species:
 		s.body_len = s.body_h * 2.9
 	elif arch == "shellback":
 		s.body_len = s.body_h * 2.1
-	s.body_w = s.body_h * rng.randf_range(0.75, 0.95)
-	s.leg_len = size * rng.randf_range(a.leg[0], a.leg[1])
+	s.body_w = s.body_h * rng.randf_range(0.75, 0.95) * float(tr.get("width", 1.0))
+	s.leg_len = size * rng.randf_range(a.leg[0], a.leg[1]) * float(tr.get("leg", 1.0))
 	var leg_r := size * (0.085 if stocky else 0.07) * rng.randf_range(0.9, 1.15)
 	if arch in ["wader", "strider"]:
 		leg_r *= 0.7
@@ -172,20 +260,38 @@ func _make_quadruped(rng: RandomNumberGenerator, arch: String) -> Species:
 			s.herd = Vector2i(1, 1)
 			s.yield_scale = 0.2
 
+	# Biome adaptations: hardier in the cold and badlands, faster on the plains and in the jungle.
+	s.hp *= float(tr.get("hp", 1.0))
+	s.run_speed *= float(tr.get("speed", 1.0))
+	s.walk_speed *= float(tr.get("speed", 1.0))
+
 	# Temperament decides how close you can get before it reacts.
 	s.temperament = {"slender": "skittish", "stocky": "wary", "bulky": "calm", "shellback": "calm", "strider": "wary",
 		"wader": "wary", "boar": "wary", "horned": "calm", "hopper": "skittish", "ferret": "curious"}[arch]
 	if role == "grazer" and rng.randf() < 0.25:
+		s.temperament = "curious"
+	if role == "grazer" and tr.get("skittish", false):
+		s.temperament = "skittish"
+	if role != "defensive" and tr.get("curious", false):
 		s.temperament = "curious"
 	if role != "defensive":
 		s.flee_radius = {"skittish": rng.randf_range(16.0, 22.0), "wary": rng.randf_range(10.0, 14.0),
 			"calm": rng.randf_range(5.0, 7.0), "curious": rng.randf_range(6.0, 8.0)}[s.temperament]
 
 	# --- Colors & pattern ---
-	var coat := _coat(rng)
+	var coat := _biome_coat(rng, tr.get("coat", ""))
 	var belly := coat.lightened(rng.randf_range(0.25, 0.45))
 	var accent := coat.darkened(rng.randf_range(0.3, 0.5)) if rng.randf() < 0.7 else coat.lightened(0.5)
 	var pattern: String = ["none", "stripes", "spots", "saddle", "none"][rng.randi() % 5]
+	if tr.has("patterns"):
+		var pats: Array = tr.patterns
+		pattern = pats[rng.randi() % pats.size()]
+	match String(tr.get("coat", "")):
+		"vivid": accent = Color.from_hsv(fposmod(coat.h + 0.5, 1.0), 0.3, 0.15) if rng.randf() < 0.5 else coat.darkened(0.6)   # bold markings
+		"fungal": accent = _pal.glow   # glowing spots
+		"snow": accent = coat.darkened(0.2)
+		"rust": accent = _pal.badlands_cream if not _pal.exotic else accent
+	var fur: bool = tr.get("fur", false)
 	var noise := FastNoiseLite.new()
 	noise.seed = rng.randi()
 	noise.frequency = 3.5 / size
@@ -229,8 +335,11 @@ func _make_quadruped(rng: RandomNumberGenerator, arch: String) -> Species:
 	var torso_coat := func(t: float, a: float) -> Color:
 		# Rebuild an approximate body-space point so the coat pattern lines up.
 		return coat_fn.call(Vector3(-sin(a) * W * 0.5, -cos(a) * H * 0.5, lerpf(L * 0.5, -L * 0.5, t)))
-	kit.loft(torso, torso_r, 14, coat, torso_coat, func(t: float, a: float) -> Vector2: return Vector2(1.0, w_ratio), true, true, 0.012 if arch == "bulky" else 0.0)
-	if arch == "bulky":   # shaggy chest ruff
+	var torso_bumps := 0.012 if arch == "bulky" else 0.0
+	if fur:
+		torso_bumps = maxf(torso_bumps, H * 0.05)   # thick shaggy winter coat
+	kit.loft(torso, torso_r, 14, coat, torso_coat, func(t: float, a: float) -> Vector2: return Vector2(1.0, w_ratio), true, true, torso_bumps)
+	if arch == "bulky" or (fur and role != "critter" and arch != "shellback"):   # shaggy chest ruff
 		kit.loft([chest + Vector3(0, -H * 0.1, -L * 0.1), chest + Vector3(0, -H * 0.35, -L * 0.2), chest + Vector3(0, -H * 0.55, -L * 0.18)], [H * 0.35, H * 0.3, H * 0.12], 10, accent.lerp(coat, 0.5), Callable(), Callable(), true, true, 0.03)
 	if arch == "shellback":
 		var shell := accent.lerp(coat, 0.35)
@@ -300,7 +409,7 @@ func _make_quadruped(rng: RandomNumberGenerator, arch: String) -> Species:
 		kit.add_primitive(MeshKit.sphere(head_len * 0.075, 9, 6), Transform3D(Basis(), eye), Color(0.07, 0.05, 0.04), 0.0, 0.0)
 		kit.add_primitive(MeshKit.sphere(head_len * 0.025, 6, 4), Transform3D(Basis(), eye + Vector3(side * head_len * 0.03, head_len * 0.035, 0) + fwd * head_len * 0.03), Color(1, 1, 1), 0.0, 0.0)   # glint
 	if not arch in ["shellback", "strider", "wader"]:
-		_ears(kit, rng, role, skull - fwd * head_len * 0.1, head_len, coat, belly)
+		_ears(kit, rng, role, skull - fwd * head_len * 0.1, head_len, coat, belly, tr.get("ears", ""))
 	_horns(kit, rng, arch, skull - fwd * head_len * 0.1, head_len, size, nose)
 	s.head_mesh = kit.commit(material)
 
@@ -347,9 +456,13 @@ func _segment(kit: MeshKit, a: Vector3, b: Vector3, ra: float, rb: float, col: C
 	kit.add_primitive(MeshKit.sphere(rb, 8, 5), Transform3D(Basis(), b), col, 0.0, 0.04, null, color_fn)
 
 
-func _ears(kit: MeshKit, rng: RandomNumberGenerator, role: String, head_c: Vector3, head_len: float, coat: Color, inner: Color) -> void:
+func _ears(kit: MeshKit, rng: RandomNumberGenerator, role: String, head_c: Vector3, head_len: float, coat: Color, inner: Color, size_hint := "") -> void:
 	var style: String = "long" if role == "critter" and rng.randf() < 0.6 else ["pointy", "round", "long", "pointy"][rng.randi() % 4]
+	if size_hint == "small":
+		style = "round"   # cold climates: small round ears lose less heat
 	var length := head_len * (0.9 if style == "long" else 0.4)
+	if size_hint == "big":
+		length *= 1.6     # desert: big ears shed heat (and hear predators)
 	for side in [-1.0, 1.0]:
 		var base := head_c + Vector3(side * head_len * 0.22, head_len * 0.25, head_len * 0.15)
 		var tilt := Basis(Vector3.FORWARD, side * deg_to_rad(rng.randf_range(20, 45))) * Basis(Vector3.RIGHT, deg_to_rad(15))

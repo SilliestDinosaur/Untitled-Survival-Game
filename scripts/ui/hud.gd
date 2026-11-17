@@ -9,6 +9,8 @@ var world: Node
 var _health: StatBar
 var _hunger: StatBar
 var _stamina: StatBar
+var _warmth: StatBar
+var _cold_fx: ColorRect
 var _compass: Compass
 var _biome: Label
 var _crosshair: Control
@@ -54,6 +56,7 @@ func _ready() -> void:
 
 	_water_fx = _overlay(Color(0.05, 0.25, 0.35), 0.0, 0.9)
 	_damage_fx = _overlay(Color(0.65, 0.02, 0.02), 0.0, 0.5)
+	_cold_fx = _overlay(Color(0.7, 0.85, 1.0), 0.0, 0.75)
 
 	# Crosshair: a dot that grows into a ring when you can interact with something.
 	_crosshair = Control.new()
@@ -81,9 +84,9 @@ func _ready() -> void:
 
 	# Stat bars, bottom-left.
 	var bars := VBoxContainer.new()
-	UITheme.place(bars, Control.PRESET_BOTTOM_LEFT, Vector2(28, -104))
+	UITheme.place(bars, Control.PRESET_BOTTOM_LEFT, Vector2(28, -132))
 	_effects = UITheme.label("", 15, Color(0.95, 0.9, 0.7), 4)
-	UITheme.place(_effects, Control.PRESET_BOTTOM_LEFT, Vector2(28, -136), Vector2(420, 24))
+	UITheme.place(_effects, Control.PRESET_BOTTOM_LEFT, Vector2(28, -164), Vector2(420, 24))
 	add_child(_effects)
 	bars.add_theme_constant_override("separation", 4)
 	add_child(bars)
@@ -92,7 +95,10 @@ func _ready() -> void:
 	_stamina = StatBar.new(Color(0.55, 0.85, 0.45), "STAM")
 	_stamina.auto_hide = true
 	_stamina.warn_below = 0.15
-	for b in [_health, _hunger, _stamina]:
+	_warmth = StatBar.new(Color(0.55, 0.78, 1.0), "WARM")
+	_warmth.auto_hide = true
+	_warmth.warn_below = 0.25
+	for b in [_health, _hunger, _warmth, _stamina]:
 		bars.add_child(b)
 
 	# Compass + biome, top-center.
@@ -196,7 +202,7 @@ func _update_clock() -> void:
 	var near_dusk := t > Game.SUNSET - 0.04 and t < Game.SUNSET
 	if near_dusk and not _dusk_warned:
 		_dusk_warned = true
-		_flash_time("The sun is setting...", Color(1.0, 0.75, 0.5))
+		_flash_time("The sun is setting... nights are cold", Color(1.0, 0.75, 0.5))
 	if not near_dusk and not night:
 		_dusk_warned = false
 	if night != _was_night:
@@ -233,6 +239,10 @@ func _process(delta: float) -> void:
 	_health.value = s.health / s.max_health
 	_hunger.value = s.hunger / s.max_hunger
 	_stamina.value = s.stamina / s.max_stamina
+	_warmth.value = s.warmth / s.max_warmth
+	# Frosty screen edges as you get cold.
+	var chill := 1.0 - smoothstep(0.0, 0.5, s.warmth / s.max_warmth)
+	(_cold_fx.material as ShaderMaterial).set_shader_parameter("intensity", chill * 0.55)
 
 	_compass.heading = fposmod(-rad_to_deg(player.rotation.y), 360.0)
 	_compass.queue_redraw()
@@ -266,6 +276,12 @@ func _process(delta: float) -> void:
 	var eff: Array[String] = []
 	for e: String in player.stats.effects:
 		eff.append("%s %ds" % [ItemDB.EFFECTS[e].name, ceili(player.stats.effects[e])])
+	if s.warmth <= 0.0:
+		eff.append("Freezing! Find a fire")
+	elif s.is_cold():
+		eff.append("Cold")
+	elif s.heat > 1.0 and s.warmth < s.max_warmth:
+		eff.append("Warming up")
 	_effects.text = "   ".join(eff)
 	var frac := _target_health(look)
 	_target_bar.visible = frac >= 0.0 and frac < 0.999

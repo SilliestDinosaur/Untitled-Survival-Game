@@ -4,8 +4,13 @@ extends RefCounted
 ## No nodes and no hidden randomness, so it gives identical results on every machine
 ## and is safe to call from worker threads.
 
-enum Biome { MEADOW, FOREST, AUTUMN, DRYLANDS, BEACH, HIGHLANDS, SNOW, TAIGA, MARSH, DESERT }
-const BIOME_NAMES := ["Meadow", "Forest", "Autumn Grove", "Savanna", "Beach", "Highlands", "Snowfields", "Taiga", "Marsh", "Desert"]
+enum Biome { MEADOW, FOREST, AUTUMN, DRYLANDS, BEACH, HIGHLANDS, SNOW, TAIGA, MARSH, DESERT, JUNGLE, TUNDRA, BADLANDS, FUNGAL }
+const BIOME_NAMES := ["Meadow", "Forest", "Autumn Grove", "Savanna", "Beach", "Highlands", "Snowfields", "Taiga", "Marsh", "Desert",
+	"Jungle", "Tundra", "Badlands", "Fungal Grove"]
+## Some biomes claim less of their climate space (the fungal grove is a rare find).
+const BIOME_RARITY := {Biome.FUNGAL: 0.12, Biome.JUNGLE: 0.7}
+## Biomes where nights bite harder (and snowfields/highlands by altitude).
+const COLD_BIOMES := [Biome.TUNDRA, Biome.TAIGA, Biome.SNOW, Biome.HIGHLANDS]
 
 ## Climate biomes: their "centers" in (temperature, moisture) space. Ground colors and plant
 ## choice blend between neighbours smoothly.
@@ -17,6 +22,10 @@ const CLIMATE_BIOMES := {
 	Biome.TAIGA: Vector2(0.08, 0.62),
 	Biome.MARSH: Vector2(0.62, 0.96),
 	Biome.DESERT: Vector2(0.98, 0.02),
+	Biome.JUNGLE: Vector2(0.9, 0.8),
+	Biome.TUNDRA: Vector2(0.0, 0.18),
+	Biome.BADLANDS: Vector2(0.66, 0.06),
+	Biome.FUNGAL: Vector2(0.3, 0.94),
 }
 
 var palette: WorldPalette
@@ -132,8 +141,25 @@ func get_height(x: float, z: float) -> float:
 	# Marshes sit low and flat.
 	var wet := smoothstep(0.82, 0.95, get_moisture(x, z))
 	land = lerpf(land, 2.4 + bumps * 0.5, wet * (1.0 - range_t) * 0.85)
+	# Badlands: stepped mesas with flat tops and steep striped cliffs.
+	var bad := badlands_amount(x, z) * (1.0 - range_t * 0.6) * smoothstep(0.35, 0.55, mask)
+	if bad > 0.01 and land > 3.0:
+		# Two tiers of flat-topped mesas with steep sides, then gentle ledges on the slopes.
+		var n := _forest.get_noise_2d(x * 0.22, z * 0.22) + _detail.get_noise_2d(x * 0.5, z * 0.5) * 0.08
+		var raised := land + 13.0 * smoothstep(0.02, 0.1, n) + 9.0 * smoothstep(0.28, 0.34, n)
+		var step := 3.0
+		var f := raised / step
+		var stepped := (floorf(f) + smoothstep(0.6, 0.95, f - floorf(f))) * step
+		land = lerpf(land, lerpf(raised, stepped, 0.6), smoothstep(0.0, 0.5, bad))
 	land = _carve_water(x, z, land, range_t, mask, bumps)
 	return lerpf(-25.0, land, mask)
+
+
+## How strongly the badlands climate holds here (ignores altitude so terraces stay put).
+func badlands_amount(x: float, z: float) -> float:
+	var t := clampf(_temperature.get_noise_2d(x, z) * 0.8 + 0.5, 0.0, 1.0)
+	var c := Vector2(t, get_moisture(x, z))
+	return 1.0 - smoothstep(0.08, 0.2, c.distance_to(CLIMATE_BIOMES[Biome.BADLANDS]))
 
 
 ## Rivers and lakes: channels and basins cut below sea level so the sea plane fills them.
@@ -188,7 +214,7 @@ func get_biome_weights(climate: Vector2) -> Dictionary:
 	var total := 0.0
 	for b: int in CLIMATE_BIOMES:
 		var d: float = climate.distance_squared_to(CLIMATE_BIOMES[b])
-		var w := 1.0 / pow(d + 0.002, 2.0)
+		var w := 1.0 / pow(d + 0.002, 2.0) * float(BIOME_RARITY.get(b, 1.0))
 		weights[b] = w
 		total += w
 	for b: int in weights:
@@ -225,7 +251,9 @@ func get_surface(x: float, z: float) -> String:
 	var w := get_biome_weights(get_climate(x, z, h))
 	if w[Biome.DESERT] > 0.5:
 		return "sand"
-	if w[Biome.TAIGA] > 0.6 and h > 30.0:
+	if w[Biome.BADLANDS] > 0.5:
+		return "rock"
+	if w[Biome.TUNDRA] > 0.5 or (w[Biome.TAIGA] > 0.6 and h > 30.0):
 		return "snow"
 	return "grass"
 
@@ -253,6 +281,18 @@ func get_terrain_color(height: float, normal_y: float, x: float, z: float) -> Co
 	var rock_t := maxf(steep_t, high_t * smoothstep(0.95, 0.8, normal_y))
 	var col := ground.lerp(pal.sand, sand_t)
 	col = col.lerp(pal.rock.lerp(pal.rock_light, smoothstep(0.6, 0.9, normal_y)), rock_t)
+	# Badlands: rust, ochre and cream bands by height, strongest on the cliffs.
+	var bad_w: float = w[Biome.BADLANDS]
+	if bad_w > 0.05:
+		var band := sin(height * 1.25 + sin(x * 0.02) * 1.5) * 0.5 + 0.5
+		var band2 := sin(height * 0.45 + 1.7) * 0.5 + 0.5
+		var stripe := pal.badlands_red.lerp(pal.badlands_ochre, band).lerp(pal.badlands_cream, smoothstep(0.75, 0.95, band2))
+		col = col.lerp(stripe, bad_w * lerpf(0.55, 1.0, steep_t))
+	# Tundra: patchy old snow on the flats.
+	var tun_w: float = w[Biome.TUNDRA]
+	if tun_w > 0.05:
+		var patch := smoothstep(0.1, 0.35, _forest.get_noise_2d(x * 2.0, z * 2.0))
+		col = col.lerp(pal.snow, tun_w * patch * smoothstep(0.75, 0.9, normal_y) * 0.85)
 	if height > 70.0 and normal_y > 0.6:
 		col = col.lerp(pal.snow, smoothstep(70.0, 82.0, height) * smoothstep(0.6, 0.75, normal_y))
 	if height < -0.5:

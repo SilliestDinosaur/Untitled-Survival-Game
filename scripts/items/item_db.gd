@@ -67,7 +67,7 @@ const BASE_ITEMS := {
 	"workbench": {"name": "Workbench", "kind": "placeable", "stack": 5, "icon": "workbench", "station": "workbench", "desc": "Place it to craft planks, metal tools and better gear."},
 	"forge": {"name": "Forge", "kind": "placeable", "stack": 5, "icon": "forge", "station": "forge", "desc": "Place it to smelt ore into ingots and forge the best tools."},
 	"rock": {"name": "Rock", "kind": "tool", "stack": 1, "icon": "tool", "tier": 0, "desc": "A fist-sized flint rock. Better than bare hands.",
-		"tool": {"type": "rock", "tier": 0, "tree": 0.6, "rock": 0.6, "bush": 1.0, "carcass": 0.6, "damage": 10.0, "cooldown": 0.7, "durability": 150}},
+		"tool": {"type": "rock", "tier": 0, "tree": 0.6, "rock": 0.6, "bush": 1.0, "carcass": 0.6, "damage": 10.0, "cooldown": 0.7, "durability": 110}},
 }
 
 ## Bare hands: slow on wood, useless on stone, fine for bushes.
@@ -91,6 +91,7 @@ const YIELDS := {
 	"herb": [],
 	"pebbles": [["stone", 1, 2]],
 	"cache": [],
+	"giant_mushroom": [["fiber", 1, 2], ["wood", 1, 2]],
 }
 ## Extra reward for finishing a node off.
 const BONUS := {
@@ -102,6 +103,7 @@ const BONUS := {
 	"boulder": [["stone", 10, 14], ["ore_t2", 0, 2]],
 	"cactus": [["fiber", 2, 3]],
 	"log": [["wood", 6, 9]],
+	"giant_mushroom": [["wood", 4, 7], ["fiber", 3, 5]],
 }
 ## Harvesting by hand (Interact): [item, min, max, chance]. Doesn't destroy the node.
 const HARVEST := {
@@ -123,11 +125,15 @@ const HARVEST := {
 	"tumbleweed": [["sticks", 1, 2, 1.0], ["fiber", 1, 2, 1.0]],
 	"sapling": [["sticks", 1, 3, 1.0], ["fiber", 0, 1, 0.5]],
 	"agave": [["fiber", 2, 3, 1.0]],
+	"giant_mushroom": [["mushroom_%d", 1, 3, 1.0], ["fiber", 0, 1, 0.5]],
+	"glowcap": [["mushroom_%d", 1, 2, 1.0], ["fiber", 0, 1, 0.4]],
 }
 ## Hand-harvesting these picks the whole thing up (the node is removed).
 const PICKUP_KEYS := ["mushroom", "herb", "pebbles", "scree", "branch", "tumbleweed", "sapling"]
-## HP damage per hit at multiplier 1.0 (trees have 100 HP -> 5 hits with a stone hatchet).
-const HIT_DAMAGE := 20.0
+## HP damage per hit at multiplier 1.0 (trees have 100 HP -> 6 hits with a stone hatchet).
+const HIT_DAMAGE := 17.0
+## Share of the per-hit yield you actually get (difficulty: resources take some effort).
+const GATHER_RATE := 0.8
 
 static var _items := {}
 static var _tiers: Array[Dictionary] = []
@@ -209,7 +215,7 @@ static func _make_tool(type: String, t: int) -> Dictionary:
 	var stats := {
 		"type": type, "tier": t,
 		"tree": base.tree * power, "rock": base.rock * power, "bush": base.bush * maxf(power, 1.0), "carcass": base.carcass * power,
-		"damage": base.damage * (0.75 + 0.35 * t), "cooldown": base.cooldown, "durability": int(110 * (1.0 + t * 0.6) * base.dur),
+		"damage": base.damage * (0.75 + 0.35 * t), "cooldown": base.cooldown, "durability": int(80 * (1.0 + t * 0.55) * base.dur),
 	}
 	match String(mat.trait):
 		"swift": stats.cooldown *= 0.8
@@ -283,8 +289,12 @@ static func yield_key(kind: String) -> String:
 ## Which HARVEST table a node uses when gathered by hand (or "" if it can't be).
 static func harvest_key(kind: String) -> String:
 	match kind:
-		"berry", "bush", "reeds", "dead_bush", "cactus", "mushroom", "herb", "pebbles", "scree", "branch", "tumbleweed", "sapling", "agave":
+		"berry", "bush", "reeds", "dead_bush", "cactus", "mushroom", "herb", "pebbles", "scree", "branch", "tumbleweed", "sapling", "agave", "giant_mushroom", "glowcap":
 			return kind
+		"jungle_plant":
+			return "bush"
+		"jungle_tree":
+			return "tree"
 		"flower_bush":
 			return "bush"
 		"small_cactus":

@@ -14,11 +14,16 @@ const BIOME_TREES := {
 	Biome.TAIGA: [["fir", 0.8], ["pine", 0.2]],
 	Biome.MARSH: [["willow", 0.65], ["birch", 0.2], ["dead_tree", 0.15]],
 	Biome.DESERT: [["cactus", 0.8], ["dead_tree", 0.2]],
+	Biome.JUNGLE: [["jungle_tree", 0.7], ["palm", 0.2], ["willow", 0.1]],
+	Biome.TUNDRA: [["fir", 0.4], ["dead_tree", 0.6]],
+	Biome.BADLANDS: [["dead_tree", 0.5], ["cactus", 0.3], ["acacia", 0.2]],
+	Biome.FUNGAL: [["giant_mushroom", 0.85], ["dead_tree", 0.15]],
 }
 ## Base tree density per biome (0..1 chance per placement attempt).
 const BIOME_TREE_DENSITY := {
 	Biome.MEADOW: 0.07, Biome.FOREST: 0.6, Biome.AUTUMN: 0.38, Biome.DRYLANDS: 0.06,
 	Biome.TAIGA: 0.55, Biome.MARSH: 0.22, Biome.DESERT: 0.06,
+	Biome.JUNGLE: 0.75, Biome.TUNDRA: 0.04, Biome.BADLANDS: 0.04, Biome.FUNGAL: 0.4,
 }
 const BIOME_BUSHES := {
 	Biome.MEADOW: [["bush", 0.4], ["berry", 0.35], ["flower_bush", 0.25]],
@@ -28,10 +33,15 @@ const BIOME_BUSHES := {
 	Biome.TAIGA: [["berry", 0.5], ["bush", 0.5]],
 	Biome.MARSH: [["reeds", 0.75], ["bush", 0.25]],
 	Biome.DESERT: [["dead_bush", 0.4], ["agave", 0.35], ["small_cactus", 0.25]],
+	Biome.JUNGLE: [["jungle_plant", 0.55], ["flower_bush", 0.25], ["berry", 0.2]],
+	Biome.TUNDRA: [["dead_bush", 0.5], ["berry", 0.3], ["bush", 0.2]],
+	Biome.BADLANDS: [["dead_bush", 0.5], ["agave", 0.3], ["small_cactus", 0.2]],
+	Biome.FUNGAL: [["glowcap", 0.7], ["jungle_plant", 0.15], ["bush", 0.15]],
 }
 const BIOME_BUSH_DENSITY := {
 	Biome.MEADOW: 0.25, Biome.FOREST: 0.35, Biome.AUTUMN: 0.3, Biome.DRYLANDS: 0.4,
 	Biome.TAIGA: 0.3, Biome.MARSH: 0.75, Biome.DESERT: 0.3,
+	Biome.JUNGLE: 0.75, Biome.TUNDRA: 0.2, Biome.BADLANDS: 0.25, Biome.FUNGAL: 0.55,
 }
 ## Small things on the ground that make places feel lived-in.
 const BIOME_CLUTTER := {
@@ -42,27 +52,36 @@ const BIOME_CLUTTER := {
 	Biome.TAIGA: [["log", 0.3], ["stump", 0.2], ["mushroom", 0.15], ["pebbles", 0.1], ["herb", 0.1], ["branch", 0.2], ["sapling", 0.12], ["scree", 0.08], ["cache", 0.015]],
 	Biome.MARSH: [["log", 0.4], ["mushroom", 0.45], ["stump", 0.15], ["herb", 0.15], ["cache", 0.015]],
 	Biome.DESERT: [["pebbles", 0.3], ["boulder", 0.3], ["scree", 0.15], ["tumbleweed", 0.2], ["small_cactus", 0.2], ["cache", 0.03]],
+	Biome.JUNGLE: [["log", 0.35], ["mushroom", 0.2], ["herb", 0.2], ["stump", 0.1], ["branch", 0.2], ["sapling", 0.15], ["cache", 0.015]],
+	Biome.TUNDRA: [["ice_rock", 0.35], ["pebbles", 0.25], ["scree", 0.2], ["boulder", 0.15], ["branch", 0.05], ["cache", 0.02]],
+	Biome.BADLANDS: [["boulder", 0.3], ["scree", 0.3], ["pebbles", 0.2], ["tumbleweed", 0.15], ["cache", 0.025]],
+	Biome.FUNGAL: [["mushroom", 0.55], ["log", 0.2], ["herb", 0.1], ["stump", 0.1], ["cache", 0.02]],
 }
 const BIOME_CLUTTER_DENSITY := {
 	Biome.MEADOW: 0.2, Biome.FOREST: 0.55, Biome.AUTUMN: 0.45, Biome.DRYLANDS: 0.3,
 	Biome.TAIGA: 0.5, Biome.MARSH: 0.45, Biome.DESERT: 0.3,
+	Biome.JUNGLE: 0.55, Biome.TUNDRA: 0.35, Biome.BADLANDS: 0.3, Biome.FUNGAL: 0.6,
 }
 ## How much grass / ferns grow per biome (0..1).
 const BIOME_GRASS := {
 	Biome.MEADOW: 1.0, Biome.FOREST: 0.7, Biome.AUTUMN: 0.85, Biome.DRYLANDS: 0.8,
 	Biome.TAIGA: 0.45, Biome.MARSH: 0.55, Biome.DESERT: 0.0,
+	Biome.JUNGLE: 0.9, Biome.TUNDRA: 0.25, Biome.BADLANDS: 0.1, Biome.FUNGAL: 0.3,
 }
 const BIOME_TALL_GRASS := {
 	Biome.MEADOW: 0.35, Biome.FOREST: 0.05, Biome.AUTUMN: 0.25, Biome.DRYLANDS: 1.0,
 	Biome.TAIGA: 0.1, Biome.MARSH: 0.3, Biome.DESERT: 0.08,
+	Biome.JUNGLE: 0.4, Biome.TUNDRA: 0.35, Biome.BADLANDS: 0.2, Biome.FUNGAL: 0.0,
 }
 const BIOME_CLOVER := {
 	Biome.MEADOW: 0.8, Biome.FOREST: 0.6, Biome.AUTUMN: 0.5, Biome.DRYLANDS: 0.0,
 	Biome.TAIGA: 0.3, Biome.MARSH: 0.4, Biome.DESERT: 0.0,
+	Biome.JUNGLE: 0.3, Biome.TUNDRA: 0.0, Biome.BADLANDS: 0.0, Biome.FUNGAL: 0.5,
 }
 const BIOME_FERNS := {
 	Biome.MEADOW: 0.0, Biome.FOREST: 0.8, Biome.AUTUMN: 0.3, Biome.DRYLANDS: 0.0,
 	Biome.TAIGA: 0.6, Biome.MARSH: 0.7, Biome.DESERT: 0.0,
+	Biome.JUNGLE: 1.0, Biome.TUNDRA: 0.0, Biome.BADLANDS: 0.0, Biome.FUNGAL: 0.4,
 }
 
 ## Everything that can be placed. Fields:
@@ -109,6 +128,12 @@ const KINDS := {
 	"tumbleweed": {"category": "clutter", "label": "Tumbleweed", "variants": 2, "solid": false, "hp": 10, "target": "bush", "yield": "dead_bush", "shape": "small"},
 	"branch": {"category": "clutter", "label": "Fallen branch", "variants": 3, "solid": false, "hp": 10, "target": "bush", "yield": "dead_bush", "shape": "small"},
 	"scree": {"category": "clutter", "label": "Scree", "variants": 2, "solid": false, "hp": 20, "target": "rock", "yield": "pebbles", "shape": "small"},
+	# Added with the jungle, tundra, badlands and fungal grove (kept last so older worlds don't change).
+	"jungle_tree": {"category": "tree", "label": "Tree", "variants": 3, "solid": true, "hp": 140, "target": "tree", "yield": "tree", "shape": "tree"},
+	"giant_mushroom": {"category": "tree", "label": "Giant mushroom", "variants": 3, "solid": true, "hp": 70, "target": "tree", "yield": "giant_mushroom", "shape": "tree"},
+	"jungle_plant": {"category": "bush", "label": "Broadleaf", "variants": 2, "solid": false, "hp": 30, "target": "bush", "yield": "bush", "shape": "bush"},
+	"glowcap": {"category": "bush", "label": "Glowcaps", "variants": 3, "solid": false, "hp": 20, "target": "bush", "yield": "mushroom", "shape": "bush"},
+	"ice_rock": {"category": "rock", "label": "Ice-crusted stone", "variants": 2, "solid": true, "hp": 170, "target": "rock", "yield": "rock", "shape": "rock"},
 }
 
 ## Fade-out distance per category (0 = always visible; trees are handled by chunk detail levels).
@@ -130,7 +155,7 @@ var _pal: WorldPalette
 var _bare := false   ## building the "already harvested" look
 
 ## Kinds that look different after being hand-harvested (the fruiting tree is added per world).
-const BARE_KINDS := ["berry", "reeds", "agave"]
+const BARE_KINDS := ["berry", "reeds", "agave", "glowcap", "giant_mushroom"]
 
 
 func _init(seed_value: int, pal: WorldPalette) -> void:
@@ -267,6 +292,11 @@ func _build_mesh(kind: String, index: int, variant_seed: int) -> ArrayMesh:
 		"tumbleweed": _tumbleweed(kit, rng)
 		"branch": _branch(kit, rng)
 		"scree": _scree(kit, rng)
+		"jungle_tree": _jungle_tree(kit, rng)
+		"giant_mushroom": _giant_mushroom(kit, rng, index)
+		"jungle_plant": _jungle_plant(kit, rng)
+		"glowcap": _glowcap(kit, rng, index)
+		"ice_rock": _ice_rock(kit, rng)
 	if kind == ItemDB.fruit_tree and not _bare:
 		_add_fruit(kit, rng)
 	var cat: String = KINDS[kind].category
@@ -914,3 +944,147 @@ func _fern(kit: MeshKit, rng: RandomNumberGenerator) -> void:
 			kit.add_tri(prev, p, prev + side * w + dir * 0.03, c)
 			kit.add_tri(prev, prev - side * w + dir * 0.03, p, c)
 			prev = p
+
+
+# --- Jungle, tundra, badlands, fungal grove -------------------------------------------
+
+## Tall rainforest tree: buttress roots, a straight pale trunk, a broad layered crown and vines.
+func _jungle_tree(kit: MeshKit, rng: RandomNumberGenerator) -> void:
+	var h := rng.randf_range(11.0, 16.0)
+	var trunk_r := rng.randf_range(0.32, 0.42)
+	var bark := _vary(_pal.bark, rng).lightened(0.18)
+	var lean := Vector3(rng.randf_range(-0.4, 0.4), 0, rng.randf_range(-0.4, 0.4))
+	var path := []
+	var radii := []
+	for i in 8:
+		var t := i / 7.0
+		path.append(Vector3(0, t * h, 0) + lean * t * t)
+		radii.append(trunk_r * lerpf(1.0, 0.55, t))
+	kit.loft(path, radii, 9, bark, func(t: float, a: float) -> Color: return bark.darkened(0.12) if fposmod(a * 1.3 + t * 3.0, 1.0) < 0.2 else bark, Callable(), true, true, 0.03)
+	# Buttress roots: thin fins flaring out at the base.
+	for i in rng.randi_range(4, 6):
+		var a := TAU * i / 5.0 + rng.randf_range(-0.3, 0.3)
+		var dir := Vector3(cos(a), 0, sin(a))
+		var reach := rng.randf_range(0.55, 0.9)
+		var rise := rng.randf_range(0.9, 1.4)
+		var outline := PackedVector2Array([Vector2(0, 0), Vector2(reach, 0), Vector2(reach * 0.45, rise * 0.25), Vector2(0.1, rise)])
+		kit.extrude(outline, Transform3D(Basis(Vector3.UP, -a), dir * trunk_r * 0.5 + Vector3(0, -0.15, 0)), 0.16, 0.06, bark, bark.lightened(0.08), 0.5)
+	# Crown: two wide flat layers of leaf masses.
+	var top: Vector3 = path[-1]
+	var leaves := _vary(_pal.jungle_leaves, rng)
+	var leaves2 := _vary(_pal.jungle_leaves_2, rng)
+	var blobs := []
+	for layer in 2:
+		var y := top.y - layer * 2.2
+		var spread := rng.randf_range(3.0, 4.2) - layer * 0.6
+		var center := top + Vector3(0, -layer * 2.2, 0)
+		var col := leaves if layer == 0 else leaves2
+		for i in rng.randi_range(5, 7):
+			var a := rng.randf() * TAU
+			var d := rng.randf_range(0.3, 1.0) * spread
+			var r := rng.randf_range(1.3, 1.9)
+			var pos := center + Vector3(cos(a) * d, rng.randf_range(-0.3, 0.4), sin(a) * d)
+			blobs.append([pos, r])
+			kit.add_primitive(MeshKit.sphere(r, 9, 5), Transform3D(Basis().scaled(Vector3(1.2, 0.5, 1.2)), pos), col.lightened(rng.randf_range(-0.05, 0.06)), r * 0.2, 0.07, center + Vector3(0, -1.5, 0))
+		# Branches out to the layer.
+		for i in 3:
+			var a := rng.randf() * TAU
+			var tip := center + Vector3(cos(a) * spread * 0.7, -0.3, sin(a) * spread * 0.7)
+			kit.loft([center + Vector3(0, -1.2, 0), tip], [trunk_r * 0.35, trunk_r * 0.15], 6, bark)
+		if y < 0.0:
+			break
+	_leaf_clumps(kit, rng, blobs, top, leaves2, rng.randi_range(6, 9), 0.5)
+	# Hanging vines.
+	var vine := _vary(_pal.vine, rng)
+	for i in rng.randi_range(5, 9):
+		var bl: Array = blobs[rng.randi() % blobs.size()]
+		var start: Vector3 = bl[0] + Vector3(rng.randf_range(-0.6, 0.6), -float(bl[1]) * 0.35, rng.randf_range(-0.6, 0.6))
+		var length := rng.randf_range(2.0, 5.5)
+		var sway := Vector3(rng.randf_range(-0.3, 0.3), 0, rng.randf_range(-0.3, 0.3))
+		kit.loft([start, start + Vector3(0, -length * 0.5, 0) + sway, start + Vector3(0, -length, 0) + sway * 0.6], [0.035, 0.03, 0.02], 5, vine)
+
+
+## A mushroom the size of a tree: a pale swollen stem and a broad domed cap with spots and gills.
+func _giant_mushroom(kit: MeshKit, rng: RandomNumberGenerator, index: int) -> void:
+	var h := rng.randf_range(4.5, 8.0)
+	var stem_r := rng.randf_range(0.35, 0.55)
+	var stem := _vary(_pal.fungal_stem, rng)
+	var bend := Vector3(rng.randf_range(-0.8, 0.8), 0, rng.randf_range(-0.8, 0.8))
+	var path := []
+	var radii := []
+	for i in 9:
+		var t := i / 8.0
+		path.append(Vector3(0, t * h, 0) + bend * sin(t * PI * 0.5))
+		radii.append(stem_r * (1.35 - t * 0.5 + 0.25 * exp(-pow((t - 0.05) / 0.08, 2.0))))
+	kit.loft(path, radii, 12, stem, func(t: float, _a: float) -> Color: return stem.darkened(0.1 * (1.0 - t)), Callable(), true, true, 0.04)
+	var top: Vector3 = path[-1]
+	var cap_col: Color = _vary(_pal.fungal_caps[index % _pal.fungal_caps.size()], rng)
+	var cap_r := rng.randf_range(2.4, 3.6)
+	if _bare:
+		cap_r *= 0.7   # harvested: the frilly rim is gone
+	# Gill underside
+	kit.add_primitive(MeshKit.cylinder(cap_r * 0.95, stem_r * 0.8, cap_r * 0.25, 22), Transform3D(Basis(), top + Vector3(0, -cap_r * 0.08, 0)), cap_col.lerp(stem, 0.6).darkened(0.1), 0.0, 0.05)
+	# Cap dome
+	var cap_path := []
+	var cap_radii := []
+	for k in 9:
+		var t := k / 8.0
+		cap_path.append(top + Vector3(0, sin(t * PI * 0.5) * cap_r * 0.55, 0))
+		cap_radii.append(cos(t * PI * 0.5) * cap_r + 0.02)
+	var seed_f := rng.randf() * 10.0
+	var spot := _pal.glow
+	var spots := func(t: float, a: float) -> Color:
+		return spot if t > 0.15 and t < 0.9 and fposmod(a * 2.3 + t * 4.0 + seed_f, 1.0) < 0.1 else cap_col
+	kit.loft(cap_path, cap_radii, 22, cap_col, spots, Callable(), true, true, 0.06)
+
+
+## Rainforest undergrowth: big drooping elephant-ear leaves.
+func _jungle_plant(kit: MeshKit, rng: RandomNumberGenerator) -> void:
+	var leaf := _vary(_pal.jungle_leaves_2, rng)
+	for i in rng.randi_range(5, 8):
+		var a := rng.randf() * TAU
+		var length := rng.randf_range(0.8, 1.4)
+		var stem_top := Vector3(cos(a) * 0.35, rng.randf_range(0.5, 0.95), sin(a) * 0.35)
+		kit.loft([Vector3(0, 0, 0), stem_top * 0.6 + Vector3(0, 0.15, 0), stem_top], [0.03, 0.025, 0.02], 5, leaf.darkened(0.15))
+		var dir := Vector3(cos(a), rng.randf_range(-0.6, -0.1), sin(a)).normalized()
+		var w := length * 0.42
+		var outline := PackedVector2Array([Vector2(0, 0), Vector2(w * 0.8, length * 0.25), Vector2(w, length * 0.55), Vector2(w * 0.4, length * 0.9),
+			Vector2(0, length), Vector2(-w * 0.4, length * 0.9), Vector2(-w, length * 0.55), Vector2(-w * 0.8, length * 0.25)])
+		var b := Basis(Quaternion(Vector3.UP, dir)) * Basis(Vector3.UP, rng.randf_range(-0.3, 0.3))
+		kit.extrude(outline, Transform3D(b * Basis(Vector3.RIGHT, PI * 0.5), stem_top), 0.02, 0.01, leaf.lightened(rng.randf_range(-0.04, 0.08)), leaf.lightened(0.18), 0.4)
+
+
+## A ring of tall thin mushrooms with glowing caps (they light up the fungal grove at night).
+func _glowcap(kit: MeshKit, rng: RandomNumberGenerator, index: int) -> void:
+	var stem := _pal.fungal_stem
+	var cap: Color = _pal.glow.lerp(_pal.fungal_caps[index % _pal.fungal_caps.size()], 0.25)
+	for i in rng.randi_range(5, 9):
+		var a := rng.randf() * TAU
+		var d := rng.randf_range(0.05, 0.5)
+		var base := Vector3(cos(a) * d, 0, sin(a) * d)
+		var h := rng.randf_range(0.35, 0.9)
+		var lean := Vector3(rng.randf_range(-0.1, 0.1), 0, rng.randf_range(-0.1, 0.1))
+		var top := base + Vector3(0, h, 0) + lean
+		kit.loft([base, base + Vector3(0, h * 0.5, 0) + lean * 0.4, top], [0.035, 0.028, 0.025], 6, stem)
+		if _bare:
+			continue
+		var r := rng.randf_range(0.08, 0.16)
+		kit.add_primitive(MeshKit.sphere(r, 10, 6), Transform3D(Basis().scaled(Vector3(1, 0.55, 1)), top), cap, 0.0, 0.03)
+		kit.add_primitive(MeshKit.sphere(r * 0.45, 7, 4), Transform3D(Basis(), top + Vector3(0, r * 0.25, 0)), cap.lightened(0.4), 0.0, 0.0)
+
+
+## Frost-shattered boulder with a crust of ice and snow.
+func _ice_rock(kit: MeshKit, rng: RandomNumberGenerator) -> void:
+	kit.flat_shading = true
+	var col := _vary(_pal.rock, rng, 0.05).lerp(_pal.ice, 0.25)
+	var squash := Vector3(rng.randf_range(1.0, 1.4), rng.randf_range(0.7, 0.95), rng.randf_range(0.9, 1.2))
+	var ice := _pal.ice
+	var frost := func(p: Vector3) -> Color:
+		return ice if p.y > 0.55 else (ice.lerp(col, 0.5) if p.y > 0.35 else col)
+	kit.add_primitive(MeshKit.sphere(1.0, 9, 6), Transform3D(Basis().scaled(squash), Vector3(0, 0.25, 0)), col, 0.3, 0.06, null, frost)
+	for i in rng.randi_range(2, 4):   # icicle-like shards on top
+		var dir := Vector3(rng.randf_range(-0.6, 0.6), 1.0, rng.randf_range(-0.6, 0.6)).normalized()
+		var base := Vector3(dir.x * squash.x * 0.6, 0.25 + squash.y * 0.7, dir.z * squash.z * 0.6)
+		var length := rng.randf_range(0.3, 0.6)
+		kit.add_primitive(MeshKit.cylinder(0.0, rng.randf_range(0.08, 0.14), length, 5), Transform3D(Basis(Quaternion(Vector3.UP, dir)), base + dir * length * 0.4), ice.lightened(0.1), 0.0, 0.03)
+	kit.flat_shading = false

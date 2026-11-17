@@ -52,6 +52,9 @@ var _bob_amount := 0.0
 var _last_step := 0
 var _land_dip := 0.0
 var _fov_kick := 0.0
+var _cold := 0.0
+var _heat := 0.0
+var _exposure_timer := 0.0
 ## While holding a placeable: {ok, reason, pos, yaw, name}
 var placement := {}
 var _ghost: MeshInstance3D
@@ -74,8 +77,7 @@ func _ready() -> void:
 		Audio.play("clink", -2.0, 0.6))
 	reset_inventory()
 	stats.damaged.connect(func(amount: float) -> void:
-		_shake = minf(_shake + amount / 20.0, 1.0)
-		Music.combat_ping(0.5 + amount / 20.0))
+		_shake = minf(_shake + amount / 20.0, 1.0))
 	set_active(false)
 
 
@@ -88,6 +90,7 @@ func to_save_data() -> Dictionary:
 		"health": stats.health,
 		"hunger": stats.hunger,
 		"stamina": stats.stamina,
+		"warmth": stats.warmth,
 		"effects": stats.effects.duplicate(),
 		"inventory": inventory.to_data(),
 	}
@@ -105,6 +108,7 @@ func apply_save_data(d: Dictionary) -> void:
 	stats.health = float(d.get("health", stats.max_health))
 	stats.hunger = float(d.get("hunger", stats.max_hunger))
 	stats.stamina = float(d.get("stamina", stats.max_stamina))
+	stats.warmth = float(d.get("warmth", stats.max_warmth))
 	stats.effects = d.get("effects", {})
 	if d.has("inventory"):
 		inventory.from_data(d.inventory)
@@ -214,7 +218,11 @@ func _physics_process(delta: float) -> void:
 		respawn()
 
 	is_sprinting = sprinting and input != Vector2.ZERO
-	stats.tick(delta, is_sprinting)
+	_exposure_timer -= delta
+	if _exposure_timer <= 0.0:
+		_exposure_timer = 0.5
+		_update_exposure()
+	stats.tick(delta, is_sprinting, _cold, _heat)
 	_update_camera(delta, sprinting, input)
 	_update_looking_at()
 	_update_placement()
@@ -390,7 +398,11 @@ func _on_strike() -> void:
 		hit_landed.emit()
 		var res := GameActions.hit_animal(player_id, animal, global_position)
 		if res.get("ok", false):
-			Music.combat_ping(0.35)
+			# Fighting something that fights back is combat; chasing down prey is a hunt.
+			if animal.state in [animal.State.ATTACK, animal.State.WARN] or animal.species.role == "defensive":
+				Music.combat_ping(0.8)
+			else:
+				Music.hunt_ping(0.8)
 		Audio.play_3d("thud", point)
 		Effects.chips(get_parent(), point, Color(0.65, 0.12, 0.12), 6, 0.05)
 		return
@@ -573,3 +585,36 @@ func _ghost_material(col: Color) -> StandardMaterial3D:
 	m.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
 	m.no_depth_test = false
 	return m
+
+
+# --- Cold & warmth ----------------------------------------------------------------------
+
+const FIRE_WARMTH_RANGE := 7.0
+
+## How cold it is here right now, and how much nearby fire (or a held torch) warms you.
+func _update_exposure() -> void:
+	var p := global_position
+	var gen: WorldGen = Game.world_gen
+	var night := 1.0 - Game.daylight()
+	var h := gen.get_height(p.x, p.z)
+	var w := gen.get_biome_weights(gen.get_climate(p.x, p.z, h))
+	var cold_biome := 0.0
+	for b: int in WorldGen.COLD_BIOMES:
+		cold_biome += w.get(b, 0.0)
+	cold_biome = maxf(cold_biome, smoothstep(45.0, 75.0, h))   # thin, cold air up high
+	_cold = night * 0.8 + cold_biome * (0.7 + night * 1.0)
+	if swimming:
+		_cold += 1.2
+	_heat = 0.0
+	if inventory.selected_item() == "torch":
+		_heat += 0.45
+	for id: String in Game.structures:
+		var st: Dictionary = Game.structures[id]
+		if not st.kind in ["campfire", "forge"]:
+			continue
+		var sp: Array = st.pos
+		var d := p.distance_to(Vector3(sp[0], sp[1], sp[2]))
+		if d < FIRE_WARMTH_RANGE:
+			_heat += (8.0 if st.kind == "campfire" else 5.0) * (1.0 - d / FIRE_WARMTH_RANGE * 0.6)
+	if _heat > 1.0:
+		_cold = 0.0   # standing by a fire: no chill at all

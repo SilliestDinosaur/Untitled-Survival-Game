@@ -104,6 +104,9 @@ func _enter(s: State) -> void:
 			_timer = _rng.randf_range(1.2, 2.5)
 		State.FLEE:
 			_timer = _rng.randf_range(5.0, 8.0)
+			# Prey bolting from a nearby player sets the hunting mood (a little).
+			if player and position.distance_to(player.global_position) < 25.0:
+				Music.hunt_ping(0.15)
 		State.WARN:
 			_timer = 4.0
 		State.ATTACK:
@@ -116,15 +119,27 @@ func _pick_wander_target() -> void:
 	if is_instance_valid(leader) and not leader.dead:
 		_target = leader.position + Vector3(_rng.randf_range(-5, 5), 0, _rng.randf_range(-5, 5))
 		return
+	# Habitat: marsh animals drift toward the water's edge, cliff dwellers toward slopes.
+	var best := position
+	var best_score := -1e9
 	for i in 8:
 		var a := _rng.randf() * TAU
 		var d := _rng.randf_range(8.0, 22.0)
 		var t := position + Vector3(cos(a) * d, 0, sin(a) * d)
 		var h: float = Game.world_gen.get_height(t.x, t.z)
-		if h > 2.0 and h < 55.0:
-			_target = t
-			return
-	_target = position
+		var max_h := 80.0 if species.habitat == "steep" else 55.0
+		if h <= 2.0 or h >= max_h:
+			continue
+		var score := _rng.randf()
+		match species.habitat:
+			"water": score += 2.0 - minf(h, 8.0) * 0.25
+			"steep": score += (1.0 - Game.world_gen.get_normal(t.x, t.z).y) * 6.0 + h * 0.01
+		if score > best_score:
+			best_score = score
+			best = t
+		if species.habitat == "":
+			break
+	_target = best
 
 
 ## Something scared a herd member: everyone nearby runs.
@@ -370,6 +385,7 @@ func _bite() -> void:
 	if not player or not player.has_method("respawn"):
 		return
 	player.stats.take_damage(species.damage)
+	Music.combat_ping(1.0)
 	var push := player.global_position - global_position
 	push.y = 0.0
 	player.velocity += push.normalized() * 6.0 + Vector3.UP * 2.5

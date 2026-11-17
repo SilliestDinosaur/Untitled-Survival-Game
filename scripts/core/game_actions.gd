@@ -38,7 +38,7 @@ static func hit_resource(player_id: int, chunk: TerrainChunk, index: int, rng: R
 		return result
 	var key := ItemDB.yield_key(r.kind)
 	r.hp = float(r.hp) - ItemDB.HIT_DAMAGE * mult
-	_give(inv, ItemDB.YIELDS.get(key, []), mult, rng, result.items)
+	_give(inv, ItemDB.YIELDS.get(key, []), mult * ItemDB.GATHER_RATE, rng, result.items)
 	if r.hp <= 0.0:
 		_give(inv, ItemDB.BONUS.get(key, []), 1.0, rng, result.items)
 		if r.kind == "cache":

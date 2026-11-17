@@ -17,6 +17,12 @@ var snow: Color
 var taiga_grass: Color
 var marsh_grass: Color
 var desert_sand: Color
+var jungle_grass: Color
+var tundra_ground: Color
+var badlands_red: Color
+var badlands_ochre: Color
+var badlands_cream: Color
+var fungal_ground: Color
 ## Biome -> ground color (used for smooth blending).
 var ground := {}
 
@@ -41,6 +47,13 @@ var fern: Color
 var moss: Color
 var mushroom_caps: Array[Color] = []
 var pebble: Color
+var jungle_leaves: Color
+var jungle_leaves_2: Color
+var vine: Color
+var fungal_stem: Color
+var fungal_caps: Array[Color] = []
+var glow: Color
+var ice: Color
 
 # Sky / water.
 var sky_top: Color
@@ -76,6 +89,14 @@ func _init(seed_value: int) -> void:
 	taiga_grass = p.call(0.36, 0.35, 0.42)
 	marsh_grass = p.call(0.2, 0.5, 0.42)
 	desert_sand = Color.from_hsv(rng.randf_range(0.06, 0.1), rng.randf_range(0.35, 0.5), 0.82)
+	jungle_grass = p.call(0.3, 0.65, 0.42)
+	tundra_ground = p.call(0.2, 0.18, 0.62)
+	badlands_red = Color.from_hsv(rng.randf_range(0.02, 0.05), rng.randf_range(0.5, 0.65), rng.randf_range(0.6, 0.7))
+	badlands_ochre = Color.from_hsv(rng.randf_range(0.07, 0.1), rng.randf_range(0.5, 0.65), rng.randf_range(0.72, 0.82))
+	badlands_cream = Color.from_hsv(rng.randf_range(0.08, 0.11), rng.randf_range(0.15, 0.28), 0.88)
+	# The fungal grove is the one place that's strange on every world.
+	var fungal_hue := rng.randf_range(0.72, 0.92) if rng.randf() < 0.7 else rng.randf_range(0.45, 0.55)
+	fungal_ground = Color.from_hsv(fungal_hue, rng.randf_range(0.2, 0.32), rng.randf_range(0.4, 0.5))
 
 	pine_leaves = p.call(0.38, 0.55, 0.38)
 	oak_leaves = p.call(0.29, 0.6, 0.48)
@@ -98,6 +119,15 @@ func _init(seed_value: int) -> void:
 	fern = p.call(0.31, 0.6, 0.45)
 	moss = p.call(0.27, 0.55, 0.45)
 	pebble = rock.lightened(0.05)
+	jungle_leaves = p.call(0.33, 0.7, 0.38)
+	jungle_leaves_2 = p.call(0.28, 0.7, 0.5)
+	vine = p.call(0.3, 0.55, 0.32)
+	fungal_stem = Color.from_hsv(fposmod(fungal_hue + 0.05, 1.0), 0.12, 0.88)
+	fungal_caps = [Color.from_hsv(fungal_hue, rng.randf_range(0.5, 0.7), rng.randf_range(0.6, 0.8)),
+		Color.from_hsv(fposmod(fungal_hue + rng.randf_range(0.08, 0.2), 1.0), rng.randf_range(0.5, 0.7), rng.randf_range(0.7, 0.85)),
+		Color.from_hsv(fposmod(fungal_hue - rng.randf_range(0.3, 0.45), 1.0), rng.randf_range(0.45, 0.65), rng.randf_range(0.65, 0.8))]
+	glow = Color.from_hsv(fposmod(fungal_hue + 0.5, 1.0), 0.55, 1.0)
+	ice = Color.from_hsv(rng.randf_range(0.52, 0.58), rng.randf_range(0.12, 0.25), 0.92)
 	mushroom_caps = [Color.from_hsv(rng.randf_range(0.98, 1.03), 0.75, 0.75), Color.from_hsv(0.08, 0.45, 0.62), Color.from_hsv(rng.randf(), 0.5, 0.8)]
 
 	ground = {
@@ -108,6 +138,10 @@ func _init(seed_value: int) -> void:
 		WorldGen.Biome.TAIGA: taiga_grass,
 		WorldGen.Biome.MARSH: marsh_grass,
 		WorldGen.Biome.DESERT: desert_sand,
+		WorldGen.Biome.JUNGLE: jungle_grass,
+		WorldGen.Biome.TUNDRA: tundra_ground,
+		WorldGen.Biome.BADLANDS: badlands_ochre,
+		WorldGen.Biome.FUNGAL: fungal_ground,
 	}
 
 	sky_top = k.call(0.60, 0.55, 0.88)

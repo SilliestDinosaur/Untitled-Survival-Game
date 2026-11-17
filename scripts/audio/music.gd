@@ -35,12 +35,16 @@ const MOODS := {
 		"arp": "bell", "bass": true, "drums": "", "lead_density": 0.2, "arp_density": 0.3, "volume": -10.0},
 	"night": {"tempo": [58, 68], "scales": ["aeolian", "phrygian", "minor_penta"], "pad": "dark_pad", "lead": "bell",
 		"arp": "pluck", "bass": true, "drums": "heartbeat", "lead_density": 0.12, "arp_density": 0.22, "volume": -9.0},
+	# Stalking prey: a low, pulsing tension with plucks, never the full battle drums.
+	"hunt": {"tempo": [96, 108], "scales": ["dorian", "minor_penta", "aeolian"], "pad": "dark_pad", "lead": "pluck",
+		"arp": "pluck", "bass": true, "drums": "stalk", "lead_density": 0.14, "arp_density": 0.35, "volume": -10.0},
 	"combat": {"tempo": [118, 132], "scales": ["harmonic_minor", "phrygian"], "pad": "strings", "lead": "strings",
 		"arp": "pluck", "bass": true, "drums": "battle", "lead_density": 0.25, "arp_density": 0.9, "volume": -8.0},
 }
 
 var mood := ""                     ## current target mood
-var combat_heat := 0.0             ## rises when fighting, decays over time
+var combat_heat := 0.0             ## rises when something fights back, decays over time
+var hunt_heat := 0.0               ## rises while chasing / hitting prey
 var enabled := true
 
 var _instruments := {}
@@ -104,9 +108,14 @@ func _on_world_changed() -> void:
 	_task = WorkerThreadPool.add_task(func() -> void: _instruments = Instruments.build(s))
 
 
-## Called by combat events: getting hit, hitting an animal, an animal charging.
+## Called when something fights back: an animal charging or hitting you.
 func combat_ping(amount := 1.0) -> void:
 	combat_heat = minf(combat_heat + amount, 3.0)
+
+
+## Called while hunting: hitting prey, prey bolting from you.
+func hunt_ping(amount := 1.0) -> void:
+	hunt_heat = minf(hunt_heat + amount, 3.0)
 
 
 func _process(delta: float) -> void:
@@ -117,6 +126,7 @@ func _process(delta: float) -> void:
 	if not _ready_to_play or not enabled:
 		return
 	combat_heat = maxf(0.0, combat_heat - delta / 10.0)
+	hunt_heat = maxf(0.0, hunt_heat - delta / 14.0)
 	_track_travel(delta)
 	var want := _choose_mood()
 	if want != mood:
@@ -165,6 +175,8 @@ func _choose_mood() -> String:
 		return "title"
 	if combat_heat > 0.6 or (mood == "combat" and combat_heat > 0.15):
 		return "combat"
+	if hunt_heat > 0.6 or (mood == "hunt" and hunt_heat > 0.2):
+		return "hunt"
 	var st := _light(Game.time_of_day)
 	if st.night > 0.7:
 		return "night"
@@ -194,7 +206,7 @@ func _make_layer(name: String) -> Layer:
 	l.tempo = r.randf_range(l.recipe.tempo[0], l.recipe.tempo[1])
 	# The world has one home key; moods sit on related roots so changes feel connected.
 	var home := 45 + (hash([_seed, "key"]) % 12 + 12) % 12          # A2..G#3
-	var shift := {"title": 0, "day": 0, "explore": 7, "dusk": 5, "night": -3, "combat": -3}
+	var shift := {"title": 0, "day": 0, "explore": 7, "dusk": 5, "night": -3, "hunt": 2, "combat": -3}
 	l.root = home + int(shift.get(name, 0))
 	if l.root > 57:
 		l.root -= 12
@@ -337,6 +349,16 @@ func _step(l: Layer, resting: bool) -> void:
 		"heartbeat":
 			if s == 0 or s == 3:
 				_hit(l, "kick", -14.0 if s == 0 else -18.0, 0.8)
+		"stalk":
+			# A soft heartbeat on the toms and a ticking shaker: tension without the battle.
+			if s == 0 or s == 3:
+				_hit(l, "tom", -12.0 if s == 0 else -16.0, 0.75)
+			if s == 8 and r.randf() < 0.5:
+				_hit(l, "tom", -15.0, 0.9)
+			if s % 4 == 2:
+				_hit(l, "shaker", -18.0)
+			if s == 12 and r.randf() < 0.3:
+				_hit(l, "rim", -17.0, 0.8)
 		"battle":
 			if s % 4 == 0:
 				_hit(l, "kick", -6.0)

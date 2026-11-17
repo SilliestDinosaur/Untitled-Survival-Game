@@ -86,11 +86,20 @@ func _pick_species(roles: Array, pos: Vector3) -> FaunaLibrary.Species:
 	var weights := gen.get_biome_weights(gen.get_climate(pos.x, pos.z, pos.y))
 	var options: Array = []
 	var total := 0.0
+	# Altitude biomes aren't in the climate weights: add them so mountain species turn up there.
+	if pos.y > 52.0:
+		weights[WorldGen.Biome.HIGHLANDS] = 1.5
+	if pos.y > 74.0:
+		weights[WorldGen.Biome.SNOW] = 1.5
+	var night := Game.is_night()
 	for s in Game.fauna.species:
 		if s.role in roles:
 			var w := 0.0
 			for b: int in weights:
-				w += weights[b] * s.biome_pref.get(b, 0.3)
+				w += weights[b] * s.biome_pref.get(b, 0.02)
+			# Night animals mostly come out after dark, day animals stay hidden at night.
+			if (s.active == "night" and not night) or (s.active == "day" and night):
+				w *= 0.12
 			options.append([s, w])
 			total += w
 	var roll := _rng.randf() * total
