@@ -20,7 +20,9 @@ const ACTIONS := [
 	["move_right", "Move right", ["key:%d" % KEY_D]],
 	["jump", "Jump / swim up", ["key:%d" % KEY_SPACE]],
 	["sprint", "Sprint", ["key:%d" % KEY_SHIFT]],
-	["attack", "Swing / use", ["mouse:%d" % MOUSE_BUTTON_LEFT]],
+	["attack", "Swing / destroy / eat", ["mouse:%d" % MOUSE_BUTTON_LEFT]],
+	["interact", "Harvest / pick up / open", ["key:%d" % KEY_E]],
+	["drop", "Drop held item", ["key:%d" % KEY_Q]],
 	["inventory", "Satchel", ["key:%d" % KEY_TAB]],
 	["slot_1", "Hotbar 1", ["key:%d" % KEY_1]],
 	["slot_2", "Hotbar 2", ["key:%d" % KEY_2]],
@@ -28,6 +30,9 @@ const ACTIONS := [
 	["slot_4", "Hotbar 4", ["key:%d" % KEY_4]],
 	["slot_5", "Hotbar 5", ["key:%d" % KEY_5]],
 	["slot_6", "Hotbar 6", ["key:%d" % KEY_6]],
+	["slot_7", "Hotbar 7", ["key:%d" % KEY_7]],
+	["slot_8", "Hotbar 8", ["key:%d" % KEY_8]],
+	["debug_items", "Debug item menu", ["key:%d" % KEY_F9]],
 	["toggle_debug", "Debug info", ["key:%d" % KEY_F3]],
 ]
 ## Not remappable (so you can always get back to the menu).

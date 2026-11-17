@@ -1,12 +1,14 @@
 extends CharacterBody3D
-## First-person player: mouse look, walk/sprint/jump, swimming, fall damage,
-## head bob, footsteps, gathering / hunting with the held tool, and "what am I looking at".
+## First-person player: mouse look, walk/sprint/jump, swimming, fall damage, head bob,
+## footsteps, and actions: swing (destroy / hunt) with the held tool, Interact to harvest by hand,
+## pick up and drop items, eat. World changes go through GameActions (host-authoritative later).
 
 signal landed(impact: float)
 signal hint(text: String)   ## short messages for the HUD ("Too hard to break by hand")
 signal hit_landed           ## a swing connected with something
 
 const REACH := 3.2
+const PICKUP_SCENE_LAYER := 2
 
 @export var walk_speed := 5.0
 @export var sprint_speed := 8.5
@@ -24,18 +26,20 @@ const REACH := 3.2
 @onready var ray: RayCast3D = $Head/Camera3D/Interact
 @onready var stats: PlayerStats = $Stats
 
+var player_id := Game.LOCAL_PLAYER
 var active := false
 var spawn_point := Vector3.ZERO
 var swimming := false
 var underwater := false
-## What the crosshair is on: {} or {"name", "label", "resource"}.
+## What the crosshair is on: {} or {name, label, resource/chunk | animal | pickup, actions}.
 var looking_at := {}
-var inventory := Inventory.new()
+var inventory: Inventory
 var viewmodel: Viewmodel
+var is_sprinting := false   ## animals hear you from farther away
 var _rng := RandomNumberGenerator.new()
 var _swing_cooldown := 0.0
+var _interact_cooldown := 0.0
 var _shake := 0.0
-var is_sprinting := false   ## animals hear you from farther away
 
 var _gravity: float = ProjectSettings.get_setting("physics/3d/default_gravity")
 var _exhausted := false
@@ -52,10 +56,15 @@ var _fov_kick := 0.0
 func _ready() -> void:
 	ray.add_exception(self)
 	_rng.randomize()
+	inventory = Game.inventory_of(player_id)
 	viewmodel = Viewmodel.new()
 	camera.add_child(viewmodel)
 	viewmodel.strike.connect(_on_strike)
+	viewmodel.grab.connect(_on_grab)
 	inventory.changed.connect(func() -> void: viewmodel.hold(inventory.selected_item()))
+	inventory.tool_broke.connect(func(id: String) -> void:
+		hint.emit("Your %s broke!" % ItemDB.display_name(id))
+		Audio.play("clink", -2.0, 0.6))
 	reset_inventory()
 	stats.damaged.connect(func(amount: float) -> void: _shake = minf(_shake + amount / 20.0, 1.0))
 	set_active(false)
@@ -70,9 +79,8 @@ func to_save_data() -> Dictionary:
 		"health": stats.health,
 		"hunger": stats.hunger,
 		"stamina": stats.stamina,
-		"items": inventory.counts.duplicate(),
-		"hotbar": Array(inventory.hotbar),
-		"selected": inventory.selected,
+		"effects": stats.effects.duplicate(),
+		"inventory": inventory.to_data(),
 	}
 
 
@@ -88,19 +96,19 @@ func apply_save_data(d: Dictionary) -> void:
 	stats.health = float(d.get("health", stats.max_health))
 	stats.hunger = float(d.get("hunger", stats.max_hunger))
 	stats.stamina = float(d.get("stamina", stats.max_stamina))
-	inventory.clear()
-	var items: Dictionary = d.get("items", {})
-	for id: String in items:
-		inventory.counts[id] = int(items[id])
-	var bar: Array = d.get("hotbar", [])
-	for i in mini(bar.size(), Inventory.HOTBAR_SIZE):
-		inventory.hotbar[i] = String(bar[i])
-	inventory.select(int(d.get("selected", 0)))
+	stats.effects = d.get("effects", {})
+	if d.has("inventory"):
+		inventory.from_data(d.inventory)
+	elif d.has("items"):   # older saves: item counts only
+		inventory.clear(true)
+		var items: Dictionary = d.items
+		for id: String in items:
+			inventory.add(id, int(items[id]), true)
 
 
 ## Fresh start: just a rock in hand (also used after dying).
 func reset_inventory() -> void:
-	inventory.clear()
+	inventory.clear(true)
 	inventory.add("rock", 1, true)
 	inventory.select(0)
 
@@ -131,7 +139,8 @@ func _unhandled_input(event: InputEvent) -> void:
 	for i in Inventory.HOTBAR_SIZE:
 		if event.is_action_pressed("slot_%d" % (i + 1)):
 			inventory.select(i)
-
+	if event.is_action_pressed("drop") and Input.mouse_mode == Input.MOUSE_MODE_CAPTURED:
+		drop_selected(Input.is_key_pressed(KEY_CTRL))
 
 func _physics_process(delta: float) -> void:
 	var on_floor := is_on_floor()
@@ -234,23 +243,64 @@ func _update_looking_at() -> void:
 	if not ray.is_colliding():
 		return
 	var body := ray.get_collider() as CollisionObject3D
-	if body and body.has_meta("animal"):
+	if not body or ray.get_collision_point().distance_to(camera.global_position) > REACH + 0.6:
+		return
+	if body.has_meta("pickup"):
+		var pid: String = body.get_meta("pickup")
+		if Game.pickups.has(pid):
+			var p: Dictionary = Game.pickups[pid]
+			looking_at = {"name": "%s%s" % [ItemDB.display_name(p.item), (" x%d" % p.count) if int(p.count) > 1 else ""],
+				"label": "Dropped item", "pickup": pid, "interact": "Pick up"}
+		return
+	if body.has_meta("animal"):
 		var animal: Node = body.get_meta("animal")
 		looking_at = {
 			"name": animal.species.name,
 			"label": "Carcass" if animal.dead else animal.species.label,
 			"animal": animal,
+			"interact": "Butcher" if animal.dead else "",
+			"attack": "" if animal.dead else "Attack",
 		}
 		return
-	if body and body.get_parent() is TerrainChunk:
-		var res: Dictionary = (body.get_parent() as TerrainChunk).resource_from_hit(body, ray.get_collider_shape())
+	if body.get_parent() is TerrainChunk:
+		var chunk := body.get_parent() as TerrainChunk
+		var res: Dictionary = chunk.resource_from_hit(body, ray.get_collider_shape())
 		if not res.is_empty():
 			looking_at = {
-				"name": Game.flora.display_name(res.kind),
+				"name": Game.flora.resource_name(res),
 				"label": FloraLibrary.KINDS[res.kind].label,
 				"resource": res,
-				"chunk": body.get_parent(),
+				"chunk": chunk,
+				"interact": _interact_verb(res),
+				"attack": _attack_verb(res),
 			}
+
+
+func _interact_verb(r: Dictionary) -> String:
+	if r.kind == "cache":
+		return "Open"
+	var key := ItemDB.harvest_key(r.kind)
+	if key == "":
+		return ""
+	if key in ["mushroom", "herb", "pebbles"]:
+		return "Pick up"
+	if Game.is_harvested(r.id):
+		return "(nothing left yet)"
+	match key:
+		"berry": return "Pick berries"
+		"fruit_tree": return "Shake for fruit"
+		"tree", "conifer": return "Gather sticks"
+		"cactus": return "Cut flesh"
+	return "Gather"
+
+
+func _attack_verb(r: Dictionary) -> String:
+	if r.kind == "cache":
+		return ""
+	match ItemDB.target_type(r.kind):
+		"tree": return "Chop"
+		"rock": return "Mine"
+	return "Break"
 
 
 func respawn() -> void:
@@ -259,95 +309,167 @@ func respawn() -> void:
 	stats.reset()
 
 
-
-# --- Gathering, hunting, eating -------------------------------------------------
+# --- Actions --------------------------------------------------------------------------
 
 func _update_actions(delta: float) -> void:
 	_swing_cooldown = maxf(_swing_cooldown - delta, 0.0)
+	_interact_cooldown = maxf(_interact_cooldown - delta, 0.0)
 	var focused := Input.mouse_mode == Input.MOUSE_MODE_CAPTURED or DisplayServer.get_name() == "headless"
-	if not focused or not Input.is_action_pressed("attack"):
+	if not focused or viewmodel.is_busy():
 		return
-	if viewmodel.is_busy() or _swing_cooldown > 0.0:
+	if Input.is_action_pressed("interact") and _interact_cooldown <= 0.0 and looking_at.get("interact", "") != "":
+		_interact_cooldown = 0.35
+		viewmodel.reach()
+		return
+	if not Input.is_action_pressed("attack") or _swing_cooldown > 0.0:
 		return
 	var item := inventory.selected_item()
 	if item != "" and ItemDB.info(item).kind == "food":
-		_eat(item)
+		_swing_cooldown = 0.6
+		viewmodel.eat(func() -> void:
+			var res := GameActions.eat(player_id, stats)
+			if res.get("ok", false):
+				Audio.play(Audio.sfx.munch, -4.0)
+				if res.first_time:
+					var e: Dictionary = ItemDB.EFFECTS[res.effect]
+					hint.emit("%s: %s" % [e.name, e.desc])
+				elif ItemDB.info(res.id).get("health", 0.0) < 0.0:
+					hint.emit("That didn't sit well..."))
 		return
+	if item != "" and ItemDB.info(item).kind != "tool":
+		return   # holding a material: nothing to swing
 	var tool := ItemDB.tool_stats(item)
 	_swing_cooldown = tool.cooldown
-	viewmodel.swing(tool.cooldown)
+	viewmodel.swing(tool.cooldown, String(tool.type))
 	Audio.play("swoosh", -10.0)
 
 
-func _eat(item: String) -> void:
-	var info := ItemDB.info(item)
-	viewmodel.eat(func() -> void:
-		if not inventory.remove(item, 1):
-			return
-		stats.eat(info.get("food", 0.0))
-		var hp: float = info.get("health", 0.0)
-		if hp > 0.0:
-			stats.health = minf(stats.max_health, stats.health + hp)
-		elif hp < 0.0:
-			stats.take_damage(-hp)
-			hint.emit("Raw meat doesn't sit well...")
-		Audio.play(Audio.sfx.munch, -4.0))
-
-
-## Called by the viewmodel at the moment the swing lands.
+## The viewmodel's swing reached the target.
 func _on_strike() -> void:
 	if not ray.is_colliding() or ray.get_collision_point().distance_to(camera.global_position) > REACH:
 		return
 	var point := ray.get_collision_point()
-	var item := inventory.selected_item()
 	var look := looking_at
 	if look.has("animal") and not is_instance_valid(look.animal):
 		return   # the animal was removed (e.g. despawned) mid-swing
-	if look.has("animal") or look.has("resource"):
-		hit_landed.emit()
 	if look.has("animal"):
 		var animal: Node = look.animal
 		if animal.dead:
-			var res := Gathering.hit_carcass(animal, item, inventory, _rng)
-			Audio.play_3d("thud", point, -2.0)
-			Effects.chips(get_parent(), point, Color(0.6, 0.15, 0.15), 8, 0.06)
-			if res.destroyed:
-				animal.consume_carcass()
-		else:
-			animal.take_hit(ItemDB.tool_stats(item).damage, global_position)
-			Audio.play_3d("thud", point)
-			Effects.chips(get_parent(), point, Color(0.65, 0.12, 0.12), 6, 0.05)
+			hint.emit("Press %s to butcher" % Settings.code_label(Settings.binding_of("interact")))
+			return
+		hit_landed.emit()
+		var res := GameActions.hit_animal(player_id, animal, global_position)
+		Audio.play_3d("thud", point)
+		Effects.chips(get_parent(), point, Color(0.65, 0.12, 0.12), 6, 0.05)
 		return
 	if look.has("resource"):
-		_hit_resource(look.chunk, look.resource, item, point)
+		_hit_resource(look.chunk, look.resource, point)
 
 
-func _hit_resource(chunk: TerrainChunk, r: Dictionary, item: String, point: Vector3) -> void:
-	var res := Gathering.hit_resource(chunk, r.index, item, inventory, _rng)
+func _hit_resource(chunk: TerrainChunk, r: Dictionary, point: Vector3) -> void:
+	var res := GameActions.hit_resource(player_id, chunk, r.index, _rng)
 	var target: String = res.target
 	var pal: WorldPalette = Game.palette
 	if res.blocked:
 		Audio.play_3d("clink", point, -6.0, 0.7)
-		hint.emit("Too hard to break by hand - use a rock")
+		if res.get("use_interact", false):
+			hint.emit("Press %s to open" % Settings.code_label(Settings.binding_of("interact")))
+		elif res.need_tier >= 0:
+			hint.emit("Needs a %s pickaxe or better" % ItemDB.tier_info(res.need_tier).name)
+		else:
+			hint.emit("Too hard to break by hand. Use a rock or a pickaxe.")
 		return
+	hit_landed.emit()
+	_drop_overflow(res.items, point)
 	match target:
 		"tree":
 			Audio.play_3d("chop", point)
 			Effects.chips(get_parent(), point, pal.bark.lightened(0.15), 8, 0.07)
 		"rock":
 			Audio.play_3d("clink", point, -2.0)
-			Effects.chips(get_parent(), point, pal.ore_crystal if r.kind == "ore" else pal.rock.lightened(0.1), 9, 0.07, 4.0)
+			var col := pal.rock.lightened(0.1)
+			if r.kind.begins_with("ore") or r.kind.begins_with("gem"):
+				col = ItemDB.tier_info(int(r.kind.right(1))).color
+			Effects.chips(get_parent(), point, col, 9, 0.07, 4.0)
 		_:
 			Audio.play_3d("rustle", point)
 			Effects.chips(get_parent(), point, pal.bush_leaves, 10, 0.06, 2.5)
 	if res.destroyed:
-		var mesh := chunk.get_resource_mesh(r.index)
-		var xf: Transform3D = r.transform
-		chunk.remove_resource(r.index)
-		if mesh:
-			if FloraLibrary.category_of(r.kind) == "tree":
-				Effects.fall_tree(get_parent(), mesh, xf, xf.origin - global_position, pal.bark)
-			else:
-				Effects.crumble(get_parent(), mesh, xf)
+		_remove_visual(chunk, r)
 	else:
 		chunk.wobble(r.index)
+
+
+## Interact: the viewmodel's hand reached out.
+func _on_grab() -> void:
+	var look := looking_at
+	if look.has("pickup"):
+		if GameActions.pick_up(player_id, look.pickup) > 0:
+			Audio.play(Audio.sfx.pickup, -6.0)
+		else:
+			hint.emit("Your satchel is full")
+		return
+	if look.has("animal"):
+		if not is_instance_valid(look.animal):
+			return
+		var res := GameActions.harvest_carcass(player_id, look.animal, _rng)
+		if res.get("ok", false):
+			Audio.play_3d("thud", look.animal.global_position, -6.0)
+			_drop_overflow(res.items, look.animal.global_position)
+			if res.destroyed:
+				look.animal.consume_carcass()
+		return
+	if look.has("resource"):
+		var chunk: TerrainChunk = look.chunk
+		var r: Dictionary = look.resource
+		var res := GameActions.harvest_resource(player_id, chunk, r.index, _rng)
+		if res.empty:
+			hint.emit("Nothing to gather here right now")
+			return
+		if not res.ok:
+			return
+		_drop_overflow(res.items, r.transform.origin + Vector3.UP * 0.5)
+		Audio.play_3d("rustle", r.transform.origin + Vector3.UP * 0.5, -4.0, 1.2)
+		if res.picked_up:
+			_remove_visual(chunk, r)
+		else:
+			chunk.wobble(r.index)
+
+
+func _remove_visual(chunk: TerrainChunk, r: Dictionary) -> void:
+	var mesh := chunk.get_resource_mesh(r.index)
+	var xf: Transform3D = r.transform
+	chunk.remove_resource(r.index)
+	if mesh:
+		if FloraLibrary.category_of(r.kind) == "tree":
+			Effects.fall_tree(get_parent(), mesh, xf, xf.origin - global_position, Game.palette.bark)
+		else:
+			Effects.crumble(get_parent(), mesh, xf)
+
+
+## Whatever didn't fit in the satchel lands on the ground.
+func _drop_overflow(items: Dictionary, at: Vector3) -> void:
+	var dropped := false
+	for k: String in items:
+		if k.begins_with("_overflow_"):
+			GameActions.spawn_pickup(k.trim_prefix("_overflow_"), items[k], -1, at + Vector3(randf_range(-0.4, 0.4), 0.3, randf_range(-0.4, 0.4)))
+			dropped = true
+	if dropped:
+		hint.emit("Satchel full - some items fell on the ground")
+
+
+## Q drops one of the held item (Ctrl+Q drops the whole stack).
+func drop_selected(whole_stack := false) -> void:
+	drop_slot(inventory.selected, whole_stack)
+
+
+func drop_slot(slot: int, whole_stack := true) -> void:
+	var s: Dictionary = inventory.slots[slot]
+	if s.is_empty():
+		return
+	var fwd := -camera.global_transform.basis.z
+	var pos := camera.global_position + fwd * 1.2
+	var ground: float = Game.world_gen.get_height(pos.x, pos.z)
+	pos.y = maxf(ground, Game.SEA_LEVEL) + 0.15
+	GameActions.drop(player_id, slot, int(s.count) if whole_stack else 1, pos)
+	Audio.play(Audio.sfx.click, -8.0, 0.8)

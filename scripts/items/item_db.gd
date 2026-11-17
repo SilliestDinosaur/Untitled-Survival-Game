@@ -1,66 +1,230 @@
 class_name ItemDB
 extends RefCounted
-## Every item in the game. Plain data so new items are one entry each.
+## Every item in the game: a fixed set of base items plus items generated per world
+## (tier materials, tools named after them, fruits, mushrooms and herbs with effects).
+## Call ItemDB.build(seed, palette) when a world is created; the rest is static lookups.
 ##
-## kind:  resource | food | tool
-## tool:  gather multipliers per target ("tree", "rock", "bush", "carcass") + "damage" vs creatures.
-##        A multiplier of 0 means the tool can't gather that at all.
+## Item fields:
+##  name, kind (resource | food | tool | material), stack, icon (how ItemIcon draws it),
+##  color (+ color2), tier, desc
+##  tool:   {type, tier, tree, rock, bush, carcass (gather multipliers), damage, cooldown, durability}
+##  food:   hunger restored, health: instant health change, effect: status effect id
 
-const ITEMS := {
-	"wood": {"name": "Wood", "kind": "resource", "stack": 1000},
-	"stone": {"name": "Stone", "kind": "resource", "stack": 1000},
-	"metal_ore": {"name": "Metal Ore", "kind": "resource", "stack": 1000},
-	"fiber": {"name": "Plant Fiber", "kind": "resource", "stack": 1000},
-	"hide": {"name": "Hide", "kind": "resource", "stack": 500},
-	"bone": {"name": "Bone", "kind": "resource", "stack": 500},
-	"berries": {"name": "Berries", "kind": "food", "stack": 100, "food": 9.0, "health": 2.0},
-	"mushroom": {"name": "Mushroom", "kind": "food", "stack": 100, "food": 6.0, "health": 1.0},
-	"raw_meat": {"name": "Raw Meat", "kind": "food", "stack": 100, "food": 16.0, "health": -4.0},
-	"rock": {"name": "Rock", "kind": "tool", "stack": 1,
-		"tool": {"tree": 1.0, "rock": 1.0, "bush": 1.0, "carcass": 1.0, "damage": 14.0, "cooldown": 0.7}},
+## Material tiers. 0-1 and 5 are fixed; 2-4 are generated per world (the twist): every island has
+## its own metals and gem, with their own names, colors, traits and places they're found.
+## The last tier is forged from the essence of the night's shadow creatures.
+const TIER_POWER := [0.6, 1.0, 1.45, 1.95, 2.6, 3.4]
+const TRAITS := {
+	"swift": {"name": "Swift", "desc": "Swings 20% faster."},
+	"keen": {"name": "Keen", "desc": "Gathers 30% more."},
+	"sturdy": {"name": "Sturdy", "desc": "Lasts 60% longer."},
+	"vicious": {"name": "Vicious", "desc": "Hits creatures 35% harder."},
+	"luminous": {"name": "Luminous", "desc": "Glows softly; strikes harder at night."},
+}
+
+## Tool types: base gather multipliers per target, damage vs creatures, swing time, durability factor.
+const TOOL_TYPES := {
+	"hatchet": {"name": "Hatchet", "tree": 1.0, "rock": 0.2, "bush": 1.0, "carcass": 0.5, "damage": 12.0, "cooldown": 0.75, "dur": 1.0},
+	"pickaxe": {"name": "Pickaxe", "tree": 0.3, "rock": 1.0, "bush": 0.6, "carcass": 0.3, "damage": 11.0, "cooldown": 0.85, "dur": 1.0},
+	"spear": {"name": "Spear", "tree": 0.1, "rock": 0.05, "bush": 0.5, "carcass": 0.4, "damage": 22.0, "cooldown": 0.7, "dur": 0.8},
+	"knife": {"name": "Knife", "tree": 0.15, "rock": 0.0, "bush": 1.3, "carcass": 1.6, "damage": 9.0, "cooldown": 0.45, "dur": 0.9},
+}
+
+## Status effects that food/herbs can give.
+const EFFECTS := {
+	"mend": {"name": "Mending", "desc": "Heals over time.", "time": 12.0},
+	"vigor": {"name": "Vigor", "desc": "Stamina recovers twice as fast.", "time": 60.0},
+	"satiate": {"name": "Sated", "desc": "Hunger drains much slower.", "time": 150.0},
+	"poison": {"name": "Poisoned", "desc": "Loses health over time.", "time": 10.0},
+}
+
+const BASE_ITEMS := {
+	"wood": {"name": "Wood", "kind": "resource", "stack": 250, "icon": "logs", "desc": "Chopped from trees."},
+	"sticks": {"name": "Sticks", "kind": "resource", "stack": 250, "icon": "sticks", "desc": "Gathered by hand from trees and brush."},
+	"stone": {"name": "Stone", "kind": "resource", "stack": 250, "icon": "stone", "desc": "Broken off rocks."},
+	"flint": {"name": "Flint", "kind": "resource", "stack": 100, "icon": "flint", "desc": "Sharp stone, found among loose pebbles.", "tier": 1},
+	"fiber": {"name": "Plant Fiber", "kind": "resource", "stack": 250, "icon": "fiber", "desc": "Pulled from bushes, reeds and cacti."},
+	"resin": {"name": "Resin", "kind": "resource", "stack": 100, "icon": "resin", "desc": "Sticky sap from conifers."},
+	"hide": {"name": "Hide", "kind": "resource", "stack": 100, "icon": "hide", "desc": "Skinned from animals."},
+	"bone": {"name": "Bone", "kind": "resource", "stack": 100, "icon": "bone", "desc": "From animal carcasses."},
+	"raw_meat": {"name": "Raw Meat", "kind": "food", "stack": 40, "icon": "meat", "food": 16.0, "health": -4.0, "desc": "Filling, but it should really be cooked."},
+	"cactus_flesh": {"name": "Cactus Flesh", "kind": "food", "stack": 40, "icon": "cactus", "food": 5.0, "health": 3.0, "desc": "Watery and a little sour."},
+	"essence": {"name": "Shadow Essence", "kind": "material", "stack": 50, "icon": "essence", "tier": 5, "desc": "Left behind by shadow creatures. Forges Duskforged tools."},
+	"rock": {"name": "Rock", "kind": "tool", "stack": 1, "icon": "tool", "tier": 0, "desc": "A fist-sized flint rock. Better than bare hands.",
+		"tool": {"type": "rock", "tier": 0, "tree": 0.6, "rock": 0.6, "bush": 1.0, "carcass": 0.6, "damage": 10.0, "cooldown": 0.7, "durability": 150}},
 }
 
 ## Bare hands: slow on wood, useless on stone, fine for bushes.
-const HANDS := {"tree": 0.3, "rock": 0.0, "bush": 1.0, "carcass": 0.4, "damage": 5.0, "cooldown": 0.55}
+const HANDS := {"type": "hands", "tier": -1, "tree": 0.15, "rock": 0.0, "bush": 0.8, "carcass": 0.3, "damage": 4.0, "cooldown": 0.5, "durability": 0}
 
-## What hitting each kind of thing gives, per hit at multiplier 1.0: [item, min, max].
+## Destroying with a swing: what each hit gives at multiplier 1.0: [item, min, max].
 const YIELDS := {
 	"tree": [["wood", 4, 6]],
 	"rock": [["stone", 3, 5]],
-	"ore": [["metal_ore", 2, 3], ["stone", 1, 2]],
-	"bush": [["fiber", 2, 3]],
-	"berry": [["fiber", 1, 2], ["berries", 2, 4]],
-	"carcass": [["raw_meat", 1, 2], ["hide", 0, 1], ["bone", 0, 1]],
+	"ore_t2": [["ore_t2", 1, 2], ["stone", 0, 1]],
+	"ore_t3": [["ore_t3", 1, 2], ["stone", 0, 1]],
+	"gem_t4": [["gem_t4", 1, 1]],
+	"bush": [["fiber", 1, 2]],
+	"berry": [["fiber", 1, 2]],
 	"boulder": [["stone", 4, 6]],
-	"cactus": [["fiber", 2, 3]],
-	"reeds": [["fiber", 2, 4]],
-	"dead_bush": [["fiber", 1, 2], ["wood", 1, 1]],
+	"cactus": [["fiber", 1, 2], ["cactus_flesh", 0, 1]],
+	"reeds": [["fiber", 2, 3]],
+	"dead_bush": [["sticks", 1, 2]],
 	"log": [["wood", 3, 5]],
-	"mushroom": [["mushroom", 1, 2]],
+	"mushroom": [],
+	"herb": [],
 	"pebbles": [["stone", 1, 2]],
+	"cache": [],
 }
 ## Extra reward for finishing a node off.
 const BONUS := {
 	"tree": [["wood", 8, 12]],
 	"rock": [["stone", 6, 9]],
-	"ore": [["metal_ore", 4, 6]],
-	"carcass": [["raw_meat", 1, 3], ["hide", 1, 1]],
-	"boulder": [["stone", 10, 14], ["metal_ore", 0, 2]],
-	"cactus": [["fiber", 3, 5]],
+	"ore_t2": [["ore_t2", 2, 4]],
+	"ore_t3": [["ore_t3", 2, 3]],
+	"gem_t4": [["gem_t4", 1, 2]],
+	"boulder": [["stone", 10, 14], ["ore_t2", 0, 2]],
+	"cactus": [["fiber", 2, 3]],
 	"log": [["wood", 6, 9]],
-	"mushroom": [["mushroom", 1, 2]],
-	"pebbles": [["stone", 1, 3]],
 }
-## HP damage per hit at multiplier 1.0 (trees have 100 HP -> 5 hits with a rock).
+## Harvesting by hand (Interact): [item, min, max, chance]. Doesn't destroy the node.
+const HARVEST := {
+	"berry": [["berries", 2, 4, 1.0], ["fiber", 0, 1, 0.5]],
+	"bush": [["fiber", 1, 2, 1.0], ["sticks", 0, 1, 0.5]],
+	"reeds": [["fiber", 2, 3, 1.0]],
+	"dead_bush": [["sticks", 1, 3, 1.0]],
+	"tree": [["sticks", 1, 2, 1.0]],
+	"conifer": [["sticks", 1, 2, 1.0], ["resin", 1, 1, 0.35]],
+	"fruit_tree": [["sticks", 0, 1, 1.0], ["fruit", 1, 3, 1.0]],
+	"cactus": [["cactus_flesh", 1, 2, 1.0], ["fiber", 0, 1, 0.5]],
+	"carcass": [["raw_meat", 1, 2, 1.0], ["hide", 1, 1, 0.6], ["bone", 1, 1, 0.35]],
+	# These are picked up (the node is removed):
+	"mushroom": [["mushroom_%d", 1, 2, 1.0]],
+	"herb": [["herb_%d", 1, 2, 1.0]],
+	"pebbles": [["stone", 1, 2, 1.0], ["flint", 1, 1, 0.45]],
+}
+## HP damage per hit at multiplier 1.0 (trees have 100 HP -> 5 hits with a stone hatchet).
 const HIT_DAMAGE := 20.0
 
+static var _items := {}
+static var _tiers: Array[Dictionary] = []
+static var fruit_tree := "oak"   ## which tree kind bears fruit on this world
+
+
+# --- Building the per-world registry ------------------------------------------------
+
+static func build(seed_value: int, pal: WorldPalette) -> void:
+	var rng := RandomNumberGenerator.new()
+	rng.seed = seed_value * 613 + 29
+	_items = BASE_ITEMS.duplicate(true)
+	_tiers = []
+
+	# Tiers 0 (rock) and 1 (stone) are fixed; 2-4 are this world's own materials.
+	_tiers.append({"name": "Rock", "color": pal.rock, "trait": ""})
+	_tiers.append({"name": "Stone", "color": pal.rock.lightened(0.1), "trait": ""})
+	var traits := TRAITS.keys()
+	_shuffle(traits, rng)
+	var suffixes := [["ite", "ium", "or", "ane"], ["ium", "yx", "ite", "orn"], ["", "", "", ""]]
+	for t in [2, 3, 4]:
+		var base := NameGen.word(rng, 2, 2)
+		var name: String = (base.substr(0, 7) + suffixes[t - 2][rng.randi() % 4]).capitalize()
+		var col: Color
+		match t:
+			2: col = Color.from_hsv(rng.randf_range(0.02, 0.12), rng.randf_range(0.35, 0.55), rng.randf_range(0.6, 0.75))   # coppery
+			3: col = Color.from_hsv(rng.randf(), rng.randf_range(0.2, 0.45), rng.randf_range(0.7, 0.85))                     # odd steel
+			_: col = Color.from_hsv(rng.randf(), rng.randf_range(0.55, 0.8), rng.randf_range(0.85, 1.0))                     # gem
+		_tiers.append({"name": name, "color": col, "trait": traits[t - 2]})
+		var raw_id := "gem_t4" if t == 4 else "ore_t%d" % t
+		_items[raw_id] = {
+			"name": "%s %s" % [name, "Shard" if t == 4 else "Ore"], "kind": "material", "stack": 100,
+			"icon": "gem" if t == 4 else "ore", "color": col, "tier": t,
+			"desc": "Tier %d material. %s tools are %s." % [t, name, TRAITS[traits[t - 2]].name.to_lower()],
+		}
+	_tiers.append({"name": "Duskforged", "color": Color(0.36, 0.22, 0.55), "trait": "luminous"})
+
+	# Tools for every tier from stone up.
+	for t in range(1, 6):
+		for type: String in TOOL_TYPES:
+			_items["%s_t%d" % [type, t]] = _make_tool(type, t)
+
+	# Food & herbs with per-world names and (hidden until tried) effects.
+	var berry_name := NameGen.species_name(rng, "berry").get_slice(" ", 0)
+	_items["berries"] = {"name": "%s Berries" % berry_name, "kind": "food", "stack": 40, "icon": "berries", "color": pal.berry,
+		"food": 9.0, "health": 2.0, "desc": "Sweet and a little tart. The bush grows more."}
+	var fruit_trees := ["oak", "acacia", "willow", "birch"]
+	fruit_tree = fruit_trees[rng.randi() % fruit_trees.size()]
+	var fruit_col := Color.from_hsv(rng.randf(), rng.randf_range(0.55, 0.8), rng.randf_range(0.75, 0.95))
+	_items["fruit"] = {"name": "%s %s" % [NameGen.word(rng, 2, 2), ["Plum", "Pod", "Apple", "Drupe"][rng.randi() % 4]], "kind": "food", "stack": 40,
+		"icon": "fruit", "color": fruit_col, "food": 13.0, "health": 3.0, "desc": "Grows on some trees here. Shake one with your hands."}
+	var mush_effects := ["satiate", "mend", "poison"]
+	_shuffle(mush_effects, rng)
+	for i in 3:
+		_items["mushroom_%d" % i] = {"name": "%s Cap" % NameGen.word(rng, 2, 2), "kind": "food", "stack": 40, "icon": "mushroom",
+			"color": pal.mushroom_caps[i % pal.mushroom_caps.size()], "food": 5.0, "health": 0.0, "effect": mush_effects[i],
+			"unknown": true, "desc": "A wild mushroom. Who knows what it does?"}
+	var herb_effects := ["vigor", "mend", "satiate"]
+	_shuffle(herb_effects, rng)
+	for i in 3:
+		var hcol := Color.from_hsv(fposmod(pal.fern.h + rng.randf_range(-0.12, 0.12), 1.0), rng.randf_range(0.45, 0.7), rng.randf_range(0.5, 0.75))
+		_items["herb_%d" % i] = {"name": "%s %s" % [NameGen.word(rng, 2, 2), ["Leaf", "Sprig", "Root", "Bloom"][rng.randi() % 4]], "kind": "food",
+			"stack": 40, "icon": "herb", "color": hcol, "food": 1.0, "health": 0.0, "effect": herb_effects[i], "unknown": true,
+			"desc": "A fragrant wild herb."}
+
+
+static func _make_tool(type: String, t: int) -> Dictionary:
+	var base: Dictionary = TOOL_TYPES[type]
+	var mat := _tiers[t]
+	var power: float = TIER_POWER[t]
+	var stats := {
+		"type": type, "tier": t,
+		"tree": base.tree * power, "rock": base.rock * power, "bush": base.bush * maxf(power, 1.0), "carcass": base.carcass * power,
+		"damage": base.damage * (0.75 + 0.35 * t), "cooldown": base.cooldown, "durability": int(110 * (1.0 + t * 0.6) * base.dur),
+	}
+	match String(mat.trait):
+		"swift": stats.cooldown *= 0.8
+		"keen":
+			for k in ["tree", "rock", "bush", "carcass"]:
+				stats[k] *= 1.3
+		"sturdy": stats.durability = int(stats.durability * 1.6)
+		"vicious": stats.damage *= 1.35
+		"luminous": stats.damage *= 1.15
+	var desc := "Tier %d %s." % [t, base.name.to_lower()]
+	if mat.trait != "":
+		desc += " %s: %s" % [TRAITS[mat.trait].name, TRAITS[mat.trait].desc]
+	return {"name": "%s %s" % [mat.name, base.name], "kind": "tool", "stack": 1, "icon": "tool", "tool": stats,
+		"color": mat.color, "tier": t, "desc": desc}
+
+
+static func _shuffle(arr: Array, rng: RandomNumberGenerator) -> void:
+	for i in range(arr.size() - 1, 0, -1):
+		var j := rng.randi_range(0, i)
+		var tmp: Variant = arr[i]
+		arr[i] = arr[j]
+		arr[j] = tmp
+
+
+# --- Lookups -------------------------------------------------------------------------
 
 static func info(id: String) -> Dictionary:
-	return ITEMS.get(id, {"name": id.capitalize(), "kind": "resource", "stack": 1000})
+	if _items.has(id):
+		return _items[id]
+	return BASE_ITEMS.get(id, {"name": id.capitalize(), "kind": "resource", "stack": 250, "icon": "stone"})
+
+
+static func exists(id: String) -> bool:
+	return _items.has(id) or BASE_ITEMS.has(id)
+
+
+static func all_ids() -> Array:
+	return _items.keys()
 
 
 static func display_name(id: String) -> String:
 	return info(id).name
+
+
+static func stack_size(id: String) -> int:
+	return int(info(id).get("stack", 250))
 
 
 static func tool_stats(id: String) -> Dictionary:
@@ -68,10 +232,56 @@ static func tool_stats(id: String) -> Dictionary:
 	return i.tool if i.has("tool") else HANDS
 
 
-## Map a resource kind (pine, oak, rock, ore, bush, berry...) to its gather target type.
+static func tier_info(t: int) -> Dictionary:
+	return _tiers[clampi(t, 0, _tiers.size() - 1)] if not _tiers.is_empty() else {"name": "?", "color": Color.WHITE, "trait": ""}
+
+
+static func tier_count() -> int:
+	return _tiers.size()
+
+
+## Map a resource kind (pine, oak, rock, ore_t2, bush...) to its gather target type.
 static func target_type(kind: String) -> String:
 	return FloraLibrary.KINDS[kind].get("target", "bush")
 
 
 static func yield_key(kind: String) -> String:
 	return FloraLibrary.KINDS[kind].get("yield", "bush")
+
+
+## Which HARVEST table a node uses when gathered by hand (or "" if it can't be).
+static func harvest_key(kind: String) -> String:
+	match kind:
+		"berry", "bush", "reeds", "dead_bush", "cactus", "mushroom", "herb", "pebbles":
+			return kind
+		"pine", "fir":
+			return "conifer"
+		"oak", "autumn_oak", "birch", "willow", "acacia", "dead_tree":
+			return "fruit_tree" if kind == fruit_tree else "tree"
+	return ""
+
+
+## Tooltip text (several lines).
+static func describe(id: String, durability := -1) -> String:
+	var i := info(id)
+	var lines: Array[String] = []
+	if i.has("tier"):
+		lines.append("Tier %d  ·  %s" % [i.tier, tier_info(i.tier).name])
+	lines.append(String(i.get("desc", "")))
+	if i.has("tool"):
+		var t: Dictionary = i.tool
+		lines.append("Damage %d  ·  Swing %.2fs" % [roundi(t.damage), t.cooldown])
+		var best := ""
+		for k in ["tree", "rock", "carcass"]:
+			if t[k] >= 1.0:
+				best += ("" if best == "" else ", ") + {"tree": "wood", "rock": "stone", "carcass": "butchering"}[k]
+		if best != "":
+			lines.append("Good for: " + best)
+		if durability >= 0:
+			lines.append("Durability %d / %d" % [durability, t.durability])
+	if i.kind == "food":
+		var known: bool = not i.get("unknown", false) or Game.known_items.has(id)
+		lines.append("Food +%d%s" % [roundi(i.get("food", 0.0)), ("  ·  Health %+d" % roundi(i.health)) if i.get("health", 0.0) != 0.0 else ""])
+		if i.has("effect"):
+			lines.append(("Effect: %s (%s)" % [EFFECTS[i.effect].name, EFFECTS[i.effect].desc]) if known else "Effect: ??? (try it)")
+	return "\n".join(lines)

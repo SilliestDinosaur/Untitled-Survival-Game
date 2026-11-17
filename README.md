@@ -9,8 +9,10 @@ Day: explore and gather. Night: defend your base from shadow creatures that brea
 3. Press F5.
 
 **Controls** (all remappable in Settings → Controls): WASD move · Shift sprint ·
-Space jump / swim up · Left click swing / eat · 1-6 or mouse wheel hotbar · Tab satchel ·
-Esc pause · F3 debug info
+Space jump / swim up · **Left click** swing: chop, mine, break, hunt, eat ·
+**E** harvest by hand: berries, sticks, fiber, fruit, pick up, butcher, open caches ·
+**Q** drop (Ctrl+Q whole stack) · 1-8 / mouse wheel hotbar · Tab satchel · Esc pause ·
+F3 debug info · F9 debug item menu
 
 ## Saves
 Worlds are saved in `user://saves/` (on Windows: `%APPDATA%/Godot/app_userdata/Untitled Survival/saves`).
@@ -32,12 +34,23 @@ Each seed produces its own:
   boar, horned brute, hopper, ferret) plus birds, each with generated proportions, coat pattern,
   horns/antlers/tusks, behavior, call and name
 
+## Items & tiers
+Tools come in tiers: **Rock → Stone → three materials generated per world → Duskforged**.
+Every island invents its own metals and gem (name, color, trait like *Swift*, *Keen*, *Sturdy*,
+*Vicious* or *Luminous*) found at different altitudes: the first metal in the hills, the second in
+the mountains, crystals near the peaks. Better ore needs a pickaxe of the tier below it. The last
+tier is forged from shadow essence dropped by the night's creatures (coming with the night cycle).
+Hatchets, pickaxes, spears and knives exist for every tier and wear down with use. Crafting comes
+next; for now tools are found in supply caches around the island (or via the F9 debug menu).
+Food is per-world too: berries, a fruiting tree species, and mushrooms and herbs whose effects
+(mending, vigor, sated... or poison) are unknown until you try them.
+
 ## Gameplay so far
-- **Gathering (Rust-style):** hit trees, rocks, ore and bushes; each hit gives resources and
-  the node breaks when its HP runs out (trees topple over). You start with a rock;
-  bare hands are slow on wood and can't break stone.
-- **Hunting:** grazers flee, territorial beasts fight back when hit. Dead animals become
-  carcasses you harvest for raw meat, hide and bone.
+- **Destroy (left click):** each hit gives resources and the node breaks when its HP runs out
+  (trees topple over). **Harvest (E):** take what a plant offers without killing it; it regrows.
+- **Satchel:** 24 slots + 8-slot hotbar, drag & drop, split, shift-click, drop into the world.
+- **Animals:** temperaments (calm, wary, skittish, curious), herds that share alarm, alert
+  states, territorial beasts that warn before charging. Butcher carcasses with E (a knife helps).
 - **Food:** select berries or meat on the hotbar and click to eat (raw meat hurts a little).
 - **Death:** you drop everything and wake up back at the spawn point with a rock.
 
@@ -63,6 +76,8 @@ Sounds (footsteps, wind, ocean, UI) are synthesized at startup, so there are no 
 | `scripts/core/game.gd` | Autoload `Game`: seed, world name, palette, generators, input map |
 | `scripts/core/settings.gd` | Autoload `Settings`: options + key bindings, saved to `user://settings.cfg` |
 | `scripts/core/save_manager.gd` | World save files: list, read, write, rename, delete |
+| `scripts/core/game_actions.gd` | Every world-changing action (host-authoritative later) |
+| `scripts/world/pickups.gd` | Items lying in the world |
 | `scripts/core/main.gd` | Game flow: title -> loading -> playing <-> paused |
 | `scripts/core/name_gen.gd` | Procedural world and species names |
 | `scripts/world/palette.gd` | Per-seed colors |
@@ -74,7 +89,7 @@ Sounds (footsteps, wind, ocean, UI) are synthesized at startup, so there are no 
 | `scripts/world/world.gd` | Streams chunks with 3 detail tiers, ocean |
 | `scripts/world/atmosphere.gd` | Sun, sky, fog, graphics quality |
 | `scripts/player/` | First-person controller, stats, viewmodel (held item + swing) |
-| `scripts/items/` | Item definitions and the inventory/hotbar |
+| `scripts/items/` | Item registry (base + per-world tiers/foods) and slot inventory |
 | `scripts/gameplay/` | Gathering rules and hit effects |
 | `scripts/wildlife/` | Species generation, animal/critter/bird behavior, spawning |
 | `scripts/world/art_style.gd` | Shared painterly textures and materials |
@@ -83,6 +98,12 @@ Sounds (footsteps, wind, ocean, UI) are synthesized at startup, so there are no 
 | `shaders/` | Painterly include + terrain, painted, foliage, grass, sky, water, post filter |
 | `tests/smoke_test.gd` | `godot --headless --path . -s tests/smoke_test.gd` |
 | `tests/gameplay_test.gd` | Chops, mines, eats, hunts, harvests, then saves and reloads |
+
+## Built for multiplayer later
+World changes go through `scripts/core/game_actions.gd` with a player id, inventories live in
+`Game.inventories` keyed by player, dropped items have stable entity ids, and saves store a map of
+players. A peer-to-peer host can run the same actions for every client; clients regenerate the
+world from the seed and only need the list of changes.
 
 ## Performance notes
 - Chunks are generated on worker threads, so streaming doesn't stutter.

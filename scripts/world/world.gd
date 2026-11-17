@@ -146,6 +146,8 @@ func _removed_snapshot() -> Dictionary:
 	for id: String in Game.removed_resources:
 		if Game.is_removed(id):
 			out[id] = true
+	for id: String in Game.looted:   # caches never come back
+		out[id] = true
 	return out
 
 

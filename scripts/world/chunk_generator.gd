@@ -199,9 +199,20 @@ static func _place_resources(coord: Vector2i, origin: Vector3, gen: WorldGen, fl
 		if h < 0.8 or gen.get_normal(a.x, a.z).y < 0.55 or a.r_place >= chance:
 			counter[0] += 1
 			continue
-		var ore_chance := 0.06 + clampf((h - 30.0) / 80.0, 0.0, 0.25)
+		# Ore tiers by altitude: the world's first metal in the hills, the second in the
+		# mountains, crystals near the peaks.
+		var kind := "rock"
+		var roll: float = a.r_kind
+		if h > 58.0 and roll < 0.07:
+			kind = "gem_t4"
+		elif h > 34.0 and roll < 0.16:
+			kind = "ore_t3"
+		elif roll < 0.07 + clampf((h - 8.0) / 100.0, 0.0, 0.14):
+			kind = "ore_t2"
 		var s := lerpf(0.5, 1.6, a.scl - 0.8)
-		add.call("ore" if a.r_kind < ore_chance else "rock", a.variant, Vector3(a.x, h - 0.2 * s, a.z), a.yaw, Vector3.ONE * s)
+		if kind != "rock":
+			s = maxf(s, 0.9)
+		add.call(kind, a.variant, Vector3(a.x, h - 0.2 * s, a.z), a.yaw, Vector3.ONE * s)
 
 	for i in BUSH_ATTEMPTS:
 		var a := _attempt(rng, origin, size)

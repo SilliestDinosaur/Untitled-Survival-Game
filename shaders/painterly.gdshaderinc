@@ -19,19 +19,28 @@ float paint_ramp(float ndl) {
 	return smoothstep(0.1, 0.36, w) * 0.62 + smoothstep(0.52, 0.78, w) * 0.38;
 }
 
-// Pick the axis plane the surface mostly faces (cheap triplanar).
-vec2 paint_uv(vec3 wpos, vec3 wn) {
-	vec3 an = abs(wn);
-	return an.y > max(an.x, an.z) ? wpos.xz : (an.x > an.z ? wpos.zy : wpos.xy);
+// Triplanar blending: sample the paint from all three axis planes and blend by how much the
+// surface faces each one. (Picking a single plane caused visible seams where it switched.)
+vec3 tri_weights(vec3 n) {
+	vec3 w = pow(abs(n), vec3(4.0));
+	return w / max(w.x + w.y + w.z, 1e-4);
+}
+
+float tri_sample(sampler2D tex, vec3 p, vec3 w, float scale, vec2 offset) {
+	float x = w.x > 0.01 ? texture(tex, p.zy * scale + offset).r : 0.0;
+	float y = w.y > 0.01 ? texture(tex, p.xz * scale + offset).r : 0.0;
+	float z = w.z > 0.01 ? texture(tex, p.xy * scale + offset).r : 0.0;
+	return x * w.x + y * w.y + z * w.z;
 }
 
 // Returns the painted albedo; stroke_out goes into paint_stroke for the light pass.
 vec3 brush(vec3 col, vec3 wpos, vec3 wn, out float stroke_out) {
-	vec2 uv = paint_uv(wpos, wn);
-	float broad = texture(brush_noise, uv * 0.03).r - 0.5;          // big uneven washes
-	float s1 = texture(stroke_tex, uv * stroke_scale).r;
-	float s2 = texture(stroke_tex, uv * stroke_scale * 2.3 + 0.41).r;
-	float stroke = mix(s1, s2, 0.35);
+	vec3 w = tri_weights(wn);
+	float broad = tri_sample(brush_noise, wpos, w, 0.03, vec2(0.0)) - 0.5;   // big uneven washes
+	float s1 = tri_sample(stroke_tex, wpos, w, stroke_scale, vec2(0.0));
+	float s2 = tri_sample(stroke_tex, wpos, w, stroke_scale * 2.3, vec2(0.41));
+	// Blending several planes flattens contrast a little; restore it.
+	float stroke = 0.5 + (mix(s1, s2, 0.35) - 0.5) * mix(1.0, 1.5, 1.0 - max(max(w.x, w.y), w.z));
 	stroke_out = stroke;
 	float v = (stroke - 0.5) + broad * 0.8;
 	// Lighter daubs lean warm, darker daubs lean cool, like layered gouache.

@@ -19,6 +19,8 @@ var health: float
 var hunger: float
 var stamina: float
 var is_dead := false
+## Active status effects: id -> seconds left (see ItemDB.EFFECTS).
+var effects := {}
 var _regen_timer := 0.0
 
 
@@ -31,12 +33,22 @@ func reset() -> void:
 	hunger = max_hunger
 	stamina = max_stamina
 	is_dead = false
+	effects = {}
 
 
 func tick(delta: float, sprinting: bool) -> void:
 	if is_dead:
 		return
-	hunger = maxf(0.0, hunger - hunger_drain * delta * (1.6 if sprinting else 1.0))
+	for e: String in effects.keys():
+		effects[e] -= delta
+		if effects[e] <= 0.0:
+			effects.erase(e)
+	if effects.has("mend"):
+		health = minf(max_health, health + 2.5 * delta)
+	if effects.has("poison"):
+		take_damage(1.6 * delta, false)
+	var drain := hunger_drain * (1.6 if sprinting else 1.0) * (0.35 if effects.has("satiate") else 1.0)
+	hunger = maxf(0.0, hunger - drain * delta)
 	if hunger <= 0.0:
 		take_damage(starve_damage * delta, false)
 	elif hunger > max_hunger * 0.6 and health < max_health:
@@ -48,7 +60,7 @@ func tick(delta: float, sprinting: bool) -> void:
 	elif _regen_timer > 0.0:
 		_regen_timer -= delta
 	else:
-		stamina = minf(max_stamina, stamina + stamina_regen * delta)
+		stamina = minf(max_stamina, stamina + stamina_regen * delta * (2.0 if effects.has("vigor") else 1.0))
 
 
 func take_damage(amount: float, notify := true) -> void:
@@ -60,6 +72,10 @@ func take_damage(amount: float, notify := true) -> void:
 	if health <= 0.0:
 		is_dead = true
 		died.emit()
+
+
+func add_effect(id: String, seconds: float) -> void:
+	effects[id] = maxf(effects.get(id, 0.0), seconds)
 
 
 func eat(amount: float) -> void:

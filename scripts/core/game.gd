@@ -27,6 +27,25 @@ var removed_resources := {}
 ## Resource id -> remaining HP for things that were hit but not finished off.
 var resource_hp := {}
 
+## Resource id -> play time it was last hand-harvested (berries, fiber... come back later).
+var harvested := {}
+## Items whose hidden effect the player has discovered by eating them.
+var known_items := {}
+## Supply caches already looted (permanent).
+var looted := {}
+## Items lying in the world: entity id -> {id, item, count, dur, pos: [x, y, z]}.
+var pickups := {}
+## Counter for network-stable entity ids (pickups now; more entity kinds later).
+var next_entity_id := 1
+
+## Every player's inventory by player id. Single-player uses LOCAL_PLAYER; a multiplayer host
+## would keep one per connected peer (keyed by peer id) and be the only one that changes them.
+const LOCAL_PLAYER := 1
+var inventories := {}
+
+signal pickups_changed
+const HARVEST_REGROW := 240.0   ## seconds before a hand-harvested plant can be harvested again
+
 ## The save file this session is playing ("" = not saved yet / title preview).
 var save_id := ""
 var save_name := ""
@@ -60,6 +79,13 @@ func new_world(seed_value: int) -> void:
 	_build_assets()
 	removed_resources = {}
 	resource_hp = {}
+	harvested = {}
+	known_items = {}
+	looted = {}
+	pickups = {}
+	next_entity_id = 1
+	for pid: int in inventories:
+		inventories[pid].clear()
 	save_id = ""
 	save_name = ""
 	play_time = 0.0
@@ -68,6 +94,7 @@ func new_world(seed_value: int) -> void:
 
 func _build_assets() -> void:
 	MeshKit.detail = Settings.mesh_detail()
+	ItemDB.build(world_seed, palette)   # first: plants and ore use item colors
 	flora = FloraLibrary.new(world_seed, palette)
 	fauna = FaunaLibrary.new(world_seed, palette)
 	MeshKit.detail = 1.0
@@ -96,6 +123,22 @@ func mark_removed(id: String) -> void:
 	resource_hp.erase(id)
 
 
+func inventory_of(player_id: int) -> Inventory:
+	if not inventories.has(player_id):
+		inventories[player_id] = Inventory.new()
+	return inventories[player_id]
+
+
+func new_entity_id(prefix: String) -> String:
+	next_entity_id += 1
+	return "%s%d" % [prefix, next_entity_id]
+
+
+## True if a plant was hand-harvested recently and has nothing to give yet.
+func is_harvested(id: String) -> bool:
+	return harvested.has(id) and play_time - float(harvested[id]) < HARVEST_REGROW
+
+
 # --- Saving -----------------------------------------------------------------------
 
 ## Load a save: regenerate its world and restore changes. Returns the player data.
@@ -109,8 +152,18 @@ func load_save(id: String) -> Dictionary:
 	play_time = float(data.get("play_time", 0.0))
 	removed_resources = data.get("removed", {})
 	resource_hp = data.get("resource_hp", {})
+	harvested = data.get("harvested", {})
+	known_items = data.get("known_items", {})
+	looted = data.get("looted", {})
+	pickups = data.get("pickups", {})
+	next_entity_id = int(data.get("next_entity_id", 1))
+	pickups_changed.emit()
+	# Saves keep a map of players (the local one is LOCAL_PLAYER); older saves had one player.
+	var players: Dictionary = data.get("players", {})
+	if players.is_empty() and data.has("player"):
+		players = {str(LOCAL_PLAYER): data.player}
 	_prune_regrown()
-	return data.get("player", {})
+	return players.get(str(LOCAL_PLAYER), {})
 
 
 ## Start a brand-new save for the current seed.
@@ -132,7 +185,12 @@ func write_save(player_data: Dictionary) -> void:
 		"play_time": play_time,
 		"removed": removed_resources,
 		"resource_hp": resource_hp,
-		"player": player_data,
+		"harvested": harvested,
+		"known_items": known_items,
+		"looted": looted,
+		"pickups": pickups,
+		"next_entity_id": next_entity_id,
+		"players": {str(LOCAL_PLAYER): player_data},
 	})
 
 

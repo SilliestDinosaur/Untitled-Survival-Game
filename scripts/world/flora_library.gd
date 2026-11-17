@@ -35,13 +35,13 @@ const BIOME_BUSH_DENSITY := {
 }
 ## Small things on the ground that make places feel lived-in.
 const BIOME_CLUTTER := {
-	Biome.MEADOW: [["pebbles", 0.6], ["stump", 0.2], ["mushroom", 0.2]],
-	Biome.FOREST: [["log", 0.3], ["stump", 0.25], ["mushroom", 0.3], ["pebbles", 0.15]],
-	Biome.AUTUMN: [["log", 0.3], ["mushroom", 0.35], ["stump", 0.2], ["pebbles", 0.15]],
-	Biome.DRYLANDS: [["pebbles", 0.6], ["boulder", 0.25], ["log", 0.15]],
-	Biome.TAIGA: [["log", 0.35], ["stump", 0.25], ["mushroom", 0.2], ["pebbles", 0.2]],
-	Biome.MARSH: [["log", 0.4], ["mushroom", 0.45], ["stump", 0.15]],
-	Biome.DESERT: [["pebbles", 0.5], ["boulder", 0.5]],
+	Biome.MEADOW: [["pebbles", 0.6], ["stump", 0.2], ["mushroom", 0.2], ["herb", 0.12], ["cache", 0.015]],
+	Biome.FOREST: [["log", 0.3], ["stump", 0.25], ["mushroom", 0.3], ["pebbles", 0.15], ["herb", 0.1], ["cache", 0.015]],
+	Biome.AUTUMN: [["log", 0.3], ["mushroom", 0.35], ["stump", 0.2], ["pebbles", 0.15], ["herb", 0.1], ["cache", 0.015]],
+	Biome.DRYLANDS: [["pebbles", 0.6], ["boulder", 0.25], ["log", 0.15], ["cache", 0.02]],
+	Biome.TAIGA: [["log", 0.35], ["stump", 0.25], ["mushroom", 0.2], ["pebbles", 0.2], ["herb", 0.1], ["cache", 0.015]],
+	Biome.MARSH: [["log", 0.4], ["mushroom", 0.45], ["stump", 0.15], ["herb", 0.15], ["cache", 0.015]],
+	Biome.DESERT: [["pebbles", 0.5], ["boulder", 0.5], ["cache", 0.03]],
 }
 const BIOME_CLUTTER_DENSITY := {
 	Biome.MEADOW: 0.2, Biome.FOREST: 0.55, Biome.AUTUMN: 0.45, Biome.DRYLANDS: 0.3,
@@ -78,12 +78,16 @@ const KINDS := {
 	"reeds": {"category": "bush", "label": "Reeds", "variants": 2, "solid": false, "hp": 20, "target": "bush", "yield": "reeds", "shape": "bush"},
 	"dead_bush": {"category": "bush", "label": "Dry brush", "variants": 2, "solid": false, "hp": 20, "target": "bush", "yield": "dead_bush", "shape": "bush"},
 	"rock": {"category": "rock", "label": "Stone", "variants": 4, "solid": true, "hp": 150, "target": "rock", "yield": "rock", "shape": "rock"},
-	"ore": {"category": "rock", "label": "Ore deposit", "variants": 2, "solid": true, "hp": 220, "target": "rock", "yield": "ore", "shape": "rock"},
+	"ore_t2": {"category": "rock", "label": "Ore deposit", "variants": 2, "solid": true, "hp": 160, "target": "rock", "yield": "ore_t2", "shape": "rock", "min_tier": 1},
+	"ore_t3": {"category": "rock", "label": "Ore deposit", "variants": 2, "solid": true, "hp": 200, "target": "rock", "yield": "ore_t3", "shape": "rock", "min_tier": 2},
+	"gem_t4": {"category": "rock", "label": "Crystal cluster", "variants": 2, "solid": true, "hp": 220, "target": "rock", "yield": "gem_t4", "shape": "rock", "min_tier": 3},
 	"boulder": {"category": "rock", "label": "Boulder", "variants": 2, "solid": true, "hp": 320, "target": "rock", "yield": "boulder", "shape": "rock"},
 	"log": {"category": "clutter", "label": "Fallen log", "variants": 2, "solid": true, "hp": 60, "target": "tree", "yield": "log", "shape": "log"},
 	"stump": {"category": "clutter", "label": "Stump", "variants": 2, "solid": true, "hp": 50, "target": "tree", "yield": "log", "shape": "stump"},
 	"mushroom": {"category": "clutter", "label": "Mushrooms", "variants": 3, "solid": false, "hp": 10, "target": "bush", "yield": "mushroom", "shape": "small"},
 	"pebbles": {"category": "clutter", "label": "Loose stones", "variants": 3, "solid": false, "hp": 10, "target": "bush", "yield": "pebbles", "shape": "small"},
+	"herb": {"category": "clutter", "label": "Herb", "variants": 3, "solid": false, "hp": 10, "target": "bush", "yield": "herb", "shape": "small"},
+	"cache": {"category": "clutter", "label": "Supply cache", "variants": 2, "solid": true, "hp": 40, "target": "bush", "yield": "cache", "shape": "stump"},
 	"grass": {"category": "grass", "label": "", "variants": 3, "solid": false, "hp": 0},
 	"flower": {"category": "flower", "label": "", "variants": 3, "solid": false, "hp": 0},
 	"fern": {"category": "fern", "label": "", "variants": 3, "solid": false, "hp": 0},
@@ -140,9 +144,24 @@ static func kind_of_key(key: String) -> String:
 
 
 func display_name(kind: String) -> String:
-	if kind in ["log", "stump", "pebbles", "boulder"]:
-		return KINDS[kind].label
+	match kind:
+		"log", "stump", "pebbles", "boulder", "cache":
+			return KINDS[kind].label
+		"ore_t2", "ore_t3":
+			return "%s Deposit" % ItemDB.tier_info(int(kind.right(1))).name
+		"gem_t4":
+			return "%s Crystals" % ItemDB.tier_info(4).name
+		"berry":
+			return ItemDB.display_name("berries").trim_suffix(" Berries") + " Bush"
 	return species_names.get(kind, kind.capitalize())
+
+
+## Name of a specific resource (herbs and mushrooms differ per variant).
+func resource_name(r: Dictionary) -> String:
+	if r.kind in ["herb", "mushroom"]:
+		var v := String(r.key).get_slice("_", 1)
+		return ItemDB.display_name("%s_%s" % [r.kind, v])
+	return display_name(r.kind)
 
 
 # --- Materials & collision --------------------------------------------------
@@ -198,7 +217,11 @@ func _build_mesh(kind: String, index: int, variant_seed: int) -> ArrayMesh:
 		"reeds": _reeds(kit, rng)
 		"dead_bush": _dead_bush(kit, rng)
 		"rock": _rock(kit, rng, false)
-		"ore": _rock(kit, rng, true)
+		"ore_t2": _rock(kit, rng, true, ItemDB.tier_info(2).color)
+		"ore_t3": _rock(kit, rng, true, ItemDB.tier_info(3).color)
+		"gem_t4": _gem(kit, rng, ItemDB.tier_info(4).color)
+		"herb": _herb(kit, rng, ItemDB.info("herb_%d" % index).get("color", _pal.fern))
+		"cache": _cache(kit, rng)
 		"boulder": _boulder(kit, rng)
 		"log": _log(kit, rng)
 		"stump": _stump(kit, rng)
@@ -429,7 +452,7 @@ func _dead_bush(kit: MeshKit, rng: RandomNumberGenerator) -> void:
 		kit.add_primitive(MeshKit.cylinder(0.005, 0.02, length * 0.5, 4), Transform3D(Basis(Quaternion(Vector3.UP, fork)), dir * length * 0.6 + fork * length * 0.25), col, 0.0, 0.05)
 
 
-func _rock(kit: MeshKit, rng: RandomNumberGenerator, ore: bool) -> void:
+func _rock(kit: MeshKit, rng: RandomNumberGenerator, ore: bool, ore_color := Color.WHITE) -> void:
 	var col := _vary(_pal.rock, rng, 0.05)
 	var squash := Vector3(rng.randf_range(1.0, 1.4), rng.randf_range(0.65, 0.9), rng.randf_range(0.9, 1.2))
 	kit.add_primitive(MeshKit.sphere(1.0, 11, 7), Transform3D(Basis().scaled(squash), Vector3(0, 0.25, 0)), col, 0.3, 0.08)
@@ -445,7 +468,48 @@ func _rock(kit: MeshKit, rng: RandomNumberGenerator, ore: bool) -> void:
 			var b := Basis(Quaternion(Vector3.UP, dir))
 			var pos := Vector3(dir.x * squash.x, dir.y * squash.y, dir.z * squash.z) * 0.75 + Vector3(0, 0.25, 0)
 			kit.add_primitive(MeshKit.cylinder(0.0, rng.randf_range(0.12, 0.2), length, 5), Transform3D(b, pos + dir * length * 0.4),
-				_vary(_pal.ore_crystal, rng, 0.08).lightened(0.1), 0.0, 0.05)
+				_vary(ore_color, rng, 0.06), 0.0, 0.05)
+
+
+## Tier-4 gem: big crystal spikes bursting from a small rock.
+func _gem(kit: MeshKit, rng: RandomNumberGenerator, col: Color) -> void:
+	kit.add_primitive(MeshKit.sphere(0.8, 10, 6), Transform3D(Basis().scaled(Vector3(1.2, 0.6, 1.0)), Vector3(0, 0.15, 0)), _vary(_pal.rock, rng).darkened(0.1), 0.25, 0.08)
+	for i in rng.randi_range(5, 8):
+		var dir := Vector3(rng.randf_range(-0.7, 0.7), rng.randf_range(0.6, 1.0), rng.randf_range(-0.7, 0.7)).normalized()
+		var length := rng.randf_range(0.8, 1.7)
+		var r := rng.randf_range(0.14, 0.26)
+		var b := Basis(Quaternion(Vector3.UP, dir))
+		kit.add_primitive(MeshKit.cylinder(0.0, r, length, 6), Transform3D(b, dir * (0.3 + length * 0.5)), _vary(col, rng, 0.05).lightened(rng.randf_range(0.0, 0.15)), 0.0, 0.06)
+
+
+## Low leafy herb with a few flowering tips.
+func _herb(kit: MeshKit, rng: RandomNumberGenerator, col: Color) -> void:
+	kit.force_up_normals = true
+	for i in rng.randi_range(7, 11):
+		var a := rng.randf() * TAU
+		var dir := Vector3(cos(a), 0, sin(a))
+		var side := Vector3(-dir.z, 0, dir.x) * rng.randf_range(0.05, 0.08)
+		var length := rng.randf_range(0.22, 0.38)
+		var tip := dir * length + Vector3.UP * rng.randf_range(0.12, 0.28)
+		var mid := dir * length * 0.45 + Vector3.UP * 0.1
+		kit.add_tri(Vector3(0, 0.02, 0), mid + side, tip, col.darkened(0.15), col, col.lightened(0.15))
+		kit.add_tri(Vector3(0, 0.02, 0), tip, mid - side, col.darkened(0.15), col.lightened(0.15), col)
+	kit.force_up_normals = false
+	for i in rng.randi_range(2, 4):
+		var p := Vector3(rng.randf_range(-0.1, 0.1), rng.randf_range(0.25, 0.35), rng.randf_range(-0.1, 0.1))
+		kit.add_primitive(MeshKit.sphere(0.035, 6, 4), Transform3D(Basis(), p), col.lightened(0.45), 0.0, 0.03)
+
+
+## Supply cache: a lashed wooden crate with a cloth bundle on top.
+func _cache(kit: MeshKit, rng: RandomNumberGenerator) -> void:
+	var wood := _vary(_pal.bark, rng).lightened(0.15)
+	var w := rng.randf_range(0.8, 1.0)
+	kit.add_primitive(BoxMesh.new(), Transform3D(Basis().scaled(Vector3(w, 0.55, 0.6)), Vector3(0, 0.27, 0)), wood, 0.0, 0.05)
+	for x in [-0.42, 0.42]:   # slats
+		kit.add_primitive(BoxMesh.new(), Transform3D(Basis().scaled(Vector3(0.08, 0.58, 0.64)), Vector3(x * w, 0.27, 0)), wood.darkened(0.2), 0.0, 0.03)
+	kit.add_primitive(BoxMesh.new(), Transform3D(Basis().scaled(Vector3(w + 0.04, 0.05, 0.64)), Vector3(0, 0.4, 0)), Color(0.55, 0.45, 0.3), 0.0, 0.0)  # rope
+	var cloth := Color.from_hsv(rng.randf_range(0.0, 0.12), 0.45, 0.62)
+	kit.add_primitive(MeshKit.sphere(0.32, 10, 6), Transform3D(Basis().scaled(Vector3(1.1, 0.55, 0.9)), Vector3(rng.randf_range(-0.15, 0.15), 0.66, 0)), cloth, 0.08, 0.06)
 
 
 ## A big weathered rock formation (2-4 stacked masses).

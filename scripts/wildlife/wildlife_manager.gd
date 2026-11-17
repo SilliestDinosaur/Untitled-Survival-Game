@@ -110,6 +110,8 @@ func _spawn_herd(center: Vector3) -> void:
 	var sp := _pick_species(roles, spot)
 	if not sp:
 		return
+	# One herd shares a member list (for spreading alarm) and follows its first animal.
+	var herd: Array = []
 	for i in _rng.randi_range(sp.herd.x, sp.herd.y):
 		var p: Vector3 = spot + Vector3(_rng.randf_range(-6, 6), 0, _rng.randf_range(-6, 6))
 		var h: float = Game.world_gen.get_height(p.x, p.z)
@@ -118,6 +120,9 @@ func _spawn_herd(center: Vector3) -> void:
 		var a := Animal.new()
 		add_child(a)
 		a.setup(sp, Vector3(p.x, h, p.z), player)
+		a.herd = herd
+		a.leader = herd[0] if not herd.is_empty() else null
+		herd.append(a)
 		a.removed.connect(func(x: Animal) -> void: _animals.erase(x))
 		_animals.append(a)
 

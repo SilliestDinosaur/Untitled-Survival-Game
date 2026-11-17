@@ -31,7 +31,9 @@ class Species:
 	# Meshes
 	var body_mesh: ArrayMesh
 	var head_mesh: ArrayMesh
-	var leg_mesh: ArrayMesh
+	var leg_mesh: ArrayMesh        ## front legs
+	var hind_leg_mesh: ArrayMesh   ## back legs (bent hock)
+	var temperament := "wary"      ## calm | wary | skittish | curious
 	var wing_mesh: ArrayMesh
 	var call_sound: AudioStreamWAV
 
@@ -166,6 +168,15 @@ func _make_quadruped(rng: RandomNumberGenerator, arch: String) -> Species:
 			s.herd = Vector2i(1, 1)
 			s.yield_scale = 0.2
 
+	# Temperament decides how close you can get before it reacts.
+	s.temperament = {"slender": "skittish", "stocky": "wary", "bulky": "calm", "shellback": "calm", "strider": "wary",
+		"wader": "wary", "boar": "wary", "horned": "calm", "hopper": "skittish", "ferret": "curious"}[arch]
+	if role == "grazer" and rng.randf() < 0.25:
+		s.temperament = "curious"
+	if role != "defensive":
+		s.flee_radius = {"skittish": rng.randf_range(16.0, 22.0), "wary": rng.randf_range(10.0, 14.0),
+			"calm": rng.randf_range(5.0, 7.0), "curious": rng.randf_range(6.0, 8.0)}[s.temperament]
+
 	# --- Colors & pattern ---
 	var coat := _coat(rng)
 	var belly := coat.lightened(rng.randf_range(0.25, 0.45))
@@ -192,74 +203,123 @@ func _make_quadruped(rng: RandomNumberGenerator, arch: String) -> Species:
 			c = c.lerp(belly, 0.8)
 		return c
 
-	# --- Body: torso (+ optional hump) + tail ---
+	# --- Body: chest + hips + belly (reads as an animal, not an egg), hump, tail ---
 	var kit := MeshKit.new(rng.randi())
-	kit.add_primitive(MeshKit.sphere(0.5, 14, 8), Transform3D(Basis().scaled(Vector3(s.body_w, s.body_h, s.body_len)), Vector3.ZERO), coat, 0.02, 0.05, null, coat_fn)
+	var L := s.body_len
+	var H := s.body_h
+	var W := s.body_w
+	var chest := Vector3(0, H * 0.06, -L * 0.2)
+	var hips := Vector3(0, H * 0.02, L * 0.24)
+	kit.add_primitive(MeshKit.sphere(0.5, 14, 9), Transform3D(Basis.from_scale(Vector3(W, H * 1.05, L * 0.62)), chest), coat, 0.02, 0.05, null, coat_fn)
+	kit.add_primitive(MeshKit.sphere(0.5, 14, 9), Transform3D(Basis.from_scale(Vector3(W * 0.95, H * 0.95, L * 0.55)), hips), coat, 0.02, 0.05, null, coat_fn)
+	kit.add_primitive(MeshKit.sphere(0.5, 12, 8), Transform3D(Basis.from_scale(Vector3(W * 0.85, H * 0.8, L * 0.6)), Vector3(0, -H * 0.08, 0)), coat, 0.02, 0.05, null, coat_fn)
 	if (stocky or rng.randf() < 0.25) and arch != "shellback":
 		# Shoulder hump (big and shaggy on bulky grazers).
-		var hump := 1.0 if arch != "bulky" else 1.35
-		kit.add_primitive(MeshKit.sphere(0.5, 12, 7), Transform3D(Basis().scaled(Vector3(s.body_w * 0.9, s.body_h * 0.8 * hump, s.body_len * 0.5)), Vector3(0, s.body_h * 0.25 * hump, -s.body_len * 0.18)), coat, 0.06 if arch == "bulky" else 0.02, 0.05, null, coat_fn)
+		var hump := 1.0 if arch != "bulky" else 1.3
+		kit.add_primitive(MeshKit.sphere(0.5, 12, 7), Transform3D(Basis.from_scale(Vector3(W * 0.85, H * 0.7 * hump, L * 0.42)), chest + Vector3(0, H * 0.28 * hump, 0.02)), coat, 0.07 if arch == "bulky" else 0.02, 0.05, null, coat_fn)
+	if arch == "bulky":   # shaggy chest mane
+		kit.add_primitive(MeshKit.sphere(0.5, 12, 7), Transform3D(Basis.from_scale(Vector3(W * 0.9, H * 0.9, L * 0.3)), chest + Vector3(0, -H * 0.15, -L * 0.2)), accent.lerp(coat, 0.5), 0.08, 0.06)
 	if arch == "shellback":
-		# A domed, plated shell.
 		var shell := accent.lerp(coat, 0.35)
 		var plates := func(p: Vector3) -> Color:
 			return shell.darkened(0.25) if sin(p.x * 18.0 / size) * sin(p.z * 18.0 / size) > 0.55 else shell
-		kit.add_primitive(MeshKit.sphere(0.5, 14, 8), Transform3D(Basis().scaled(Vector3(s.body_w * 1.35, s.body_h * 1.25, s.body_len * 1.12)), Vector3(0, s.body_h * 0.28, 0)), shell, 0.03, 0.05, null, plates)
-	var tail_len := size * rng.randf_range(0.1, 0.5)
+		kit.add_primitive(MeshKit.sphere(0.5, 14, 8), Transform3D(Basis.from_scale(Vector3(W * 1.4, H * 1.2, L * 1.15)), Vector3(0, H * 0.3, 0)), shell, 0.03, 0.05, null, plates)
+		kit.add_primitive(MeshKit.cylinder(W * 0.72, W * 0.72, H * 0.12, 16), Transform3D(Basis.from_scale(Vector3(1, 1, L * 1.15 / W)), Vector3(0, -H * 0.05, 0)), shell.darkened(0.15), 0.0, 0.03)
+	var tail_len := size * rng.randf_range(0.15, 0.45)
+	var tail_root := hips + Vector3(0, H * 0.25, L * 0.24)
 	if arch == "ferret":
-		tail_len = s.body_len * 0.8
+		tail_len = L * 0.85
 	if arch == "strider":
-		# Fan of tail plumes.
-		for i in 5:
-			var tb := Basis(Vector3.UP, (i - 2) * 0.3) * Basis(Vector3.RIGHT, deg_to_rad(-120))
-			kit.add_primitive(MeshKit.sphere(0.5, 7, 4), Transform3D(tb * Basis.from_scale(Vector3(size * 0.08, size * 0.35, size * 0.03)), Vector3(0, s.body_h * 0.3, s.body_len * 0.45) + tb.y * size * 0.15), accent, 0.0, 0.04)
-	elif (role == "critter" and arch != "ferret") or (rng.randf() < 0.3 and arch != "ferret"):
-		kit.add_primitive(MeshKit.sphere(size * 0.12, 9, 6), Transform3D(Basis(), Vector3(0, s.body_h * 0.15, s.body_len * 0.5)), belly, 0.03, 0.05)   # puff tail
-	else:
-		var tb := Basis(Vector3.RIGHT, deg_to_rad(rng.randf_range(-130, -160)))
-		kit.add_primitive(MeshKit.cylinder(size * 0.015, size * 0.04, tail_len, 7), Transform3D(tb, Vector3(0, s.body_h * 0.2, s.body_len * 0.48) + tb.y * tail_len * 0.5), accent, 0.0, 0.04)
+		for i in 5:   # fan of tail plumes
+			var tb := Basis(Vector3.UP, (i - 2) * 0.3) * Basis(Vector3.RIGHT, deg_to_rad(-125))
+			kit.add_primitive(MeshKit.sphere(0.5, 7, 4), Transform3D(tb * Basis.from_scale(Vector3(size * 0.08, size * 0.35, size * 0.03)), tail_root + tb.y * size * 0.15), accent, 0.0, 0.04)
+	elif role == "critter" and arch != "ferret":
+		kit.add_primitive(MeshKit.sphere(size * 0.13, 9, 6), Transform3D(Basis(), tail_root), belly, 0.04, 0.05)   # puff tail
+	elif arch != "shellback":
+		# Tapered tail that hangs down and back, with a tuft for longer ones.
+		var tb := Basis(Vector3.RIGHT, deg_to_rad(rng.randf_range(-150, -165) if arch != "ferret" else -110))
+		kit.add_primitive(MeshKit.cylinder(size * 0.018, size * 0.05, tail_len, 8), Transform3D(tb, tail_root + tb.y * tail_len * 0.5), coat, 0.0, 0.04, null, coat_fn)
+		if tail_len > size * 0.3 and arch != "ferret":
+			kit.add_primitive(MeshKit.sphere(size * 0.055, 8, 5), Transform3D(Basis.from_scale(Vector3(1, 1.8, 1)), tail_root + tb.y * tail_len), accent, 0.06, 0.04)
 	s.body_mesh = kit.commit(material)
 
-	# --- Head: neck + skull + snout + eyes + ears + horns, pivoting at the neck base ---
-	s.head_pivot = Vector3(0, s.body_h * 0.22, -s.body_len * 0.4)
+	# --- Head: neck rising from the chest, skull, tapered muzzle, jaw, eyes, ears, horns ---
+	s.head_pivot = chest + Vector3(0, H * 0.22, -L * 0.24)
 	kit = MeshKit.new(rng.randi())
 	var neck_dir := Vector3(0, sin(neck_angle), -cos(neck_angle))
-	var neck_basis := Basis(Quaternion(Vector3.UP, neck_dir))
-	var neck_r := s.body_h * (0.45 if stocky else 0.36)
-	kit.add_primitive(MeshKit.cylinder(neck_r * 0.75, neck_r, neck_len + neck_r, 10), Transform3D(neck_basis, neck_dir * (neck_len + neck_r) * 0.5), coat, 0.0, 0.05, null, coat_fn)
-	var head_c := neck_dir * (neck_len + neck_r * 0.6) + Vector3(0, head_len * 0.1, -head_len * 0.25)
-	var head_tilt := Basis(Vector3.RIGHT, deg_to_rad(rng.randf_range(10, 30)))
-	kit.add_primitive(MeshKit.sphere(0.5, 12, 7), Transform3D(head_tilt * Basis.from_scale(Vector3(head_len * 0.62, head_len * 0.6, head_len)), head_c), coat, 0.0, 0.05)
-	var snout_c := head_c + head_tilt * Vector3(0, -head_len * 0.12, -head_len * 0.5)
-	var snout_len := head_len * rng.randf_range(0.35, 0.7)
-	if arch in ["wader", "strider"]:
-		snout_len = head_len * (1.6 if arch == "wader" else 0.6)   # beak
-	kit.add_primitive(MeshKit.sphere(0.5, 10, 6), Transform3D(head_tilt * Basis.from_scale(Vector3(head_len * 0.4, head_len * 0.36, snout_len)), snout_c), belly.lerp(coat, 0.4), 0.0, 0.04)
-	kit.add_primitive(MeshKit.sphere(head_len * 0.06, 8, 5), Transform3D(Basis(), snout_c + head_tilt * Vector3(0, head_len * 0.05, -snout_len * 0.48)), Color(0.12, 0.1, 0.1), 0.0, 0.0)  # nose
+	var neck_r := H * (0.42 if stocky else 0.33)
+	var neck_end := neck_dir * (neck_len + neck_r * 0.4)
+	_segment(kit, Vector3.ZERO - neck_dir * neck_r * 0.3, neck_end, neck_r, neck_r * 0.72, coat, coat_fn)
+	kit.add_primitive(MeshKit.sphere(neck_r * 1.05, 10, 7), Transform3D(Basis.from_scale(Vector3(1, 1.1, 1)), -neck_dir * neck_r * 0.1), coat, 0.0, 0.05, null, coat_fn)   # blend into chest
+	var head_tilt := Basis(Vector3.RIGHT, deg_to_rad(rng.randf_range(20, 40)))
+	var fwd := head_tilt * Vector3(0, 0, -1)
+	var skull := neck_end + Vector3(0, head_len * 0.12, 0) + fwd * head_len * 0.12
+	kit.add_primitive(MeshKit.sphere(0.5, 12, 8), Transform3D(head_tilt * Basis.from_scale(Vector3(head_len * 0.66, head_len * 0.66, head_len * 0.78)), skull), coat, 0.0, 0.05)
+	var snout_len := head_len * rng.randf_range(0.45, 0.75)
+	if arch == "wader":
+		snout_len = head_len * 1.5   # long beak-like bill
+	elif arch == "strider":
+		snout_len = head_len * 0.55
+	elif arch in ["boar", "shellback"]:
+		snout_len = head_len * 0.5
+	var muzzle_start := skull + fwd * head_len * 0.22 + head_tilt * Vector3(0, -head_len * 0.08, 0)
+	var nose := muzzle_start + fwd * snout_len
+	var bill := arch in ["wader", "strider"]
+	_segment(kit, muzzle_start, nose, head_len * (0.18 if bill else 0.3), head_len * (0.06 if bill else 0.2), Color(0.85, 0.65, 0.3) if bill else belly.lerp(coat, 0.45), Callable())
+	if not bill:
+		kit.add_primitive(MeshKit.sphere(head_len * 0.13, 8, 6), Transform3D(Basis.from_scale(Vector3(1.2, 0.8, 0.8)), nose), Color(0.14, 0.11, 0.1), 0.0, 0.0)   # nose pad
+		_segment(kit, muzzle_start + head_tilt * Vector3(0, -head_len * 0.12, 0.02), nose + head_tilt * Vector3(0, -head_len * 0.13, head_len * 0.06), head_len * 0.16, head_len * 0.11, belly, Callable())   # jaw
 	for side in [-1.0, 1.0]:
-		var eye := head_c + head_tilt * Vector3(side * head_len * 0.3, head_len * 0.12, -head_len * 0.18)
-		kit.add_primitive(MeshKit.sphere(head_len * 0.075, 8, 5), Transform3D(Basis(), eye), Color(0.06, 0.05, 0.05), 0.0, 0.0)
-		kit.add_primitive(MeshKit.sphere(head_len * 0.025, 6, 4), Transform3D(Basis(), eye + Vector3(side * 0.01, head_len * 0.03, -head_len * 0.05)), Color(1, 1, 1), 0.0, 0.0)  # glint
+		var eye := skull + head_tilt * Vector3(side * head_len * 0.3, head_len * 0.1, -head_len * 0.16)
+		kit.add_primitive(MeshKit.sphere(head_len * 0.09, 9, 6), Transform3D(Basis(), eye), Color(0.07, 0.05, 0.04), 0.0, 0.0)
+		kit.add_primitive(MeshKit.sphere(head_len * 0.03, 6, 4), Transform3D(Basis(), eye + Vector3(side * head_len * 0.03, head_len * 0.04, -head_len * 0.04)), Color(1, 1, 1), 0.0, 0.0)   # glint
+		kit.add_primitive(MeshKit.sphere(head_len * 0.1, 8, 4), Transform3D(Basis.from_scale(Vector3(1.1, 0.45, 1.1)), eye + Vector3(0, head_len * 0.07, 0)), coat.darkened(0.08), 0.0, 0.03)   # brow
 	if not arch in ["shellback", "strider", "wader"]:
-		_ears(kit, rng, role, head_c, head_len, coat, belly)
-	_horns(kit, rng, arch, head_c, head_len, size, snout_c)
+		_ears(kit, rng, role, skull, head_len, coat, belly)
+	_horns(kit, rng, arch, skull, head_len, size, nose)
 	s.head_mesh = kit.commit(material)
 
-	# --- Leg (shared by all four) ---
+	# --- Legs: jointed. Front legs nearly straight; hind legs bend back at the hock. ---
+	var thigh_col := coat
+	var shin_col := coat.lerp(accent, 0.35)
+	var hoof := Color(0.16, 0.13, 0.11)
+	var ll := s.leg_len
 	kit = MeshKit.new(rng.randi())
-	kit.add_primitive(MeshKit.sphere(leg_r * 1.6, 9, 6), Transform3D(Basis(), Vector3(0, -leg_r * 0.5, 0)), coat, 0.0, 0.04)
-	kit.add_primitive(MeshKit.cylinder(leg_r * 0.7, leg_r, s.leg_len, 8), Transform3D(Basis(), Vector3(0, -s.leg_len * 0.5, 0)), coat.lerp(accent, 0.3), 0.0, 0.04)
-	kit.add_primitive(MeshKit.cylinder(leg_r * 0.85, leg_r * 0.8, leg_r * 1.4, 8), Transform3D(Basis(), Vector3(0, -s.leg_len + leg_r * 0.6, 0)), Color(0.15, 0.12, 0.1), 0.0, 0.0)  # hoof
+	kit.add_primitive(MeshKit.sphere(leg_r * 2.0, 9, 6), Transform3D(Basis.from_scale(Vector3(1, 1.3, 1.2)), Vector3(0, -leg_r * 0.6, 0)), thigh_col, 0.0, 0.04)
+	var knee := Vector3(0, -ll * 0.5, -ll * 0.04)
+	_segment(kit, Vector3(0, -leg_r, 0), knee, leg_r * 1.35, leg_r, thigh_col, Callable())
+	_segment(kit, knee, Vector3(0, -ll + leg_r * 0.5, 0), leg_r, leg_r * 0.72, shin_col, Callable())
+	kit.add_primitive(MeshKit.cylinder(leg_r * 0.85, leg_r * 0.95, leg_r * 1.3, 8), Transform3D(Basis(), Vector3(0, -ll + leg_r * 0.55, -leg_r * 0.1)), hoof, 0.0, 0.0)
 	s.leg_mesh = kit.commit(material)
-	var lx := s.body_w * 0.3
-	var lz := s.body_len * 0.32
-	var ly := -s.body_h * 0.2
-	s.leg_offsets = [Vector3(-lx, ly, -lz), Vector3(lx, ly, -lz), Vector3(-lx, ly, lz), Vector3(lx, ly, lz)]
+	kit = MeshKit.new(rng.randi())
+	kit.add_primitive(MeshKit.sphere(leg_r * 2.4, 9, 6), Transform3D(Basis.from_scale(Vector3(1, 1.3, 1.3)), Vector3(0, -leg_r * 0.8, 0)), thigh_col, 0.0, 0.04, null, coat_fn)
+	var stifle := Vector3(0, -ll * 0.4, -ll * 0.1)
+	var hock := Vector3(0, -ll * 0.68, ll * 0.1)
+	_segment(kit, Vector3(0, -leg_r, 0), stifle, leg_r * 1.6, leg_r * 1.1, thigh_col, Callable())
+	_segment(kit, stifle, hock, leg_r * 1.05, leg_r * 0.8, shin_col, Callable())
+	_segment(kit, hock, Vector3(0, -ll + leg_r * 0.5, ll * 0.02), leg_r * 0.8, leg_r * 0.7, shin_col, Callable())
+	kit.add_primitive(MeshKit.cylinder(leg_r * 0.8, leg_r * 0.9, leg_r * 1.3, 8), Transform3D(Basis(), Vector3(0, -ll + leg_r * 0.55, 0)), hoof, 0.0, 0.0)
+	s.hind_leg_mesh = kit.commit(material)
+	var lx := W * 0.32
+	var ly := -H * 0.25
+	s.leg_offsets = [Vector3(-lx, ly, chest.z - L * 0.05), Vector3(lx, ly, chest.z - L * 0.05), Vector3(-lx, ly, hips.z + L * 0.05), Vector3(lx, ly, hips.z + L * 0.05)]
 	if a.legs == 2:
 		s.leg_offsets = [Vector3(-lx, ly, 0), Vector3(lx, ly, 0)]
+		s.leg_mesh = s.hind_leg_mesh
 
 	s.call_sound = SoundGen.creature_call(role, size, rng)
 	return s
+
+
+## A tapered limb/neck segment between two points (joint spheres keep it smooth).
+func _segment(kit: MeshKit, a: Vector3, b: Vector3, ra: float, rb: float, col: Color, color_fn: Callable) -> void:
+	var d := b - a
+	var length := d.length()
+	if length < 0.001:
+		return
+	var basis := Basis(Quaternion(Vector3.UP, d / length))
+	kit.add_primitive(MeshKit.cylinder(rb, ra, length, 9), Transform3D(basis, (a + b) * 0.5), col, 0.0, 0.04, null, color_fn)
+	kit.add_primitive(MeshKit.sphere(rb, 8, 5), Transform3D(Basis(), b), col, 0.0, 0.04, null, color_fn)
 
 
 func _ears(kit: MeshKit, rng: RandomNumberGenerator, role: String, head_c: Vector3, head_len: float, coat: Color, inner: Color) -> void:

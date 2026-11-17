@@ -20,6 +20,7 @@ var _pause: Menus.PauseMenu
 var _settings: Menus.SettingsPanel
 var _loading: Menus.LoadingScreen
 var _inventory: InventoryUI.InventoryPanel
+var _debug_items: Menus.DebugItems
 var _wildlife: Node3D
 var _spawn := Vector3.ZERO
 var _load_pos := Vector3.ZERO       ## where the player will appear once loading finishes
@@ -49,7 +50,10 @@ func _ready() -> void:
 	_hud.setup(player, world)
 	_inventory = InventoryUI.InventoryPanel.new()
 	root.add_child(_inventory)
-	_inventory.setup(player.inventory)
+	_inventory.setup(player.inventory, player)
+	_debug_items = Menus.DebugItems.new()
+	root.add_child(_debug_items)
+	_debug_items.setup(player.inventory)
 	_title = Menus.TitleScreen.new()
 	root.add_child(_title)
 	_new_world = Menus.NewWorldPanel.new()
@@ -97,6 +101,10 @@ func _ready() -> void:
 		player.reset_inventory()
 		_start_loading(_spawn, "You collapsed... waking up on")
 		save_now())
+
+	var pickups := preload("res://scripts/world/pickups.gd").new()
+	pickups.name = "Pickups"
+	add_child(pickups)
 
 	_wildlife = preload("res://scripts/wildlife/wildlife_manager.gd").new()
 	_wildlife.name = "Wildlife"
@@ -188,7 +196,7 @@ func _to_title() -> void:
 	_set_focus(menu_camera)
 	menu_camera.current = true
 	Input.mouse_mode = Input.MOUSE_MODE_VISIBLE
-	for c in [_hud, _pause, _settings, _inventory, _loading, _new_world, _load]:
+	for c in [_hud, _pause, _settings, _inventory, _loading, _new_world, _load, _debug_items]:
 		c.hide()
 	Game.save_id = ""
 	_title.show()
@@ -251,6 +259,11 @@ func _resume() -> void:
 
 
 func _unhandled_input(event: InputEvent) -> void:
+	if event.is_action_pressed("debug_items") and state == State.PLAYING:
+		_debug_items.visible = not _debug_items.visible
+		Input.mouse_mode = Input.MOUSE_MODE_VISIBLE if _debug_items.visible else Input.MOUSE_MODE_CAPTURED
+		get_viewport().set_input_as_handled()
+		return
 	if event.is_action_pressed("inventory") and state == State.PLAYING:
 		_toggle_inventory(not _inventory.visible)
 		get_viewport().set_input_as_handled()
@@ -259,6 +272,9 @@ func _unhandled_input(event: InputEvent) -> void:
 		return
 	if _settings.visible:
 		_settings.hide()
+	elif _debug_items.visible:
+		_debug_items.hide()
+		Input.mouse_mode = Input.MOUSE_MODE_CAPTURED
 	elif _inventory.visible:
 		_toggle_inventory(false)
 	elif _new_world.visible or _load.visible:
@@ -283,7 +299,7 @@ func _process(delta: float) -> void:
 			if _autosave <= 0.0:
 				save_now()
 				_hud.show_hint("Game saved")
-	if state == State.PLAYING and Input.mouse_mode != Input.MOUSE_MODE_CAPTURED and not _settings.visible and not _inventory.visible:
+	if state == State.PLAYING and Input.mouse_mode != Input.MOUSE_MODE_CAPTURED and not _settings.visible and not _inventory.visible and not _debug_items.visible:
 		# Clicking back into the game window recaptures the mouse.
 		if Input.is_mouse_button_pressed(MOUSE_BUTTON_LEFT):
 			Input.mouse_mode = Input.MOUSE_MODE_CAPTURED

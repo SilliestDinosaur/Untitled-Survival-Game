@@ -514,3 +514,55 @@ class LoadingScreen extends Control:
 
 	func set_progress(p: float) -> void:
 		_bar.value = lerpf(_bar.value, p, 0.25)
+
+
+## F9: every item in this world, click to add (Shift-click for a full stack). For testing tiers
+## until crafting arrives.
+class DebugItems extends Control:
+	var inventory: Inventory
+	var _grid: GridContainer
+
+	func setup(inv: Inventory) -> void:
+		inventory = inv
+		Game.world_changed.connect(func() -> void:
+			if visible:
+				_fill())
+
+	func _ready() -> void:
+		set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
+		Menus._dim(self, 0.3)
+		var col := Menus._card(self, Vector2(860, 560), 11)
+		col.add_child(UITheme.heading("Debug: items", 32))
+		col.add_child(UITheme.label("Click to add one, Shift-click for a stack. F9 or Esc to close.", 15, UITheme.INK_DIM))
+		var scroll := ScrollContainer.new()
+		scroll.custom_minimum_size = Vector2(0, 430)
+		scroll.horizontal_scroll_mode = ScrollContainer.SCROLL_MODE_DISABLED
+		col.add_child(scroll)
+		_grid = GridContainer.new()
+		_grid.columns = 4
+		_grid.add_theme_constant_override("h_separation", 6)
+		_grid.add_theme_constant_override("v_separation", 6)
+		scroll.add_child(_grid)
+		hide()
+		visibility_changed.connect(func() -> void:
+			if visible:
+				_fill())
+
+	func _fill() -> void:
+		for c in _grid.get_children():
+			c.queue_free()
+		var ids := ItemDB.all_ids()
+		ids.sort_custom(func(a: String, b: String) -> bool:
+			var ia := ItemDB.info(a)
+			var ib := ItemDB.info(b)
+			return "%s%d%s" % [ia.kind, ia.get("tier", 0), a] < "%s%d%s" % [ib.kind, ib.get("tier", 0), b])
+		for id: String in ids:
+			var b := Button.new()
+			b.text = ItemDB.display_name(id)
+			b.icon = null
+			b.custom_minimum_size = Vector2(200, 40)
+			b.add_theme_font_size_override("font_size", 15)
+			b.tooltip_text = ItemDB.describe(id)
+			b.pressed.connect(func() -> void:
+				inventory.add(id, ItemDB.stack_size(id) if Input.is_key_pressed(KEY_SHIFT) else 1))
+			_grid.add_child(b)

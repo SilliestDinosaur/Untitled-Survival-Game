@@ -29,6 +29,8 @@ var _held_name: Label
 var _feed: InventoryUI.PickupFeed
 var _hint: Label
 var _target_bar: StatBar
+var _prompt: Label
+var _effects: Label
 var _hit_marker := 0.0
 
 
@@ -69,10 +71,16 @@ func _ready() -> void:
 	_target_bar.custom_minimum_size = Vector2(150, 22)
 	_target_bar.size_flags_horizontal = Control.SIZE_SHRINK_CENTER
 	target.add_child(_target_bar)
+	_prompt = UITheme.label("", 16, UITheme.TEXT, 5)
+	_prompt.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	target.add_child(_prompt)
 
 	# Stat bars, bottom-left.
 	var bars := VBoxContainer.new()
 	UITheme.place(bars, Control.PRESET_BOTTOM_LEFT, Vector2(28, -104))
+	_effects = UITheme.label("", 15, Color(0.95, 0.9, 0.7), 4)
+	UITheme.place(_effects, Control.PRESET_BOTTOM_LEFT, Vector2(28, -136), Vector2(420, 24))
+	add_child(_effects)
 	bars.add_theme_constant_override("separation", 4)
 	add_child(bars)
 	_health = StatBar.new(Color(0.90, 0.30, 0.30), "HEALTH")
@@ -107,7 +115,7 @@ func _ready() -> void:
 
 	# Hotbar, bottom-center, with the held item's name above it.
 	var bottom := VBoxContainer.new()
-	UITheme.place(bottom, Control.PRESET_CENTER_BOTTOM, Vector2(-190, -108), Vector2(380, 0))
+	UITheme.place(bottom, Control.PRESET_CENTER_BOTTOM, Vector2(-280, -112), Vector2(560, 0))
 	bottom.add_theme_constant_override("separation", 6)
 	bottom.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	add_child(bottom)
@@ -196,6 +204,16 @@ func _process(delta: float) -> void:
 	var look: Dictionary = player.looking_at
 	_target_name.text = look.get("name", "")
 	_target_kind.text = String(look.get("label", "")).to_upper()
+	var parts: Array[String] = []
+	if look.get("interact", "") != "":
+		parts.append("[%s] %s" % [Settings.code_label(Settings.binding_of("interact")), look.interact])
+	if look.get("attack", "") != "":
+		parts.append("[%s] %s" % [Settings.code_label(Settings.binding_of("attack")).replace(" Click", ""), look.attack])
+	_prompt.text = "     ".join(parts)
+	var eff: Array[String] = []
+	for e: String in player.stats.effects:
+		eff.append("%s %ds" % [ItemDB.EFFECTS[e].name, ceili(player.stats.effects[e])])
+	_effects.text = "   ".join(eff)
 	var frac := _target_health(look)
 	_target_bar.visible = frac >= 0.0 and frac < 0.999
 	if _target_bar.visible:
@@ -230,6 +248,8 @@ func _target_health(look: Dictionary) -> float:
 		return a.carcass_hp / (60.0 * a.species.yield_scale) if a.dead else a.hp / a.species.hp
 	if look.has("resource"):
 		var r: Dictionary = look.resource
+		if FloraLibrary.KINDS[r.kind].get("min_tier", -2) == -2 and float(r.hp) >= float(FloraLibrary.KINDS[r.kind].hp):
+			return -1.0
 		return float(r.hp) / float(FloraLibrary.KINDS[r.kind].hp)
 	return -1.0
 
