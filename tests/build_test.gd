@@ -120,6 +120,12 @@ func _process(_d: float) -> bool:
 				_check(not dug.ok, "digging next to a tree is refused: %s" % dug.get("reason", ""))
 			_step = 4
 		4:
+			# A foundation with walls standing on it can't be taken down.
+			var f0: Dictionary = _GA.foundation_at(_GA.cell_of(_spot), 0)
+			_check(not f0.is_empty(), "the spawn foundation is there to test")
+			if not f0.is_empty():
+				var why: String = _GA.removal_problem(f0)
+				_check(why != "", "a foundation with walls on it is refused: %s" % why)
 			return _finish()
 	return false
 

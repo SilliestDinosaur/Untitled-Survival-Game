@@ -595,21 +595,32 @@ func _update_placement() -> void:
 		if _ghost:
 			_ghost.visible = false
 		return
-	# March along the view ray until it meets the ground (max ~6 m); else 3 m ahead.
 	var from := camera.global_position
 	var dir := -camera.global_transform.basis.z
+	var kind_now: String = info.station
 	var pos := Vector3.INF
-	var d := 0.5
-	while d < 6.0:
-		var p := from + dir * d
-		if p.y <= Game.world_gen.get_height(p.x, p.z):
-			pos = p
-			break
-		d += 0.2
+	# Building pieces snap to whatever the crosshair is on: the ground, a foundation's top, a wall face.
+	if GameActions.is_building(kind_now) and ray.is_colliding() and ray.get_collision_point().distance_to(from) <= REACH + 2.0:
+		var hit := ray.get_collision_point()
+		if ray.get_collider().name != "TerrainBody" and not ray.get_collider().has_meta("structure") and ray.get_collider().get_parent() is TerrainChunk:
+			hit = Vector3.INF   # plants and rocks don't count: aim at the ground behind them instead
+		if hit != Vector3.INF:
+			pos = hit
+	if pos == Vector3.INF:
+		# March along the view ray until it meets the ground (max ~6 m); else 3 m ahead.
+		var d := 0.5
+		while d < 6.0:
+			var p := from + dir * d
+			if p.y <= Game.world_gen.get_height(p.x, p.z):
+				pos = p
+				break
+			d += 0.2
 	if pos == Vector3.INF:
 		var flat := Vector3(dir.x, 0, dir.z).normalized()
 		pos = global_position + flat * 3.0
-	pos.y = Game.world_gen.get_height(pos.x, pos.z)
+	pos.y = maxf(pos.y, Game.world_gen.get_height(pos.x, pos.z)) if not GameActions.is_building(kind_now) else pos.y
+	if not GameActions.is_building(kind_now):
+		pos.y = Game.world_gen.get_height(pos.x, pos.z)
 	var yaw := rotation.y + PI
 	var kind: String = info.station
 	if GameActions.is_building(kind):
@@ -621,6 +632,8 @@ func _update_placement() -> void:
 	var reason := GameActions.placement_problem(pos, kind, yaw)
 	if reason == "" and flat_dist < 1.2:
 		reason = "Too close to you"
+	if reason == "" and GameActions.is_building(kind) and _overlaps_player(pos, kind, yaw):
+		reason = "You're standing there"
 	placement = {"ok": reason == "", "reason": reason, "pos": pos, "yaw": yaw, "name": info.name}
 	if not _ghost:
 		_ghost = MeshInstance3D.new()
@@ -635,6 +648,22 @@ func _update_placement() -> void:
 	_ghost.material_override = _ghost_ok_mat if placement.ok else _ghost_bad_mat
 	_ghost.global_position = pos
 	_ghost.rotation = Vector3(0, yaw, 0)
+
+
+## Would a piece at pos overlap the player's body (feet to head, about 0.4 m around)?
+func _overlaps_player(pos: Vector3, kind: String, yaw: float) -> bool:
+	var half := Vector2(GameActions.CELL * 0.5, GameActions.CELL * 0.5)
+	if kind in GameActions.WALL_KINDS:
+		half = Vector2(GameActions.CELL * 0.5, 0.15) if absf(yaw) < 0.01 else Vector2(0.15, GameActions.CELL * 0.5)
+	elif kind == "roof":
+		half = Vector2(GameActions.CELL * 0.5, GameActions.CELL * 0.5)
+	var lo := pos.y - 0.2
+	var hi := pos.y + 3.2
+	var feet := global_position.y
+	var top := feet + 1.85
+	if top < lo or feet > hi:
+		return false
+	return absf(global_position.x - pos.x) < half.x + 0.4 and absf(global_position.z - pos.z) < half.y + 0.4
 
 
 func _ghost_material(col: Color) -> StandardMaterial3D:

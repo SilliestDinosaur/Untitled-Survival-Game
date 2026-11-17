@@ -429,6 +429,8 @@ static func removal_problem(st: Dictionary) -> String:
 		var lvl := int(st.level)
 		if not foundation_at(cell, lvl + 1).is_empty() or not roof_in(cell, lvl).is_empty() or not roof_in(cell, lvl + 1).is_empty():
 			return "Take down what's on top of it first"
+		if walls_around(cell, lvl) > 0:
+			return "Take down the walls standing on it first"
 	elif st.kind in WALL_KINDS:
 		# A roof needs two walls under it; don't let it fall.
 		var lvl := int(st.get("level", 0))
