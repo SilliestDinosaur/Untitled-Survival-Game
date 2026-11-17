@@ -120,11 +120,13 @@ func _init(seed_value: int, pal: WorldPalette) -> void:
 
 	hydro = Hydrology.compute(self)
 	_hydro_ready = true
+	caves = Caves.plan(self)   # planned from the base ground, so it's the same on every machine
 
 
 ## Terrain height in meters at world position (x, z). Sea level is 0.
 ## Drainage: river depths and water levels on a coarse grid (see Hydrology). Built once per world.
 var hydro := {}
+var caves: Dictionary = {}   ## the cave plan (see Caves.plan)
 var _hydro_ready := false
 
 ## Metres added to the procedural ground by digging / piling / flattening. Keys are whole-metre

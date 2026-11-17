@@ -64,6 +64,20 @@ func _build_terrain(data: Dictionary, flora: FloraLibrary) -> void:
 		mi.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
 	add_child(mi)
 
+	var faces: PackedVector3Array = data.get("collision_faces", PackedVector3Array())
+	if not faces.is_empty():
+		# Solid ground near caves: the collider is the same triangles as the mesh.
+		var tri := ConcavePolygonShape3D.new()
+		tri.set_faces(faces)
+		var tbody := StaticBody3D.new()
+		tbody.name = "TerrainBody"
+		tbody.collision_layer = LAYER_SOLID
+		tbody.collision_mask = 0
+		var tcol := CollisionShape3D.new()
+		tcol.shape = tri
+		tbody.add_child(tcol)
+		add_child(tbody)
+		return
 	var heights: PackedFloat32Array = data.collision
 	if heights.is_empty():
 		return

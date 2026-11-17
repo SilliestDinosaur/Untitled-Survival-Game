@@ -7,8 +7,6 @@ signal landed(impact: float)
 signal hint(text: String)   ## short messages for the HUD ("Too hard to break by hand")
 signal hit_landed           ## a swing connected with something
 signal open_crafting        ## Interact on a station
-signal cave_enter(index: int)   ## Interact on a cave entrance
-signal cave_leave(index: int)    ## Interact at a way out of a cave
 signal cave_chest(index: int)    ## Interact with a cave's supply chest
 
 const REACH := 3.2
@@ -273,12 +271,6 @@ func _update_looking_at() -> void:
 	var body := ray.get_collider() as CollisionObject3D
 	if not body or ray.get_collision_point().distance_to(camera.global_position) > REACH + 0.6:
 		return
-	if body.has_meta("cave_mouth"):
-		looking_at = {"name": "Cave entrance", "label": "Cave", "cave_mouth": int(body.get_meta("cave_mouth")), "interact": "Go down"}
-		return
-	if body.has_meta("cave_exit"):
-		looking_at = {"name": "The way up", "label": "Cave", "cave_exit": int(body.get_meta("cave_exit")), "interact": "Climb out"}
-		return
 	if body.has_meta("cave_chest"):
 		var cid := int(body.get_meta("cave_chest"))
 		var opened: bool = Game.looted.has("cave_chest_%d" % cid)
@@ -485,12 +477,6 @@ func _on_hit_resource(res: Dictionary, r: Dictionary, point: Vector3) -> void:
 ## Interact: the viewmodel's hand reached out.
 func _on_grab() -> void:
 	var look := looking_at
-	if look.has("cave_mouth"):
-		cave_enter.emit(int(look.cave_mouth))
-		return
-	if look.has("cave_exit"):
-		cave_leave.emit(int(look.cave_exit))
-		return
 	if look.has("cave_chest"):
 		cave_chest.emit(int(look.cave_chest))
 		return

@@ -9,6 +9,7 @@ const Biome := WorldGen.Biome
 ## Detail tiers: 0 = right around the player, 2 = far away.
 const TIER_RES := [32, 16, 8]          ## terrain quads per side
 const TIER_SKIRT := [3.0, 6.0, 10.0]   ## depth of the edge "skirt" that hides gaps between tiers
+const VOXEL_STEP := [1.0, 2.0, 4.0]    ## grid size of the solid ground near caves, per tier
 
 const TREE_ATTEMPTS := 110
 const ROCK_ATTEMPTS := 10
@@ -33,19 +34,31 @@ static func generate(job: Dictionary) -> void:
 	var res: int = TIER_RES[tier]
 	var step := size / res
 
-	var n := res + 1
-	var heights := PackedFloat32Array()
-	heights.resize(n * n)
-	for z in n:
-		for x in n:
-			heights[z * n + x] = gen.get_height(origin.x + x * step, origin.z + z * step)
-
-	var result := {
-		"mesh": _terrain_arrays(heights, n, res, step, origin, gen, TIER_SKIRT[tier]),
-		"collision": _collision_data(heights, step) if tier <= 1 else PackedFloat32Array(),
-		"collision_width": n,
-		"step": step,
-	}
+	# Chunks with caves under them get a solid 3D ground (see VoxelTerrain); the rest use the heightfield.
+	var cave_segs: Array = Caves.segments_near(gen.caves, origin, size) if tier <= 1 else []
+	var result: Dictionary
+	if not cave_segs.is_empty():
+		var vox := VoxelTerrain.build(gen, origin, size, VOXEL_STEP[tier], cave_segs)
+		result = {
+			"mesh": [vox.verts, vox.normals, vox.colors, vox.indices],
+			"collision": PackedFloat32Array(),
+			"collision_width": 0,
+			"collision_faces": vox.faces,
+			"step": step,
+		}
+	else:
+		var n := res + 1
+		var heights := PackedFloat32Array()
+		heights.resize(n * n)
+		for z in n:
+			for x in n:
+				heights[z * n + x] = gen.get_height(origin.x + x * step, origin.z + z * step)
+		result = {
+			"mesh": _terrain_arrays(heights, n, res, step, origin, gen, TIER_SKIRT[tier]),
+			"collision": _collision_data(heights, step) if tier <= 1 else PackedFloat32Array(),
+			"collision_width": n,
+			"step": step,
+		}
 	var resources := _place_resources(coord, origin, gen, flora, job.removed)
 	result.resources = resources
 	result.multimesh = _resource_buffers(resources, origin, tier)
@@ -166,7 +179,8 @@ static func _place_resources(coord: Vector2i, origin: Vector3, gen: WorldGen, fl
 	var add := func(kind: String, variant: int, pos: Vector3, yaw: float, scl: Vector3) -> void:
 		var id := "%d_%d_%d" % [coord.x, coord.y, counter[0]]
 		counter[0] += 1
-		if removed.has(id):
+		# Nothing grows over a cave opening or inside a tunnel (the draws above still happen).
+		if removed.has(id) or Caves.void_distance(gen.caves, pos) < 1.0:
 			return
 		out.append({
 			"id": id,
@@ -340,6 +354,8 @@ static func _place_ground_cover(coord: Vector2i, origin: Vector3, gen: WorldGen,
 			var wx := origin.x + lx
 			var wz := origin.z + lz
 			var h := gen.get_height(wx, wz)
+			if Caves.void_distance(gen.caves, Vector3(wx, h, wz)) < 1.0:
+				continue
 			if h < 2.0 or h > 55.0:
 				continue
 			var nrm := gen.get_normal(wx, wz)

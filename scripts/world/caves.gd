@@ -1,15 +1,25 @@
 class_name Caves
 extends RefCounted
-## Caves: hillside entrances on the island lead down into a separate underground area (far below
-## the surface, so it never overlaps the world). Each entrance has its own cave, planned from the
-## world seed: a winding tunnel with a few rooms, glowing fungus, bats, and a supply chest.
+## Caves cut into the rock under the island. Entrances are openings in the hillsides; from each one
+## tunnels wind inward and downward, with chambers, branches, dead ends and loops, and close
+## entrances are joined by long corridors. The plan is made from the BASE terrain (before any building)
+## so every machine plans the same caves. VoxelTerrain subtracts the planned voids from the ground.
+##
+## A plan is a Dictionary: {entrances, roots, nodes, rooms, chests, glow, bats, segs, buckets}.
+## segs are [a: Vector3, b: Vector3, ra: float, rb: float] tunnel pieces; buckets map a 16 m grid
+## cell to the segs that reach it, for quick lookups. A plan is read-only once made, so worker
+## threads can use it safely.
 
-const CAVE_Y := -400.0      ## where the underground lives
-const MIN_SPACING := 120.0  ## entrances are kept apart
+const MIN_SPACING := 120.0   ## entrances are kept apart
 const MAX_ENTRANCES := 12
+const MAX_NODES := 900
+const LINK_DISTANCE := 260.0
+const MAX_DEPTH := 24.0      ## tunnels never go deeper than this under the ground above
+const CLEARANCE := 1.5       ## metres of rock left over the top of a tunnel
+const BUCKET := 16.0
 
 
-## Hillside spots where an entrance can open: steep faces, between the lowlands and the peaks.
+## Hillside spots where an entrance can open: steep faces between the lowlands and the peaks.
 static func entrances(gen: WorldGen) -> Array:
 	var cand: Array = []
 	var size := Game.WORLD_SIZE
@@ -17,11 +27,9 @@ static func entrances(gen: WorldGen) -> Array:
 	while z < size - 60.0:
 		var x := 60.0
 		while x < size - 60.0:
-			var h := gen.get_height(x, z)
-			if h > 10.0 and h < 55.0:
-				var n := gen.get_normal(x, z)
-				if n.y < 0.8:
-					cand.append(Vector3(x, h, z))
+			var h := gen.get_base_height(x, z)
+			if h > 10.0 and h < 55.0 and _base_slope_y(gen, x, z) < 0.8:
+				cand.append(Vector3(x, h, z))
 			x += 24.0
 		z += 24.0
 	# Shuffle deterministically by seed, then take the first spread-out ones.
@@ -41,32 +49,35 @@ static func entrances(gen: WorldGen) -> Array:
 	return out
 
 
-## The underground network, planned from the world seed. Every entrance drops into it at its own
-## spot; tunnels grow from there with branches, dead ends, chambers of varying size, and loops.
-## Entrances that are close together are joined by long winding corridors, so caves link up.
-## Nodes are in world coordinates (y around CAVE_Y). Cached per world seed.
-static var _net_cache := {}
-const MAX_NODES := 900
-const LINK_DISTANCE := 260.0
+## The normal's height component on the base terrain (1 = flat, lower = steeper).
+static func _base_slope_y(gen: WorldGen, x: float, z: float) -> float:
+	var gx := (gen.get_base_height(x + 1.0, z) - gen.get_base_height(x - 1.0, z)) * 0.5
+	var gz := (gen.get_base_height(x, z + 1.0) - gen.get_base_height(x, z - 1.0)) * 0.5
+	return 1.0 / sqrt(1.0 + gx * gx + gz * gz)
 
 
-static func network(entrance_points: Array) -> Dictionary:
-	var key := "%d_%d" % [Game.world_seed, entrance_points.size()]
-	if _net_cache.has(key):
-		return _net_cache[key]
+## Plan every cave for this world. Call once per world, on the main thread.
+static func plan(gen: WorldGen) -> Dictionary:
+	var spots := entrances(gen)
 	var rng := RandomNumberGenerator.new()
 	rng.seed = hash([Game.world_seed, "network"])
 	var nodes: Array = []   # {p: Vector3, r: float, tree: int}
 	var edges: Array = []   # [a, b]
 	var rooms: Array = []   # node indices of chambers
 	var roots: Array = []   # node index at each entrance
-	# Each entrance starts a tree of tunnels.
-	for e in entrance_points.size():
-		var s: Vector3 = entrance_points[e]
-		var root := _add_node(nodes, Vector3(s.x, Caves.CAVE_Y, s.z), 2.4, e)
+	for e in spots.size():
+		var s: Vector3 = spots[e]
+		# The mouth: just under the slope, so the void breaks the surface and makes an opening.
+		var root := _add_node(nodes, Vector3(s.x, gen.get_base_height(s.x, s.z) - 0.8, s.z), 2.4, e)
 		roots.append(root)
+		# Start heading into the hill (uphill, and down a little).
+		var g := _base_grad(gen, s.x, s.z)   # points uphill
+		var uphill := Vector3(g.x, 0.0, g.y)
+		if uphill.length() < 0.01:
+			uphill = Vector3(1, 0, 0)
+		var start_dir := (uphill.normalized() + Vector3(0, -0.4, 0)).normalized()
 		# Frontier items: [node index, direction, radius, steps left, tree]
-		var frontier: Array = [[root, Vector3(rng.randf_range(-1, 1), -0.25, rng.randf_range(-1, 1)).normalized(), 2.4, 14 + rng.randi() % 10, e]]
+		var frontier: Array = [[root, start_dir, 2.4, 14 + rng.randi() % 10, e]]
 		while not frontier.is_empty() and nodes.size() < MAX_NODES:
 			var pick: int = rng.randi() % frontier.size()
 			var item: Array = frontier[pick]
@@ -80,17 +91,18 @@ static func network(entrance_points: Array) -> Dictionary:
 				if nodes.size() >= MAX_NODES:
 					break
 				dir = dir.rotated(Vector3.UP, rng.randf_range(-0.55, 0.55)).normalized()
-				dir.y = clampf(dir.y + rng.randf_range(-0.12, 0.12) - (nodes[cur].p.y - Caves.CAVE_Y) * 0.04, -0.4, 0.3)
+				dir.y = clampf(dir.y + rng.randf_range(-0.12, 0.12) - 0.05, -0.5, 0.3)
 				dir = dir.normalized()
 				var length := rng.randf_range(3.2, 5.0)
-				# Mostly tunnels, now and then a chamber (bigger, and a point to put chests and bats).
+				# Mostly tunnels, now and then a chamber (bigger, and a point for chests and bats).
 				var is_room := rng.randf() < 0.1
 				var nr := clampf(rad + rng.randf_range(-0.5, 0.5), 1.2, 3.6)
 				if is_room:
 					nr = rng.randf_range(4.5, 7.5)
-				var p: Vector3 = nodes[cur].p + dir * length
-				p.y = clampf(p.y, Caves.CAVE_Y - 26.0, Caves.CAVE_Y + 10.0)
-				var nxt := _add_node(nodes, p, nr, tree)
+				var fit: Variant = _fit(gen, nodes[cur].p + dir * length, nr)
+				if fit == null:
+					break   # the rock ends here: this branch stops
+				var nxt := _add_node(nodes, fit, nr, tree)
 				edges.append([cur, nxt])
 				if is_room:
 					rooms.append(nxt)
@@ -100,7 +112,6 @@ static func network(entrance_points: Array) -> Dictionary:
 				if rng.randf() < 0.16 and steps > 3:
 					var bd := dir.rotated(Vector3.UP, (1.0 if rng.randf() < 0.5 else -1.0) * rng.randf_range(0.6, 1.3))
 					frontier.append([cur, bd.normalized(), maxf(rad * 0.7, 1.1), rng.randi_range(3, 8), tree])
-			# A tunnel can end in a dead end (fine), or carry on as its own branch.
 	# Corridors between entrances that are close: they make the caves connect.
 	for a in roots.size():
 		var best := -1
@@ -113,8 +124,8 @@ static func network(entrance_points: Array) -> Dictionary:
 				best_d = d
 				best = b
 		if best >= 0 and rng.randf() < 0.8:
-			_corridor(nodes, edges, rng, roots[a], roots[best])
-	# Loops: a few nodes of different tunnels that happen to be close are joined.
+			_corridor(gen, nodes, edges, rng, roots[a], roots[best])
+	# Loops: nodes of different tunnels that happen to be close are joined.
 	var loops := 0
 	for i in nodes.size():
 		if loops >= 20 or nodes.size() >= MAX_NODES:
@@ -131,12 +142,13 @@ static func network(entrance_points: Array) -> Dictionary:
 	var glow: Array = []
 	var bats: Array = []
 	for r: int in rooms:
+		var n: Dictionary = nodes[r]
 		if chests.size() < 6 and rng.randf() < 0.45:
-			chests.append(nodes[r].p + Vector3(float(nodes[r].r) * 0.4, -float(nodes[r].r) + 1.0, 0.0))
+			chests.append(n.p + Vector3(float(n.r) * 0.4, -float(n.r) + 1.0, 0.0))
 		if bats.size() < 16:
 			for k in 2:
 				var ang := rng.randf() * TAU
-				bats.append(nodes[r].p + Vector3(cos(ang) * 2.5, float(nodes[r].r) * 0.4, sin(ang) * 2.5))
+				bats.append(n.p + Vector3(cos(ang) * 2.5, float(n.r) * 0.4, sin(ang) * 2.5))
 	for i in nodes.size():
 		if glow.size() >= 90:
 			break
@@ -144,9 +156,44 @@ static func network(entrance_points: Array) -> Dictionary:
 			var n: Dictionary = nodes[i]
 			var ang := rng.randf() * TAU
 			glow.append(n.p + Vector3(cos(ang) * float(n.r) * 0.5, -float(n.r) * 0.8, sin(ang) * float(n.r) * 0.5))
-	var result := {"nodes": nodes, "edges": edges, "rooms": rooms, "roots": roots, "chests": chests, "glow": glow, "bats": bats}
-	_net_cache[key] = result
-	return result
+	# Tunnel pieces: each edge is two straight pieces with a slight bend, so they read as dug rock.
+	var segs: Array = []
+	for edge: Array in edges:
+		var a: Dictionary = nodes[edge[0]]
+		var b: Dictionary = nodes[edge[1]]
+		var mid: Vector3 = (a.p + b.p) * 0.5
+		mid += Vector3(sin(a.p.x * 0.13 + b.p.z * 0.07), 0.0, cos(a.p.z * 0.11 + b.p.x * 0.05)) * minf(a.p.distance_to(b.p) * 0.12, 1.2)
+		var mid_r := (float(a.r) + float(b.r)) * 0.5 * 0.92
+		segs.append([a.p, mid, float(a.r), mid_r])
+		segs.append([mid, b.p, mid_r, float(b.r)])
+	var buckets := {}
+	for si in segs.size():
+		var s: Array = segs[si]
+		var reach: float = maxf(float(s[2]), float(s[3])) + 1.0
+		var lo: Vector3 = Vector3(minf(s[0].x, s[1].x), 0, minf(s[0].z, s[1].z)) - Vector3(reach, 0, reach)
+		var hi: Vector3 = Vector3(maxf(s[0].x, s[1].x), 0, maxf(s[0].z, s[1].z)) + Vector3(reach, 0, reach)
+		for bz in range(floori(lo.z / BUCKET), floori(hi.z / BUCKET) + 1):
+			for bx in range(floori(lo.x / BUCKET), floori(hi.x / BUCKET) + 1):
+				var key := Vector2i(bx, bz)
+				if not buckets.has(key):
+					buckets[key] = []
+				buckets[key].append(si)
+	return {"entrances": spots, "roots": roots, "nodes": nodes, "rooms": rooms, "chests": chests,
+		"glow": glow, "bats": bats, "segs": segs, "buckets": buckets}
+
+
+static func _base_grad(gen: WorldGen, x: float, z: float) -> Vector2:
+	return Vector2((gen.get_base_height(x + 1.0, z) - gen.get_base_height(x - 1.0, z)) * 0.5,
+		(gen.get_base_height(x, z + 1.0) - gen.get_base_height(x, z - 1.0)) * 0.5)
+
+
+## A point for a tunnel of radius r: pushed under the local ground by at least CLEARANCE, and not
+## deeper than MAX_DEPTH. Null if there's no rock deep enough here (the tunnel stops).
+static func _fit(gen: WorldGen, p: Vector3, r: float) -> Variant:
+	var top := gen.get_base_height(p.x, p.z) - r - CLEARANCE
+	if top < Game.SEA_LEVEL + 2.0:
+		return null
+	return Vector3(p.x, clampf(p.y, top - MAX_DEPTH, top), p.z)
 
 
 static func _add_node(nodes: Array, p: Vector3, r: float, tree: int) -> int:
@@ -154,8 +201,8 @@ static func _add_node(nodes: Array, p: Vector3, r: float, tree: int) -> int:
 	return nodes.size() - 1
 
 
-## A long winding corridor from node a to node b, with a few bends so it reads as dug rock.
-static func _corridor(nodes: Array, edges: Array, rng: RandomNumberGenerator, a: int, b: int) -> void:
+## A long winding corridor from node a to node b, with bends so it reads as dug rock.
+static func _corridor(gen: WorldGen, nodes: Array, edges: Array, rng: RandomNumberGenerator, a: int, b: int) -> void:
 	var pa: Vector3 = nodes[a].p
 	var pb: Vector3 = nodes[b].p
 	var n := maxi(3, int(pa.distance_to(pb) / 4.5))
@@ -164,61 +211,53 @@ static func _corridor(nodes: Array, edges: Array, rng: RandomNumberGenerator, a:
 		if nodes.size() >= MAX_NODES:
 			break
 		var t := float(i) / n
-		var p := pa.lerp(pb, t)
-		p += Vector3(rng.randf_range(-3, 3), rng.randf_range(-1.5, 1.5), rng.randf_range(-3, 3))
-		p.y = clampf(p.y, Caves.CAVE_Y - 26.0, Caves.CAVE_Y + 10.0)
-		var nxt := _add_node(nodes, p, rng.randf_range(1.5, 2.6), nodes[a].tree)
+		var p := pa.lerp(pb, t) + Vector3(rng.randf_range(-3, 3), rng.randf_range(-1.5, 1.5), rng.randf_range(-3, 3))
+		var r := rng.randf_range(1.5, 2.6)
+		var fit: Variant = _fit(gen, p, r)
+		if fit == null:
+			continue
+		var nxt := _add_node(nodes, fit, r, nodes[a].tree)
 		edges.append([prev, nxt])
 		prev = nxt
 	edges.append([prev, b])
 
 
-## The visible entrance on the hillside: a rock arch around a dark opening, facing downhill.
-static func build_mouth(index: int, at: Vector3) -> Node3D:
-	var root := Node3D.new()
-	root.name = "CaveMouth%d" % index
-	root.position = at
-	var gen: WorldGen = Game.world_gen
-	var g := Vector2(gen.get_height(at.x + 1.0, at.z) - gen.get_height(at.x - 1.0, at.z), gen.get_height(at.x, at.z + 1.0) - gen.get_height(at.x, at.z - 1.0))
-	var down := Vector3(-g.x, 0.0, -g.y)
-	if down.length() < 0.01:
-		down = Vector3(1, 0, 0)
-	root.basis = Basis.looking_at(down.normalized(), Vector3.UP)   # works before the node is in the tree
-	var rock := Game.palette.rock.darkened(0.1)
-	var kit := MeshKit.new(hash([Game.world_seed, index, "mouth"]))
-	# The arch: a thick rock ring, flattened so it sits into the slope.
-	var ring := PackedVector2Array()
-	for i in 24:
-		var a := PI * i / 23.0
-		ring.append(Vector2(cos(a) * 2.2, sin(a) * 2.6))
-	ring.append(Vector2(-2.2, -0.6))   # down the left side, then across the base (a simple outline)
-	ring.append(Vector2(2.2, -0.6))
-	var inner := PackedVector2Array()
-	for i in 24:
-		var a := PI * (23 - i) / 23.0
-		inner.append(Vector2(cos(a) * 1.25, sin(a) * 1.6 - 0.1))
-	kit.sculpt(ring, Transform3D(), func(_p: Vector2) -> float: return 1.2, func(p: Vector2, _t: float) -> Color: return rock.lightened(sin(p.x * 4.0) * 0.04), 2, 0.1)
-	var mi := MeshInstance3D.new()
-	mi.name = "Arch"
-	mi.mesh = kit.commit(ArtStyle.painted({"brush_strength": 0.3, "rim_amount": 0.2}))
-	root.add_child(mi)
-	# The dark opening, set just inside the arch.
-	var hole := MeshKit.new(3)
-	hole.sculpt(inner, Transform3D(Basis(), Vector3(0, 0, 0.5)), func(_p: Vector2) -> float: return 0.05, func(_p: Vector2, _t: float) -> Color: return Color(0.05, 0.04, 0.05), 0, 0.1)
-	var hi := MeshInstance3D.new()
-	hi.name = "Opening"
-	hi.mesh = hole.commit(ArtStyle.painted({"brush_strength": 0.05, "rim_amount": 0.0}))
-	root.add_child(hi)
-	# A collider for the crosshair (you walk up to the opening and press interact).
-	var body := StaticBody3D.new()
-	body.collision_layer = TerrainChunk.LAYER_INTERACT
-	body.collision_mask = 0
-	body.set_meta("cave_mouth", index)
-	var cs := CollisionShape3D.new()
-	var box := BoxShape3D.new()
-	box.size = Vector3(4.4, 4.0, 2.0)
-	cs.shape = box
-	cs.position = Vector3(0, 1.4, 0)
-	body.add_child(cs)
-	root.add_child(body)
-	return root
+## The tunnel pieces that could reach the chunk at `origin` (size metres square), with a margin.
+static func segments_near(plan: Dictionary, origin: Vector3, size: float) -> Array:
+	var out: Array = []
+	if plan.is_empty():
+		return out
+	var seen := {}
+	var lo := Vector2i(floori((origin.x - 8.0) / BUCKET), floori((origin.z - 8.0) / BUCKET))
+	var hi := Vector2i(floori((origin.x + size + 8.0) / BUCKET), floori((origin.z + size + 8.0) / BUCKET))
+	for bz in range(lo.y, hi.y + 1):
+		for bx in range(lo.x, hi.x + 1):
+			var key := Vector2i(bx, bz)
+			if not plan.buckets.has(key):
+				continue
+			for si: int in plan.buckets[key]:
+				if not seen.has(si):
+					seen[si] = true
+					out.append(plan.segs[si])
+	return out
+
+
+## Signed distance from p to the nearest cave wall: negative inside a tunnel, positive in rock.
+## 99 when no cave is anywhere near p.
+static func void_distance(plan: Dictionary, p: Vector3) -> float:
+	if plan.is_empty():
+		return 99.0
+	var key := Vector2i(floori(p.x / BUCKET), floori(p.z / BUCKET))
+	if not plan.buckets.has(key):
+		return 99.0
+	var best := 99.0
+	for si: int in plan.buckets[key]:
+		best = minf(best, _piece_distance(plan.segs[si], p))
+	return best
+
+
+static func _piece_distance(s: Array, p: Vector3) -> float:
+	var a: Vector3 = s[0]
+	var ab: Vector3 = s[1] - a
+	var t := clampf((p - a).dot(ab) / maxf(ab.length_squared(), 0.0001), 0.0, 1.0)
+	return p.distance_to(a + ab * t) - lerpf(float(s[2]), float(s[3]), t)

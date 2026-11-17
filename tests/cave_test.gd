@@ -1,18 +1,20 @@
 extends SceneTree
 ## Cave test: godot --headless --path . -s tests/cave_test.gd
-## Finds the entrances, goes down, checks the cave is built and the player is inside it, comes back
-## up, and checks that a game saved underground reloads at the entrance.
+## Caves are cut into the ground: the plan has entrances and tunnels under the surface, the chunk
+## at an entrance is built as solid ground with the tunnel walls in it, and standing in a tunnel
+## counts as being in a cave.
 
 var _main: Node
 var _game: Node
 var _f := 0
 var _step := 0
 var _fails: Array[String] = []
-var _CavesScript: GDScript
+var _CavesScript: GDScript      ## loaded at run time: naming project classes early breaks the autoloads
+var _ChunkScript: GDScript
+var root_pos := Vector3.ZERO
 
 
 func _initialize() -> void:
-	_CavesScript = load("res://scripts/world/caves.gd")
 	_main = load("res://scenes/main.tscn").instantiate()
 	root.add_child(_main)
 	_game = root.get_node("Game")
@@ -25,66 +27,61 @@ func _process(_d: float) -> bool:
 			if _f == 5:
 				_main.create_world("Cave Test", 6161)
 			if _main.state == _main.State.PLAYING:
-				var spots: Array = _CavesScript.entrances(_game.world_gen)
-				_check(spots.size() >= 1, "the island has cave entrances (%d)" % spots.size())
-				_check(_main._mouths.get_child_count() == spots.size(), "each entrance has a visible mouth")
-				var pts: Array = []
-				for m: Node3D in _main._mouths.get_children():
-					pts.append(m.position)
-				var net: Dictionary = _CavesScript.network(pts)
-				_check(net.roots.size() == pts.size(), "every entrance drops into the network")
-				_check(net.nodes.size() >= 60 and net.rooms.size() >= 2, "the network has tunnels and chambers (%d nodes, %d chambers)" % [net.nodes.size(), net.rooms.size()])
-				# Real connectivity: union the edges and count the separate systems. Each entrance's
-				# tunnels are one system; corridors may join systems, so the count is informational.
-				var par: Array = range(net.nodes.size())
-				for e: Array in net.edges:
-					var ra: int = _find(par, e[0])
-					var rb: int = _find(par, e[1])
-					par[ra] = rb
-				var systems := {}
-				for i in net.nodes.size():
-					systems[_find(par, i)] = true
-				print("cave systems: %d (entrances %d, edges %d)" % [systems.size(), net.roots.size(), net.edges.size()])
-				_check(systems.size() <= net.roots.size(), "no cave tunnel floats free of every entrance (%d systems)" % systems.size())
-				_main.enter_cave(0)
+				_CavesScript = load("res://scripts/world/caves.gd")
+				_ChunkScript = load("res://scripts/world/chunk_generator.gd")
 				_step = 1
-				_f = 0
 		1:
-			if _game.in_cave or _f > 300:
-				_check(_game.in_cave, "entering takes you underground")
-				var p = _main.get_node("Player")
-				_check(p.global_position.y < _CavesScript.CAVE_Y + 20.0 and p.global_position.y > _CavesScript.CAVE_Y - 20.0, "the player is in the cave (y %.1f)" % p.global_position.y)
-				_check(_main.get_node_or_null("Underground") != null, "the underground scene exists")
-				_check(not p.swimming and not p.underwater, "underground is not treated as water")
-				_step = 2
-				_f = 0
+			var gen: Object = _game.world_gen
+			var plan: Dictionary = gen.caves
+			_check(plan.has("roots") and plan.roots.size() >= 1, "the island has cave entrances (%d)" % plan.roots.size())
+			_check(plan.roots.size() == plan.entrances.size(), "every entrance has a root in the plan")
+			_check(plan.segs.size() >= 60, "the caves have tunnels (%d pieces)" % plan.segs.size())
+			var root: Vector3 = plan.nodes[plan.roots[0]].p
+			var ground: float = gen.get_base_height(root.x, root.z)
+			_check(root.y < ground and root.y > ground - 2.0, "the mouth is just under the slope (root %.1f, ground %.1f)" % [root.y, ground])
+			var inside: float = _CavesScript.void_distance(plan, root + Vector3(0, 0.2, 0))
+			_check(inside < 0.0, "the mouth is a void in the ground (%.2f)" % inside)
+			var deep := 0
+			for s: Array in plan.segs:
+				if minf(s[0].y, s[1].y) < gen.get_base_height(s[0].x, s[0].z) - 4.0:
+					deep += 1
+			_check(deep > 0, "some tunnels run well under the ground (%d pieces)" % deep)
+			# The chunk at the mouth is built as solid ground, and its mesh has the tunnel walls in it.
+			print("MOUTH ", root, " ground ", ground)
+			var coord := Vector2i(floori(root.x / _game.CHUNK_SIZE), floori(root.z / _game.CHUNK_SIZE))
+			var job := {"coord": coord, "tier": 0, "gen": gen, "flora": _game.flora, "removed": {}, "grass_density": 0.0}
+			var t0 := Time.get_ticks_msec()
+			_ChunkScript.generate(job)
+			print("CHUNK_MS ", Time.get_ticks_msec() - t0)
+			var result: Dictionary = job.result
+			_check(result.has("collision_faces") and not result.collision_faces.is_empty(), "the mouth's chunk is built as solid ground (%d faces)" % result.get("collision_faces", PackedVector3Array()).size())
+			var verts: PackedVector3Array = result.mesh[0]
+			var walls := 0
+			var origin := Vector3(coord.x * _game.CHUNK_SIZE, 0.0, coord.y * _game.CHUNK_SIZE)
+			for v: Vector3 in verts:
+				var w := v + origin
+				if w.y < gen.get_base_height(w.x, w.z) - 1.5 and _CavesScript.void_distance(plan, w) < 0.6:
+					walls += 1
+			_check(walls > 20, "the mesh has cave walls underground (%d vertices)" % walls)
+			# Standing in a tunnel counts as underground; standing on the slope doesn't.
+			_main.player.global_position = root + Vector3(0, 0.1, 0)
+			_main._cave_check = 0.0
+			_main._update_cave_state(0.0)
+			_check(_game.in_cave, "standing in a tunnel is underground")
+			root_pos = root
+			_main.player.global_position = Vector3(root.x, ground + 6.0, root.z)
+			_main._cave_check = 0.0
+			_main._update_cave_state(0.0)
+			_check(not _game.in_cave, "standing above ground is not underground")
+			_step = 2
+			_f = 0
 		2:
-			if _f == 60:
-				_main.leave_cave(0)
-				_step = 3
-				_f = 0
-		3:
-			if not _game.in_cave and _f > 5 and not _main._fading:
-				var p = _main.get_node("Player")
-				_check(p.global_position.y > 0.0, "back up on the surface (y %.1f)" % p.global_position.y)
-				_step = 4
-				_f = 0
-		4:
-			if _f == 2 and not _game.in_cave and not _main._fading:
-				_main.enter_cave(0)
-			if _game.in_cave and _f > 60:
-				_main.save_now()
-				_check(_game.save_id != "", "saved underground")
-				var id: String = _game.save_id
-				_main._to_title()
-				_main.load_world(id)
-				_step = 5
-				_f = 0
-		5:
-			if _main.state == _main.State.PLAYING or _f > 900:
-				_check(not _game.in_cave, "a game saved in a cave reloads at the entrance")
-				var p = _main.get_node("Player")
-				_check(p.global_position.y > 0.0, "and on the surface (y %.1f)" % p.global_position.y)
+			# Drop the player onto the mouth: the ground there must hold them (no falling through).
+			if _f == 1:
+				_main.player.global_position = Vector3(root_pos.x, root_pos.y + 9.0, root_pos.z)
+			if _f == 300:
+				var y: float = _main.player.global_position.y
+				_check(y > root_pos.y - 12.0 and y < root_pos.y + 12.0, "the player lands on the ground at the mouth, not through it (y %.1f)" % y)
 				return _finish()
 	return false
 
@@ -98,10 +95,3 @@ func _check(ok: bool, what: String) -> void:
 func _finish() -> bool:
 	print("RESULT: ", "PASS" if _fails.is_empty() else "FAIL")
 	return true
-
-
-func _find(par: Array, i: int) -> int:
-	while par[i] != i:
-		par[i] = par[par[i]]
-		i = par[i]
-	return i

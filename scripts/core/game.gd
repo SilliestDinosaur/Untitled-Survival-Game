@@ -66,7 +66,6 @@ var guests := {}
 var net_client := false
 ## Underground: the player is in a cave (see Caves). Caves are far below the surface.
 var in_cave := false
-var cave_index := -1
 
 ## The save file this session is playing ("" = not saved yet / title preview).
 var save_id := ""
@@ -141,7 +140,6 @@ func new_world(seed_value: int) -> void:
 	guests = {}
 	net_client = false
 	in_cave = false
-	cave_index = -1
 	next_entity_id = 1
 	for pid: int in inventories:
 		inventories[pid].clear()
