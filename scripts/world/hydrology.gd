@@ -81,7 +81,7 @@ static func compute(gen: WorldGen) -> Dictionary:
 	for k in total:
 		if h[k] > 0.0 and catch[k] >= RIVER_CATCHMENT:
 			var size := log(catch[k] / RIVER_CATCHMENT + 1.0) / log(2.0)
-			raw[k] = clampf(0.9 + size * 1.1, 0.9, 4.2)
+			raw[k] = clampf(0.9 + size * 0.9, 0.9, 3.2)
 	var depth := PackedFloat32Array()
 	depth.resize(total)
 	for j in n:
@@ -96,12 +96,41 @@ static func compute(gen: WorldGen) -> Dictionary:
 					var w := 1.0 if (di == 0 and dj == 0) else 0.45
 					best = maxf(best, raw[nj * n + ni] * w)
 			depth[j * n + i] = best
+	# Banks: a cell can't be much shallower than its deepest neighbour, so the channel slopes out
+	# into the land over tens of metres (like a real valley) instead of dropping in one step.
+	depth = _relax_banks(depth, n)
 	# Water surface: a river is a little less deep than its channel, so the bed shows under it.
 	var water := PackedFloat32Array()
 	water.resize(total)
 	for k in total:
 		water[k] = depth[k] * 0.45 if depth[k] > 0.3 else 0.0
 	return {"n": n, "depth": depth, "water": water, "catchment": catch}
+
+
+## Bank slope: metres of depth lost per grid step away from the channel (a 4 m river has banks ~40 m wide).
+const BANK_SLOPE := 0.6
+const BANK_PASSES := 8
+
+
+## Let the depth spread out from the channel, losing BANK_SLOPE per step (forward and backward sweeps).
+static func _relax_banks(depth: PackedFloat32Array, n: int) -> PackedFloat32Array:
+	var steps := [[-1, -1, 1.414], [0, -1, 1.0], [1, -1, 1.414], [-1, 0, 1.0], [1, 0, 1.0], [-1, 1, 1.414], [0, 1, 1.0], [1, 1, 1.414]]
+	for pass_i in BANK_PASSES:
+		var forward := pass_i % 2 == 0
+		for jj in n:
+			var j: int = jj if forward else n - 1 - jj
+			for ii in n:
+				var i: int = ii if forward else n - 1 - ii
+				var k := j * n + i
+				for st: Array in steps:
+					var ni: int = i + st[0]
+					var nj: int = j + st[1]
+					if ni < 0 or nj < 0 or ni >= n or nj >= n:
+						continue
+					var cand: float = depth[nj * n + ni] - BANK_SLOPE * float(st[2])
+					if cand > depth[k]:
+						depth[k] = cand
+	return depth
 
 
 ## Sample a per-cell field at a world position (bilinear).

@@ -15,6 +15,7 @@ extends SceneTree
 var _main: Node
 var _f := 0
 var _started := false
+var _setup_cam := {}
 
 
 func _initialize() -> void:
@@ -61,11 +62,13 @@ func _place() -> void:
 	var setup_path := OS.get_environment("SETUP")
 	if setup_path != "":
 		var script: GDScript = load(setup_path)
-		script.setup(g, _main)
+		var extra = script.setup(g, _main)   # may return {"cam": Vector3, "look": Vector3} for a camera of its own
+		if extra is Dictionary:
+			_setup_cam = extra
 	var spawn: Vector3 = g.world_gen.find_spawn_point()
-	var look := _vec("LOOK", spawn + Vector3(0, 1.5, 0))
-	var cam_pos := _vec("CAM", spawn + Vector3(0, 2.0, 6.0))
-	cam_pos.y = maxf(cam_pos.y, g.world_gen.get_height(cam_pos.x, cam_pos.z) + 1.7) if OS.get_environment("CAM") == "" else cam_pos.y
+	var look := _vec("LOOK", _setup_cam.get("look", spawn + Vector3(0, 1.5, 0)))
+	var cam_pos := _vec("CAM", _setup_cam.get("cam", spawn + Vector3(0, 2.0, 6.0)))
+	cam_pos.y = maxf(cam_pos.y, g.world_gen.get_height(cam_pos.x, cam_pos.z) + 1.7) if OS.get_environment("CAM") == "" and not _setup_cam.has("cam") else cam_pos.y
 	var cam: Camera3D = p.get_node("Head/Camera3D")
 	cam.global_position = cam_pos
 	cam.look_at(look, Vector3.UP)

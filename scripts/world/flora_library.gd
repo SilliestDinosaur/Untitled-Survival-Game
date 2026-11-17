@@ -393,8 +393,7 @@ func _birch(kit: MeshKit, rng: RandomNumberGenerator) -> void:
 
 ## Weeping willow: a dome with long curtains of leaves hanging around it.
 func _willow(kit: MeshKit, rng: RandomNumberGenerator) -> void:
-	# A weeping willow: a slim, leaning trunk under a low crown of lumps, with long strands of leaves
-	# hanging from the rim down to the ground.
+	# A willow: a slim, leaning trunk with forks under a low crown of leafy lumps.
 	var h := rng.randf_range(3.6, 4.6)
 	var trunk_r := rng.randf_range(0.26, 0.34)
 	var bark := _vary(_pal.bark, rng).darkened(0.1)
@@ -413,18 +412,6 @@ func _willow(kit: MeshKit, rng: RandomNumberGenerator) -> void:
 		var d := rng.randf_range(0.4, 1.2)
 		var at := crown + Vector3(cos(a) * d, rng.randf_range(-0.2, 0.5), sin(a) * d)
 		kit.add_primitive(MeshKit.sphere(rng.randf_range(0.9, 1.25), 9, 6), Transform3D(Basis().scaled(Vector3(1, 0.7, 1)), at), leaf.lightened(rng.randf_range(-0.04, 0.06)), 0.3, 0.07, crown)
-	# Weeping strands: slim tapered leaves hanging from the rim, swaying a little.
-	var strands := rng.randi_range(16, 22)
-	for i in strands:
-		var a := TAU * i / strands + rng.randf_range(-0.12, 0.12)
-		var d := rng.randf_range(1.5, 2.5)
-		var top := crown + Vector3(cos(a) * d, -0.2, sin(a) * d)
-		var length := rng.randf_range(1.8, 3.2) * (1.0 if h < 4.0 else 1.1)
-		var sway := Basis(Vector3.UP, a + rng.randf_range(-0.3, 0.3)) * Basis(Vector3.RIGHT, rng.randf_range(0.12, 0.3))
-		var strand_basis := sway * Basis(Vector3.RIGHT, PI)   # cylinder along -Y: hanging down
-		kit.add_primitive(MeshKit.cylinder(0.012, 0.085, length, 4), Transform3D(strand_basis, top + Vector3(0, -length * 0.5, 0)),
-			leaf.lightened(rng.randf_range(-0.02, 0.1)), 0.02, 0.04, top)
-
 
 ## Savanna tree: leaning trunk splitting into branches with flat, wide canopy layers.
 func _acacia(kit: MeshKit, rng: RandomNumberGenerator) -> void:
