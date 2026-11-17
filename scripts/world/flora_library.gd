@@ -502,17 +502,27 @@ func _leaf_clumps(kit: MeshKit, rng: RandomNumberGenerator, blobs: Array, center
 func _bush(kit: MeshKit, rng: RandomNumberGenerator, berries: bool) -> void:
 	var leaf := _vary(_pal.bush_leaves, rng)
 	var center := Vector3(0, 0.45, 0)
+	# A few woody stems at the base, so it reads as a shrub and not a mossy rock.
+	var stem := _vary(_pal.bark, rng).lightened(0.05)
+	for i in 4:
+		var a := rng.randf() * TAU
+		var tip := Vector3(cos(a) * 0.35, rng.randf_range(0.45, 0.7), sin(a) * 0.35)
+		kit.loft([Vector3(cos(a) * 0.05, -0.05, sin(a) * 0.05), tip * 0.5 + Vector3(0, 0.05, 0), tip], [0.035, 0.025, 0.012], 5, stem)
+	# Several smaller leaf masses of different sizes make a lumpier, more natural silhouette.
 	var blobs := []
-	for i in rng.randi_range(3, 4):
-		var r := rng.randf_range(0.5, 0.85)
-		var pos := Vector3(rng.randf_range(-0.5, 0.5), r * 0.7, rng.randf_range(-0.5, 0.5))
+	for i in rng.randi_range(5, 7):
+		var r := rng.randf_range(0.32, 0.55)
+		var a := rng.randf() * TAU
+		var d := rng.randf_range(0.0, 0.5)
+		var pos := Vector3(cos(a) * d, r * 0.75 + rng.randf_range(0.0, 0.3), sin(a) * d)
 		blobs.append([pos, r])
-		kit.add_primitive(MeshKit.sphere(r, 8, 5), Transform3D(Basis(), pos), leaf.lightened(rng.randf_range(-0.05, 0.07)), r * 0.25, 0.07, center)
+		kit.add_primitive(MeshKit.sphere(r, 8, 5), Transform3D(Basis(), pos), leaf.lightened(rng.randf_range(-0.06, 0.07)), r * 0.3, 0.08, center)
+	_leaf_clumps(kit, rng, blobs, center, leaf, rng.randi_range(8, 11), 0.15)
 	if berries and not _bare:
-		for i in rng.randi_range(10, 16):
+		for i in rng.randi_range(12, 16):
 			var blob: Array = blobs[rng.randi() % blobs.size()]
 			var dir := Vector3(rng.randf_range(-1, 1), rng.randf_range(0.0, 1.0), rng.randf_range(-1, 1)).normalized()
-			kit.add_primitive(MeshKit.sphere(0.09, 6, 4), Transform3D(Basis(), blob[0] + dir * blob[1] * 0.95), _pal.berry, 0.0, 0.04)
+			kit.add_primitive(MeshKit.sphere(0.075, 6, 4), Transform3D(Basis(), blob[0] + dir * blob[1] * 0.97), _pal.berry.lightened(rng.randf_range(-0.08, 0.1)), 0.0, 0.04)
 
 
 func _reeds(kit: MeshKit, rng: RandomNumberGenerator) -> void:

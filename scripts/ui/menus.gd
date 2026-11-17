@@ -315,14 +315,21 @@ class PauseMenu extends Control:
 	func _ready() -> void:
 		set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
 		Menus._dim(self)
-		var col := Menus._card(self, Vector2(420, 0), 5)
+		var card := Menus._card(self, Vector2(780, 0), 5)
 		var title := UITheme.heading("Paused", 44)
 		title.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-		col.add_child(title)
+		card.add_child(title)
 		_sub = UITheme.label("", 17, UITheme.INK_DIM)
 		_sub.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-		col.add_child(_sub)
-		col.add_child(UITheme.divider())
+		card.add_child(_sub)
+		card.add_child(UITheme.divider())
+		# Two columns: the usual buttons, and multiplayer beside them.
+		var cols := HBoxContainer.new()
+		cols.add_theme_constant_override("separation", 28)
+		card.add_child(cols)
+		var col := VBoxContainer.new()
+		col.add_theme_constant_override("separation", 10)
+		cols.add_child(col)
 		for entry in [["Resume", resume_pressed, true], ["Save Game", save_pressed, false], ["Settings", settings_pressed, false],
 				["Save & Quit to Title", quit_to_title_pressed, false], ["Save & Quit Game", quit_game_pressed, false]]:
 			var b := UITheme.button(entry[0], entry[2], 340)
@@ -332,9 +339,9 @@ class PauseMenu extends Control:
 		_status = UITheme.label("", 15, UITheme.ACCENT)
 		_status.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 		col.add_child(_status)
-		col.add_child(UITheme.divider())
 		_mp = MultiplayerBox.new()
-		col.add_child(_mp)
+		_mp.custom_minimum_size = Vector2(360, 0)
+		cols.add_child(_mp)
 		visibility_changed.connect(func() -> void:
 			if visible:
 				if Net.is_client():

@@ -9,6 +9,9 @@ var normals := PackedVector3Array()
 var colors := PackedColorArray()
 var force_up_normals := false   ## grass: light it like the ground under it
 var flat_shading := false       ## chipped stone, gems: crisp facets instead of smooth shading
+## Foliage volumes (shapes with a puff_center) get painted depth baked into their colors:
+## sunlit tops, cool shadowed undersides. Free at runtime.
+var canopy_shading := true
 
 ## Global polygon multiplier (the "Model detail" setting). Set while building assets.
 static var detail := 1.0
@@ -63,6 +66,10 @@ func add_primitive(prim: PrimitiveMesh, xf: Transform3D, color: Color, lumpy := 
 		else:
 			nrm[i] = (normal_basis * src_n[i]).normalized()
 		var c: Color = color_fn.call(p) if color_fn.is_valid() else color
+		if puff_center != null and canopy_shading:
+			var up := smoothstep(-0.75, 0.65, nrm[i].y)
+			c = c.lerp(Color(c.r * 0.55, c.g * 0.62, c.b * 0.78), (1.0 - up) * 0.55)   # cool shade below
+			c = c.lerp(Color(minf(c.r * 1.12 + 0.03, 1.0), minf(c.g * 1.1 + 0.03, 1.0), c.b * 0.95), up * up * 0.4)   # warm sunlit top
 		if shade_jitter > 0.0:
 			var j := _noise.get_noise_3dv(p * 1.7) * shade_jitter
 			c = Color(c.r + j, c.g + j, c.b + j)

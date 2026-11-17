@@ -43,15 +43,15 @@ func setup(pname: String, color: Color) -> void:
 	_body.add_child(torso)
 
 	_head = Node3D.new()
-	_head.position = Vector3(0, 1.52, 0)
+	_head.position = Vector3(0, 1.6, 0)
 	_body.add_child(_head)
 	var head := MeshInstance3D.new()
 	head.mesh = _head_mesh(skin, color, rng)
 	_head.add_child(head)
 
 	_item = MeshInstance3D.new()
-	_item.position = Vector3(0.42, 0.92, -0.2)
-	_item.scale = Vector3.ONE * 1.35
+	_item.position = Vector3(0.5, 0.95, -0.25)
+	_item.scale = Vector3.ONE * 1.9
 	_body.add_child(_item)
 
 	_label = Label3D.new()
@@ -95,22 +95,22 @@ func _torso_mesh(color: Color) -> ArrayMesh:
 ## A rounded head with simple painted eyes and a smile, plus a little hair tuft.
 func _head_mesh(skin: Color, accent: Color, rng: RandomNumberGenerator) -> ArrayMesh:
 	var k := MeshKit.new(9)
-	k.add_primitive(MeshKit.sphere(0.21, 20, 14), Transform3D(Basis.from_scale(Vector3(1.0, 1.08, 0.98)), Vector3.ZERO), skin, 0.0, 0.03)
+	k.add_primitive(MeshKit.sphere(0.26, 22, 16), Transform3D(Basis.from_scale(Vector3(1.0, 1.06, 0.98)), Vector3.ZERO), skin, 0.0, 0.03)
 	var eye := Color(0.12, 0.09, 0.08)
 	for side in [-1.0, 1.0]:
-		k.add_primitive(MeshKit.sphere(0.032, 10, 7), Transform3D(Basis.from_scale(Vector3(0.8, 1.2, 0.5)), Vector3(side * 0.075, 0.03, -0.196)), eye, 0.0, 0.0)
-		k.add_primitive(MeshKit.sphere(0.01, 6, 4), Transform3D(Basis(), Vector3(side * 0.075 + 0.01, 0.05, -0.214)), Color(1, 1, 1), 0.0, 0.0)
+		k.add_primitive(MeshKit.sphere(0.042, 10, 7), Transform3D(Basis.from_scale(Vector3(0.8, 1.25, 0.5)), Vector3(side * 0.09, 0.04, -0.243)), eye, 0.0, 0.0)
+		k.add_primitive(MeshKit.sphere(0.013, 6, 4), Transform3D(Basis(), Vector3(side * 0.09 + 0.012, 0.065, -0.262)), Color(1, 1, 1), 0.0, 0.0)
 	# Smile: a short lofted arc.
 	var smile := []
 	var sr := []
 	for i in 7:
 		var t := (i / 6.0 - 0.5) * 1.4
-		smile.append(Vector3(sin(t) * 0.07, -0.06 - cos(t) * 0.02 + 0.02, -0.2 + absf(t) * 0.012))
-		sr.append(0.009)
+		smile.append(Vector3(sin(t) * 0.085, -0.075 - cos(t) * 0.025 + 0.025, -0.247 + absf(t) * 0.015))
+		sr.append(0.011)
 	k.loft(smile, sr, 6, eye.lightened(0.15), Callable(), Callable(), true, true)
 	# Hair: a cap of lumpy blobs in a colour that suits the player.
 	var hair: Color = [Color(0.2, 0.14, 0.1), Color(0.45, 0.28, 0.15), Color(0.85, 0.7, 0.4), Color(0.6, 0.25, 0.12), accent.darkened(0.35)][rng.randi() % 5]
-	k.add_primitive(MeshKit.sphere(0.215, 16, 10), Transform3D(Basis.from_scale(Vector3(1.03, 0.62, 1.0)), Vector3(0, 0.1, 0.02)), hair, 0.025, 0.05)
+	k.add_primitive(MeshKit.sphere(0.265, 16, 10), Transform3D(Basis.from_scale(Vector3(1.03, 0.6, 1.0)), Vector3(0, 0.125, 0.025)), hair, 0.03, 0.05)
 	return k.commit(_mat)
 
 
