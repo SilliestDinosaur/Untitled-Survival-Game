@@ -796,10 +796,15 @@ func _palm(kit: MeshKit, rng: RandomNumberGenerator) -> void:
 		for sgm in segs:
 			var t := float(sgm + 1) / segs
 			var p := top + dir * length * t + Vector3.UP * (sin(t * PI * 0.7) * 0.9 - t * t * 1.3)
-			var w := sin(t * PI * 0.9 + 0.2) * 0.55 + 0.05
+			var w := (sin(t * PI * 0.9 + 0.2) * 0.42 + 0.08) * (1.0 - t * 0.35) * (0.8 + 0.25 * sin(sgm * 2.7 + f))   # leafy, lobed fringe
 			var c := leaf.darkened(t * 0.12)
-			kit.add_tri(prev, p, prev + side * w + dir * 0.12 - Vector3.UP * 0.12, c)
-			kit.add_tri(prev, prev - side * w + dir * 0.12 - Vector3.UP * 0.12, p, c)
+			# Both faces: the frond is visible from underneath too (a palm seen from below).
+			var lo := prev + side * w + dir * 0.12 - Vector3.UP * 0.12
+			var ro := prev - side * w + dir * 0.12 - Vector3.UP * 0.12
+			kit.add_tri(prev, p, lo, c)
+			kit.add_tri(prev, ro, p, c)
+			kit.add_tri(prev, lo, p, c)
+			kit.add_tri(prev, p, ro, c)
 			prev = p
 	for i in rng.randi_range(2, 4):
 		var a := rng.randf() * TAU
