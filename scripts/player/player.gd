@@ -411,9 +411,13 @@ func _on_strike() -> void:
 		return
 	var point := ray.get_collision_point()
 	var look := looking_at
-	if holding_shovel() and look.is_empty() and ray.get_collider().name == "TerrainBody":
-		_shovel_work(point)
-		return
+	if look.is_empty() and ray.get_collider().name == "TerrainBody":
+		if holding_shovel():
+			_shovel_work(point)
+			return
+		if holding_pickaxe():
+			_pickaxe_carve(point)
+			return
 	if look.has("animal") and not is_instance_valid(look.animal):
 		return   # the animal was removed (e.g. despawned) mid-swing
 	if look.has("animal"):
@@ -441,6 +445,25 @@ func _on_strike() -> void:
 		return
 	if look.has("resource"):
 		_hit_resource(look.chunk, look.resource, point)
+
+
+func holding_pickaxe() -> bool:
+	var item := inventory.selected_item()
+	return item != "" and ItemDB.info(item).get("tool", {}).get("type", "") == "pickaxe"
+
+
+## Break stone with the pickaxe (steep or rocky ground only). Yields stone.
+func _pickaxe_carve(point: Vector3) -> void:
+	var op := {"mode": TerrainEdit.Mode.DIG, "x": point.x, "z": point.z, "r": shovel_radius, "s": 0.2, "rock": true}
+	hit_landed.emit()
+	Net.request("terrain", op, func(res: Dictionary) -> void:
+		if not res.get("ok", false):
+			hint.emit(String(res.get("reason", "")))
+			return
+		Audio.play_3d("clink", point, -2.0, 0.8)
+		Effects.chips(get_parent(), point, Game.palette.rock.lightened(0.1), 10, 0.07, 4.0)
+		if int(res.get("dirt", 0)) > 0:
+			hint.emit("+%d stone" % int(res.dirt)))
 
 
 func holding_shovel() -> bool:

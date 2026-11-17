@@ -112,6 +112,10 @@ func _draw() -> void:
 				draw_circle(c, s * (0.3 - i * 0.08), Color(0.45, 0.25, 0.7, 0.35 + i * 0.25))
 		"tool":
 			_tool(info, c, s)
+		"brick":
+			draw_rect(Rect2(c + Vector2(-s * 0.34, -s * 0.16), Vector2(s * 0.68, s * 0.32)), info.get("color", Color(0.7, 0.5, 0.38)))
+			draw_line(c + Vector2(-s * 0.34, 0), c + Vector2(s * 0.34, 0), Color(0.35, 0.22, 0.15), 1.5)
+			draw_line(c + Vector2(0, -s * 0.16), c + Vector2(0, 0), Color(0.35, 0.22, 0.15), 1.5)
 		"dirt":
 			_blob(c, s * 0.32, Color(0.42, 0.3, 0.2), 8, 37)
 			draw_circle(c + Vector2(-s * 0.1, -s * 0.08), s * 0.05, Color(0.55, 0.42, 0.3))

@@ -43,6 +43,7 @@ static func _build() -> void:
 	_add("knife_t1", 1, {"sticks": 1, "flint": 2, "fiber": 1}, "", "Tools")
 	# Materials
 	_add("plank", 2, {"wood": 4}, "workbench", "Materials")
+	_add("brick", 2, {"stone": 4}, "workbench", "Materials")
 	_add("leather", 1, {"hide": 2, "resin": 1}, "workbench", "Materials")
 	_add("ingot_t2", 1, {"ore_t2": 3, "wood": 2}, "forge", "Materials")
 	_add("ingot_t3", 1, {"ore_t3": 3, "wood": 3}, "forge", "Materials")

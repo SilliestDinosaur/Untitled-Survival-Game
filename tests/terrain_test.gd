@@ -63,7 +63,7 @@ func _process(_d: float) -> bool:
 			var w = _main.get_node("World")
 			if w._dirty.is_empty() and _f > 30:
 				_check(true, "touched chunks rebuilt")
-				_next(5)
+				_next(7)
 			elif _f > 600:
 				_check(false, "touched chunks never rebuilt: %d left" % w._dirty.size())
 				return _finish()
@@ -74,6 +74,37 @@ func _process(_d: float) -> bool:
 			_main._to_title()
 			_main.load_world(id)
 			_next(6)
+		7:   # pickaxe carves stone, refuses soft ground; bricks chiseled at a workbench
+			var rock := Vector3.INF
+			var sand := Vector3.INF
+			for k in 400:
+				var x := _p.x + (k % 20 - 10) * 9.0
+				var z := _p.z + (k / 20 - 10) * 9.0
+				var surf: String = _game.world_gen.get_surface(x, z)
+				if rock == Vector3.INF and surf == "rock":
+					rock = Vector3(x, 0, z)
+				if sand == Vector3.INF and surf == "sand":
+					sand = Vector3(x, 0, z)
+			if rock == Vector3.INF:
+				_check(true, "no rock nearby to test on (skipped)")
+			else:
+				var inv: Inventory = _game.inventory_of(1)
+				var s0: int = inv.count("stone")
+				var res: Dictionary = TerrainEditScript.apply({"mode": TerrainEditScript.Mode.DIG, "x": rock.x, "z": rock.z, "r": 1.5, "s": 0.2, "rock": true}, inv)
+				_check(res.ok and inv.count("stone") > s0, "pickaxe carves stone: +%d" % (inv.count("stone") - s0))
+			if sand != Vector3.INF:
+				var res2: Dictionary = TerrainEditScript.apply({"mode": TerrainEditScript.Mode.DIG, "x": sand.x, "z": sand.z, "r": 1.5, "s": 0.2, "rock": true}, _game.inventory_of(1))
+				_check(not res2.ok, "pickaxe refuses soft ground: %s" % res2.get("reason", ""))
+			var inv3: Inventory = _game.inventory_of(1)
+			inv3.add("stone", 4, true)
+			_game.structures["test_bench"] = {"id": "test_bench", "kind": "workbench", "pos": [_p.x, _p.y, _p.z], "yaw": 0.0, "hp": 3}
+			var brick_id := ""
+			for rc: Dictionary in load("res://scripts/items/recipes.gd").all():
+				if rc.out == "brick":
+					brick_id = rc.id
+			var made: Dictionary = load("res://scripts/core/game_actions.gd").craft(1, brick_id, _p)
+			_check(made.ok and inv3.count("brick") >= 2, "chiseled stone into bricks at a workbench (%d bricks)" % inv3.count("brick"))
+			_next(5)
 		6:
 			if _main.state == _main.State.PLAYING or _f > 600:
 				var after_h: float = _game.world_gen.get_height(_p.x, _p.z)

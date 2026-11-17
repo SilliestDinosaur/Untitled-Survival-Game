@@ -67,6 +67,7 @@ const BASE_ITEMS := {
 	"campfire": {"name": "Campfire", "kind": "placeable", "stack": 5, "icon": "campfire", "station": "campfire", "desc": "Place it, then cook food and light up the night."},
 	"workbench": {"name": "Workbench", "kind": "placeable", "stack": 5, "icon": "workbench", "station": "workbench", "desc": "Place it to craft planks, metal tools and better gear."},
 	"forge": {"name": "Forge", "kind": "placeable", "stack": 5, "icon": "forge", "station": "forge", "desc": "Place it to smelt ore into ingots and forge the best tools."},
+	"brick": {"name": "Stone Brick", "kind": "material", "stack": 100, "icon": "brick", "color": Color(0.7, 0.5, 0.38), "desc": "Chiseled stone. Brick is for building (coming soon)."},
 	"dirt": {"name": "Dirt", "kind": "resource", "stack": 250, "icon": "dirt", "color": Color(0.42, 0.3, 0.2), "desc": "Earth dug up with a shovel. Pile it back down to build up ground."},
 	"rock": {"name": "Rock", "kind": "tool", "stack": 1, "icon": "tool", "tier": 0, "desc": "A fist-sized flint rock. Better than bare hands.",
 		"tool": {"type": "rock", "tier": 0, "tree": 0.6, "rock": 0.6, "bush": 1.0, "carcass": 0.6, "damage": 10.0, "cooldown": 0.7, "durability": 110}},

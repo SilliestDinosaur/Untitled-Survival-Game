@@ -22,6 +22,9 @@ static func apply(op: Dictionary, inv: Inventory) -> Dictionary:
 	var cx := float(op.x)
 	var cz := float(op.z)
 	var target := float(op.get("target", gen.get_height(cx, cz)))
+	var stone := bool(op.get("rock", false))   # the pickaxe: only stone can be carved
+	if stone and (mode != Mode.DIG or gen.get_surface(cx, cz) != "rock"):
+		return {"ok": false, "reason": "Too soft to carve. Only stone can be broken with a pickaxe."}
 	var budget := inv.count("dirt") if mode == Mode.PILE else 0
 	var removed := 0.0
 	var added := 0.0
@@ -61,7 +64,11 @@ static func apply(op: Dictionary, inv: Inventory) -> Dictionary:
 	if cells.is_empty():
 		return {"ok": false, "reason": "Nothing to %s here" % MODE_NAMES[mode].to_lower()}
 	var dirt := 0
-	if mode == Mode.DIG:
+	if mode == Mode.DIG and stone:
+		dirt = roundi(removed * 2.0)   # stone yield (the field is still called dirt in results)
+		if dirt > 0:
+			inv.add("stone", dirt)
+	elif mode == Mode.DIG:
 		dirt = roundi(removed * DIRT_PER_M3)
 		if dirt > 0:
 			inv.add("dirt", dirt)
