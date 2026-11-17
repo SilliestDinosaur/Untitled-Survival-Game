@@ -10,15 +10,19 @@ extends RefCounted
 ## worker threads; reads only the world's base data and the cave plan.
 
 const DEPTH_PAD := 2.0      ## metres of solid rock sampled below the lowest ground
+const PAD := 2              ## spare samples on each side of the chunk (see build)
 const ROCK_BAND := 1.2      ## vertices this far below the ground are cave walls (rock colour)
 
 
 ## Returns {verts, normals, colors, indices, faces}. Vertices are local to the chunk origin.
 ## `segs` are the cave pieces that reach this chunk (see Caves.segments_near).
 static func build(gen: WorldGen, origin: Vector3, size: float, step: float, segs: Array) -> Dictionary:
+	var plan: Dictionary = gen.caves
 	var res := roundi(size / step)
-	var nx := res + 3          # samples per side: one spare on each side for the border
-	var nz := res + 3
+	# Samples per side: PAD spare samples on each side, so every cell that owned faces touch has its
+	# full neighbourhood (normals agree across chunk borders).
+	var nx := res + 2 * PAD + 1
+	var nz := res + 2 * PAD + 1
 	var ox := origin.x
 	var oz := origin.z
 
@@ -29,7 +33,7 @@ static func build(gen: WorldGen, origin: Vector3, size: float, step: float, segs
 	var hmax := -1e9
 	for k in nz:
 		for i in nx:
-			var h := gen.get_height(ox + (i - 1) * step, oz + (k - 1) * step)
+			var h := gen.get_height(ox + (i - PAD) * step, oz + (k - PAD) * step)
 			hs[k * nx + i] = h
 			hmin = minf(hmin, h)
 			hmax = maxf(hmax, h)
@@ -67,6 +71,8 @@ static func build(gen: WorldGen, origin: Vector3, size: float, step: float, segs
 	corner.resize(8)
 	var corner_v := PackedFloat32Array()
 	corner_v.resize(8)
+	var corner_n := PackedVector3Array()
+	corner_n.resize(8)
 	for ck in ncz:
 		for cj in ncy:
 			for ci in ncx:
@@ -90,29 +96,63 @@ static func build(gen: WorldGen, origin: Vector3, size: float, step: float, segs
 				if not (any_in and any_out):
 					continue
 				# Corner positions (world) for this cell.
-				var wx := ox + (ci - 1) * step
+				var wx := ox + (ci - PAD) * step
 				var wy := ylo + cj * step
-				var wz := oz + (ck - 1) * step
+				var wz := oz + (ck - PAD) * step
 				for c in 8:
 					corner[c] = Vector3(wx + (c & 1) * step, wy + ((c >> 1) & 1) * step, wz + ((c >> 2) & 1) * step)
-				var sum := Vector3.ZERO
+				# Corner normals (pointing out of the rock), for the surface planes at each crossing.
+				for c in 8:
+					corner_n[c] = _corner_normal(d, nx, ny, nz, ci + (c & 1), cj + ((c >> 1) & 1), ck + ((c >> 2) & 1))
+				# The vertex is the least-squares point of the crossing planes, kept inside its cell. Plain
+				# averaging of the crossings put vertices in mid-air on cliffs, stretching sheets over the ground.
+				var mass := Vector3.ZERO
 				var count := 0
+				var a00 := 0.0
+				var a01 := 0.0
+				var a02 := 0.0
+				var a11 := 0.0
+				var a12 := 0.0
+				var a22 := 0.0
+				var bsum := Vector3.ZERO
+				var nsum := Vector3.ZERO
 				for e in _EDGES:
 					var a: int = e[0]
 					var b: int = e[1]
 					if (corner_v[a] > 0.0) == (corner_v[b] > 0.0):
 						continue
 					var t := corner_v[a] / (corner_v[a] - corner_v[b])
-					sum += corner[a].lerp(corner[b], t)
+					var p: Vector3 = corner[a].lerp(corner[b], t)
+					var n: Vector3 = corner_n[a].lerp(corner_n[b], t)
+					mass += p
 					count += 1
-				var vert := sum / float(count)
-				# Normal: the density gradient, pointing out of the rock.
-				var v := corner_v
-				var gx := (v[1] + v[3] + v[5] + v[7]) - (v[0] + v[2] + v[4] + v[6])
-				var gy := (v[2] + v[3] + v[6] + v[7]) - (v[0] + v[1] + v[4] + v[5])
-				var gz := (v[4] + v[5] + v[6] + v[7]) - (v[0] + v[1] + v[2] + v[3])
-				var nrm := Vector3(-gx, -gy, -gz)
-				nrm = nrm.normalized() if nrm.length_squared() > 0.000001 else Vector3.UP
+					a00 += n.x * n.x
+					a01 += n.x * n.y
+					a02 += n.x * n.z
+					a11 += n.y * n.y
+					a12 += n.y * n.z
+					a22 += n.z * n.z
+					bsum += n * n.dot(p)
+					nsum += corner_n[a]
+				mass /= float(count)
+				const LAM := 0.05   # a light pull towards the crossings' average, so flat cells stay stable
+				a00 += LAM
+				a11 += LAM
+				a22 += LAM
+				bsum += LAM * mass
+				var det := a00 * (a11 * a22 - a12 * a12) - a01 * (a01 * a22 - a12 * a02) + a02 * (a01 * a12 - a11 * a02)
+				var vert := mass
+				if absf(det) > 0.000000001:
+					vert = Vector3(
+						(bsum.x * (a11 * a22 - a12 * a12) - a01 * (bsum.y * a22 - a12 * bsum.z) + a02 * (bsum.y * a12 - a11 * bsum.z)) / det,
+						(a00 * (bsum.y * a22 - a12 * bsum.z) - bsum.x * (a01 * a22 - a12 * a02) + a02 * (a01 * bsum.z - bsum.y * a02)) / det,
+						(a00 * (a11 * bsum.z - bsum.y * a12) - a01 * (a01 * bsum.z - bsum.y * a02) + bsum.x * (a01 * a12 - a11 * a02)) / det)
+				vert = vert.clamp(corner[0], corner[7])
+				# Ground surface (not cave walls): sit exactly on the ground height at this spot, so steep
+				# cliffs can't leave the surface hanging above the ground. Shared vertices agree across chunks.
+				if absf(vert.y - gen.get_height(vert.x, vert.z)) < 6.0 and Caves.void_distance(plan, vert) > 2.5:
+					vert.y = gen.get_height(vert.x, vert.z)
+				var nrm := nsum.normalized() if nsum.length_squared() > 0.000001 else Vector3.UP
 				var col: Color
 				if vert.y < gen.get_height(vert.x, vert.z) - ROCK_BAND:
 					col = Game.palette.rock.darkened(0.3)
@@ -127,8 +167,8 @@ static func build(gen: WorldGen, origin: Vector3, size: float, step: float, segs
 	# An edge belongs to the chunk whose sample grid it starts in (i and k inside 1..res).
 	var indices := PackedInt32Array()
 	var faces := PackedVector3Array()
-	for k in range(1, res + 1):
-		for i in range(1, res + 1):
+	for k in range(PAD, PAD + res):
+		for i in range(PAD, PAD + res):
 			for j in ny - 1:
 				var s0 := d[(k * ny + j) * nx + i] > 0.0
 				# x edge: (i,j,k) -> (i+1,j,k); cells around it differ in y and z.
@@ -149,6 +189,21 @@ static func build(gen: WorldGen, origin: Vector3, size: float, step: float, segs
 	return {"verts": verts, "normals": normals, "colors": colors, "indices": indices, "faces": faces}
 
 
+## The outward surface normal at grid sample (i, j, k), from the density gradient around it.
+static func _corner_normal(d: PackedFloat32Array, nx: int, ny: int, nz: int, i: int, j: int, k: int) -> Vector3:
+	var il := maxi(i - 1, 0)
+	var ir := mini(i + 1, nx - 1)
+	var jl := maxi(j - 1, 0)
+	var jr := mini(j + 1, ny - 1)
+	var kl := maxi(k - 1, 0)
+	var kr := mini(k + 1, nz - 1)
+	var gx := d[(k * ny + j) * nx + ir] - d[(k * ny + j) * nx + il]
+	var gy := d[(k * ny + jr) * nx + i] - d[(k * ny + jl) * nx + i]
+	var gz := d[(kr * ny + j) * nx + i] - d[(kl * ny + j) * nx + i]
+	var n := Vector3(-gx, -gy, -gz)
+	return n.normalized() if n.length_squared() > 0.000001 else Vector3.UP
+
+
 ## The 12 edges of a cube, as corner index pairs (corner bit 0 = x, bit 1 = y, bit 2 = z).
 const _EDGES := [[0, 1], [2, 3], [4, 5], [6, 7], [0, 2], [1, 3], [4, 6], [5, 7], [0, 4], [1, 5], [2, 6], [3, 7]]
 
@@ -162,21 +217,21 @@ static func _carve(d: PackedFloat32Array, s: Array, origin: Vector3, ylo: float,
 	var reach := maxf(ra, rb) + step
 	var lo := Vector3(minf(a.x, b.x) - reach, minf(a.y, b.y) - reach, minf(a.z, b.z) - reach)
 	var hi := Vector3(maxf(a.x, b.x) + reach, maxf(a.y, b.y) + reach, maxf(a.z, b.z) + reach)
-	var i0 := clampi(floori((lo.x - origin.x) / step) + 1, 0, nx - 1)
-	var i1 := clampi(ceili((hi.x - origin.x) / step) + 1, 0, nx - 1)
-	var k0 := clampi(floori((lo.z - origin.z) / step) + 1, 0, nz - 1)
-	var k1 := clampi(ceili((hi.z - origin.z) / step) + 1, 0, nz - 1)
+	var i0 := clampi(floori((lo.x - origin.x) / step) + PAD, 0, nx - 1)
+	var i1 := clampi(ceili((hi.x - origin.x) / step) + PAD, 0, nx - 1)
+	var k0 := clampi(floori((lo.z - origin.z) / step) + PAD, 0, nz - 1)
+	var k1 := clampi(ceili((hi.z - origin.z) / step) + PAD, 0, nz - 1)
 	var j0 := clampi(floori((lo.y - ylo) / step), 0, ny - 1)
 	var j1 := clampi(ceili((hi.y - ylo) / step), 0, ny - 1)
 	var ab := b - a
 	var len2 := maxf(ab.length_squared(), 0.0001)
 	for k in range(k0, k1 + 1):
-		var z := origin.z + (k - 1) * step
+		var z := origin.z + (k - PAD) * step
 		for j in range(j0, j1 + 1):
 			var y := ylo + j * step
 			var row := (k * ny + j) * nx
 			for i in range(i0, i1 + 1):
-				var p := Vector3(origin.x + (i - 1) * step, y, z)
+				var p := Vector3(origin.x + (i - PAD) * step, y, z)
 				var t := clampf((p - a).dot(ab) / len2, 0.0, 1.0)
 				var dist := p.distance_to(a + ab * t) - lerpf(ra, rb, t)
 				if dist < d[row + i]:

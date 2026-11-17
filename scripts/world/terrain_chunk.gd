@@ -68,6 +68,7 @@ func _build_terrain(data: Dictionary, flora: FloraLibrary) -> void:
 	if not faces.is_empty():
 		# Solid ground near caves: the collider is the same triangles as the mesh.
 		var tri := ConcavePolygonShape3D.new()
+		tri.backface_collision = true   # solid from both sides: a steep face can't be walked through from behind
 		tri.set_faces(faces)
 		var tbody := StaticBody3D.new()
 		tbody.name = "TerrainBody"
