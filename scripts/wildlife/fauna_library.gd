@@ -47,9 +47,9 @@ var _pal: WorldPalette
 ## Body plans. Each species picks one, then randomizes within its ranges.
 ## size, leg (x size), body_h (x size), neck (x size), neck_angle (degrees), legs, and favorite biomes.
 const ARCHETYPES := {
-	"slender": {"role": "grazer", "size": [0.55, 0.8], "leg": [0.85, 1.05], "body_h": [0.36, 0.44], "neck": [0.35, 0.55], "angle": [45, 65], "legs": 4,
+	"slender": {"role": "grazer", "size": [0.55, 0.8], "leg": [0.8, 0.95], "body_h": [0.38, 0.46], "neck": [0.28, 0.42], "angle": [45, 65], "legs": 4,
 		"biomes": {Biome.MEADOW: 1.0, Biome.FOREST: 0.7, Biome.AUTUMN: 0.8, Biome.DRYLANDS: 0.6}},
-	"stocky": {"role": "grazer", "size": [0.9, 1.2], "leg": [0.55, 0.75], "body_h": [0.4, 0.5], "neck": [0.25, 0.45], "angle": [35, 55], "legs": 4,
+	"stocky": {"role": "grazer", "size": [0.9, 1.2], "leg": [0.55, 0.72], "body_h": [0.42, 0.5], "neck": [0.2, 0.34], "angle": [35, 55], "legs": 4,
 		"biomes": {Biome.MEADOW: 0.8, Biome.FOREST: 1.0, Biome.AUTUMN: 1.0, Biome.TAIGA: 0.5}},
 	"bulky": {"role": "grazer", "size": [1.4, 1.8], "leg": [0.42, 0.55], "body_h": [0.55, 0.65], "neck": [0.08, 0.18], "angle": [10, 25], "legs": 4,
 		"biomes": {Biome.TAIGA: 1.0, Biome.MEADOW: 0.5, Biome.FOREST: 0.6}},
@@ -57,7 +57,7 @@ const ARCHETYPES := {
 		"biomes": {Biome.DRYLANDS: 1.0, Biome.DESERT: 1.0, Biome.MARSH: 0.8}},
 	"strider": {"role": "grazer", "size": [0.9, 1.2], "leg": [1.0, 1.25], "body_h": [0.5, 0.6], "neck": [0.6, 0.8], "angle": [70, 80], "legs": 2,
 		"biomes": {Biome.DRYLANDS: 1.0, Biome.DESERT: 0.8, Biome.MEADOW: 0.5}},
-	"wader": {"role": "grazer", "size": [0.7, 0.95], "leg": [1.1, 1.35], "body_h": [0.34, 0.4], "neck": [0.7, 0.95], "angle": [55, 70], "legs": 4,
+	"wader": {"role": "grazer", "size": [0.7, 0.95], "leg": [1.0, 1.2], "body_h": [0.36, 0.42], "neck": [0.5, 0.7], "angle": [55, 70], "legs": 4,
 		"biomes": {Biome.MARSH: 1.0, Biome.FOREST: 0.3}},
 	"boar": {"role": "defensive", "size": [0.85, 1.15], "leg": [0.32, 0.45], "body_h": [0.5, 0.62], "neck": [0.1, 0.2], "angle": [15, 35], "legs": 4,
 		"biomes": {Biome.FOREST: 1.0, Biome.AUTUMN: 0.8, Biome.TAIGA: 0.6, Biome.MEADOW: 0.4}},
@@ -100,8 +100,12 @@ func by_role(role: String) -> Array[Species]:
 func _coat(rng: RandomNumberGenerator) -> Color:
 	if _pal.exotic:
 		return Color.from_hsv(rng.randf(), rng.randf_range(0.35, 0.7), rng.randf_range(0.45, 0.85))
-	var hue := rng.randf_range(0.03, 0.12) if rng.randf() < 0.8 else rng.randf_range(0.0, 1.0)
-	return Color.from_hsv(hue, rng.randf_range(0.2, 0.6), rng.randf_range(0.35, 0.8))
+	# Natural worlds: browns, tans, greys and the odd muted color.
+	if rng.randf() < 0.15:
+		return Color.from_hsv(0.08, rng.randf_range(0.0, 0.08), rng.randf_range(0.4, 0.85))   # greys/whites
+	var hue := rng.randf_range(0.03, 0.12) if rng.randf() < 0.9 else rng.randf_range(0.0, 1.0)
+	var sat := rng.randf_range(0.25, 0.6) if hue < 0.13 else rng.randf_range(0.15, 0.3)
+	return Color.from_hsv(hue, sat, rng.randf_range(0.35, 0.8))
 
 
 func _make_quadruped(rng: RandomNumberGenerator, arch: String) -> Species:
@@ -129,7 +133,7 @@ func _make_quadruped(rng: RandomNumberGenerator, arch: String) -> Species:
 		s.body_len = s.body_h * 2.1
 	s.body_w = s.body_h * rng.randf_range(0.75, 0.95)
 	s.leg_len = size * rng.randf_range(a.leg[0], a.leg[1])
-	var leg_r := size * (0.085 if stocky else 0.06) * rng.randf_range(0.9, 1.2)
+	var leg_r := size * (0.085 if stocky else 0.07) * rng.randf_range(0.9, 1.15)
 	if arch in ["wader", "strider"]:
 		leg_r *= 0.7
 	var neck_len := size * rng.randf_range(a.neck[0], a.neck[1])
@@ -203,80 +207,100 @@ func _make_quadruped(rng: RandomNumberGenerator, arch: String) -> Species:
 			c = c.lerp(belly, 0.8)
 		return c
 
-	# --- Body: chest + hips + belly (reads as an animal, not an egg), hump, tail ---
+	# --- Body: one continuous lofted torso (rump, waist, ribcage, shoulders) ---
 	var kit := MeshKit.new(rng.randi())
 	var L := s.body_len
 	var H := s.body_h
 	var W := s.body_w
 	var chest := Vector3(0, H * 0.06, -L * 0.2)
 	var hips := Vector3(0, H * 0.02, L * 0.24)
-	kit.add_primitive(MeshKit.sphere(0.5, 14, 9), Transform3D(Basis.from_scale(Vector3(W, H * 1.05, L * 0.62)), chest), coat, 0.02, 0.05, null, coat_fn)
-	kit.add_primitive(MeshKit.sphere(0.5, 14, 9), Transform3D(Basis.from_scale(Vector3(W * 0.95, H * 0.95, L * 0.55)), hips), coat, 0.02, 0.05, null, coat_fn)
-	kit.add_primitive(MeshKit.sphere(0.5, 12, 8), Transform3D(Basis.from_scale(Vector3(W * 0.85, H * 0.8, L * 0.6)), Vector3(0, -H * 0.08, 0)), coat, 0.02, 0.05, null, coat_fn)
-	if (stocky or rng.randf() < 0.25) and arch != "shellback":
-		# Shoulder hump (big and shaggy on bulky grazers).
-		var hump := 1.0 if arch != "bulky" else 1.3
-		kit.add_primitive(MeshKit.sphere(0.5, 12, 7), Transform3D(Basis.from_scale(Vector3(W * 0.85, H * 0.7 * hump, L * 0.42)), chest + Vector3(0, H * 0.28 * hump, 0.02)), coat, 0.07 if arch == "bulky" else 0.02, 0.05, null, coat_fn)
-	if arch == "bulky":   # shaggy chest mane
-		kit.add_primitive(MeshKit.sphere(0.5, 12, 7), Transform3D(Basis.from_scale(Vector3(W * 0.9, H * 0.9, L * 0.3)), chest + Vector3(0, -H * 0.15, -L * 0.2)), accent.lerp(coat, 0.5), 0.08, 0.06)
+	var hump_h := (0.22 if arch == "bulky" else (0.1 if stocky else 0.0)) * H
+	var torso: Array = []
+	var torso_r: Array = []
+	# Radius profile from rump (t=0) to the base of the neck (t=1).
+	var profile := [0.55, 0.88, 0.95, 0.86, 0.92, 1.0, 0.97, 0.82, 0.62]
+	for i in profile.size():
+		var t := float(i) / (profile.size() - 1)
+		var z := lerpf(L * 0.5, -L * 0.5, t)
+		var y := sin(t * PI) * H * 0.04 + hump_h * exp(-pow((t - 0.72) / 0.16, 2.0))
+		torso.append(Vector3(0, y, z))
+		torso_r.append(H * 0.5 * float(profile[i]) * (1.0 + hump_h / H * exp(-pow((t - 0.72) / 0.16, 2.0))))
+	var w_ratio := W / H
+	var torso_coat := func(t: float, a: float) -> Color:
+		# Rebuild an approximate body-space point so the coat pattern lines up.
+		return coat_fn.call(Vector3(-sin(a) * W * 0.5, -cos(a) * H * 0.5, lerpf(L * 0.5, -L * 0.5, t)))
+	kit.loft(torso, torso_r, 14, coat, torso_coat, func(t: float, a: float) -> Vector2: return Vector2(1.0, w_ratio), true, true, 0.012 if arch == "bulky" else 0.0)
+	if arch == "bulky":   # shaggy chest ruff
+		kit.loft([chest + Vector3(0, -H * 0.1, -L * 0.1), chest + Vector3(0, -H * 0.35, -L * 0.2), chest + Vector3(0, -H * 0.55, -L * 0.18)], [H * 0.35, H * 0.3, H * 0.12], 10, accent.lerp(coat, 0.5), Callable(), Callable(), true, true, 0.03)
 	if arch == "shellback":
 		var shell := accent.lerp(coat, 0.35)
 		var plates := func(p: Vector3) -> Color:
 			return shell.darkened(0.25) if sin(p.x * 18.0 / size) * sin(p.z * 18.0 / size) > 0.55 else shell
-		kit.add_primitive(MeshKit.sphere(0.5, 14, 8), Transform3D(Basis.from_scale(Vector3(W * 1.4, H * 1.2, L * 1.15)), Vector3(0, H * 0.3, 0)), shell, 0.03, 0.05, null, plates)
-		kit.add_primitive(MeshKit.cylinder(W * 0.72, W * 0.72, H * 0.12, 16), Transform3D(Basis.from_scale(Vector3(1, 1, L * 1.15 / W)), Vector3(0, -H * 0.05, 0)), shell.darkened(0.15), 0.0, 0.03)
-	var tail_len := size * rng.randf_range(0.15, 0.45)
-	var tail_root := hips + Vector3(0, H * 0.25, L * 0.24)
+		kit.add_primitive(MeshKit.sphere(0.5, 16, 9), Transform3D(Basis.from_scale(Vector3(W * 1.4, H * 1.15, L * 1.12)), Vector3(0, H * 0.3, 0)), shell, 0.0, 0.03, null, plates)
+		kit.loft([Vector3(0, H * 0.02, L * 0.56), Vector3(0, H * 0.02, -L * 0.56)], [W * 0.72, W * 0.72], 16, shell.darkened(0.15), Callable(),
+			func(t: float, a: float) -> Vector2: return Vector2(0.22, 1.0), true, true)
+	# Tail: a lofted curve from the rump.
+	var tail_len := size * rng.randf_range(0.18, 0.45)
+	var tail_root: Vector3 = torso[0] + Vector3(0, H * 0.2, -L * 0.02)
 	if arch == "ferret":
 		tail_len = L * 0.85
 	if arch == "strider":
 		for i in 5:   # fan of tail plumes
 			var tb := Basis(Vector3.UP, (i - 2) * 0.3) * Basis(Vector3.RIGHT, deg_to_rad(-125))
-			kit.add_primitive(MeshKit.sphere(0.5, 7, 4), Transform3D(tb * Basis.from_scale(Vector3(size * 0.08, size * 0.35, size * 0.03)), tail_root + tb.y * size * 0.15), accent, 0.0, 0.04)
+			var tip := tail_root + tb.y * size * 0.35
+			kit.extrude(PackedVector2Array([Vector2(0, 0), Vector2(size * 0.06, size * 0.15), Vector2(0, size * 0.36), Vector2(-size * 0.06, size * 0.15)]),
+				Transform3D(tb, tail_root), size * 0.02, size * 0.01, accent, accent.lightened(0.2), 0.4)
 	elif role == "critter" and arch != "ferret":
 		kit.add_primitive(MeshKit.sphere(size * 0.13, 9, 6), Transform3D(Basis(), tail_root), belly, 0.04, 0.05)   # puff tail
 	elif arch != "shellback":
-		# Tapered tail that hangs down and back, with a tuft for longer ones.
-		var tb := Basis(Vector3.RIGHT, deg_to_rad(rng.randf_range(-150, -165) if arch != "ferret" else -110))
-		kit.add_primitive(MeshKit.cylinder(size * 0.018, size * 0.05, tail_len, 8), Transform3D(tb, tail_root + tb.y * tail_len * 0.5), coat, 0.0, 0.04, null, coat_fn)
+		var droop := 0.9 if arch != "ferret" else 0.35
+		var tp := [tail_root, tail_root + Vector3(0, -tail_len * 0.25 * droop, tail_len * 0.4), tail_root + Vector3(0, -tail_len * 0.75 * droop, tail_len * 0.65), tail_root + Vector3(0, -tail_len * droop, tail_len * 0.72)]
+		kit.loft(tp, [size * 0.05, size * 0.04, size * 0.028, size * 0.012], 7, coat, func(t: float, a: float) -> Color: return accent if t > 0.7 else coat)
 		if tail_len > size * 0.3 and arch != "ferret":
-			kit.add_primitive(MeshKit.sphere(size * 0.055, 8, 5), Transform3D(Basis.from_scale(Vector3(1, 1.8, 1)), tail_root + tb.y * tail_len), accent, 0.06, 0.04)
+			kit.add_primitive(MeshKit.sphere(size * 0.05, 8, 5), Transform3D(Basis.from_scale(Vector3(1, 1.7, 1)), tp[3]), accent, 0.05, 0.04)
 	s.body_mesh = kit.commit(material)
 
-	# --- Head: neck rising from the chest, skull, tapered muzzle, jaw, eyes, ears, horns ---
-	s.head_pivot = chest + Vector3(0, H * 0.22, -L * 0.24)
+	# --- Head & neck: a tapering lofted neck rising from the chest, a lofted skull-to-nose head ---
+	s.head_pivot = chest + Vector3(0, H * 0.2, -L * 0.18)
 	kit = MeshKit.new(rng.randi())
 	var neck_dir := Vector3(0, sin(neck_angle), -cos(neck_angle))
-	var neck_r := H * (0.42 if stocky else 0.33)
-	var neck_end := neck_dir * (neck_len + neck_r * 0.4)
-	_segment(kit, Vector3.ZERO - neck_dir * neck_r * 0.3, neck_end, neck_r, neck_r * 0.72, coat, coat_fn)
-	kit.add_primitive(MeshKit.sphere(neck_r * 1.05, 10, 7), Transform3D(Basis.from_scale(Vector3(1, 1.1, 1)), -neck_dir * neck_r * 0.1), coat, 0.0, 0.05, null, coat_fn)   # blend into chest
-	var head_tilt := Basis(Vector3.RIGHT, deg_to_rad(rng.randf_range(20, 40)))
+	var neck_r := H * (0.4 if stocky else 0.3)
+	var neck_end := neck_dir * neck_len
+	var neck_path := [-neck_dir * neck_r * 0.6, neck_dir * neck_len * 0.35, neck_dir * neck_len * 0.75, neck_end]
+	kit.loft(neck_path, [neck_r * 1.1, neck_r * 0.92, neck_r * 0.78, neck_r * 0.72], 12, coat,
+		func(t: float, a: float) -> Color: return coat_fn.call(Vector3(-sin(a) * neck_r, -cos(a) * neck_r + H * 0.3, 0.0)),
+		func(t: float, a: float) -> Vector2: return Vector2(1.0, 0.85))
+	var head_tilt := Basis(Vector3.RIGHT, deg_to_rad(rng.randf_range(25, 45)))
 	var fwd := head_tilt * Vector3(0, 0, -1)
-	var skull := neck_end + Vector3(0, head_len * 0.12, 0) + fwd * head_len * 0.12
-	kit.add_primitive(MeshKit.sphere(0.5, 12, 8), Transform3D(head_tilt * Basis.from_scale(Vector3(head_len * 0.66, head_len * 0.66, head_len * 0.78)), skull), coat, 0.0, 0.05)
-	var snout_len := head_len * rng.randf_range(0.45, 0.75)
+	var up := head_tilt * Vector3(0, 1, 0)
+	var snout_len := head_len * rng.randf_range(0.5, 0.75)
 	if arch == "wader":
-		snout_len = head_len * 1.5   # long beak-like bill
+		snout_len = head_len * 1.2   # long bill
 	elif arch == "strider":
-		snout_len = head_len * 0.55
-	elif arch in ["boar", "shellback"]:
 		snout_len = head_len * 0.5
-	var muzzle_start := skull + fwd * head_len * 0.22 + head_tilt * Vector3(0, -head_len * 0.08, 0)
-	var nose := muzzle_start + fwd * snout_len
+	elif arch in ["boar", "shellback"]:
+		snout_len = head_len * 0.45
 	var bill := arch in ["wader", "strider"]
-	_segment(kit, muzzle_start, nose, head_len * (0.18 if bill else 0.3), head_len * (0.06 if bill else 0.2), Color(0.85, 0.65, 0.3) if bill else belly.lerp(coat, 0.45), Callable())
-	if not bill:
-		kit.add_primitive(MeshKit.sphere(head_len * 0.13, 8, 6), Transform3D(Basis.from_scale(Vector3(1.2, 0.8, 0.8)), nose), Color(0.14, 0.11, 0.1), 0.0, 0.0)   # nose pad
-		_segment(kit, muzzle_start + head_tilt * Vector3(0, -head_len * 0.12, 0.02), nose + head_tilt * Vector3(0, -head_len * 0.13, head_len * 0.06), head_len * 0.16, head_len * 0.11, belly, Callable())   # jaw
+	var back := neck_end + up * head_len * 0.05 - fwd * head_len * 0.15
+	var skull := back + fwd * head_len * 0.35
+	var nose := skull + fwd * (head_len * 0.3 + snout_len) - up * head_len * 0.12
+	var head_path := [back, skull, skull + fwd * head_len * 0.25 - up * head_len * 0.04, nose]
+	var head_r := [head_len * 0.3, head_len * 0.36, head_len * 0.27, head_len * (0.08 if bill else 0.18)]
+	var muzzle := belly.lerp(coat, 0.5)
+	kit.loft(head_path, head_r, 12, coat, func(t: float, a: float) -> Color:
+		return muzzle if t > 0.6 else coat,
+		func(t: float, a: float) -> Vector2: return Vector2(0.85, 1.0), true, true)
+	if bill:
+		kit.loft([skull + fwd * head_len * 0.3, nose + fwd * snout_len * 0.2], [head_len * 0.09, head_len * 0.02], 7, Color(0.86, 0.66, 0.32))
+	else:
+		kit.add_primitive(MeshKit.sphere(head_len * 0.1, 8, 6), Transform3D(Basis.from_scale(Vector3(1.25, 0.8, 0.7)), nose + fwd * head_len * 0.06), Color(0.14, 0.11, 0.1), 0.0, 0.0)   # nose pad
 	for side in [-1.0, 1.0]:
-		var eye := skull + head_tilt * Vector3(side * head_len * 0.3, head_len * 0.1, -head_len * 0.16)
-		kit.add_primitive(MeshKit.sphere(head_len * 0.09, 9, 6), Transform3D(Basis(), eye), Color(0.07, 0.05, 0.04), 0.0, 0.0)
-		kit.add_primitive(MeshKit.sphere(head_len * 0.03, 6, 4), Transform3D(Basis(), eye + Vector3(side * head_len * 0.03, head_len * 0.04, -head_len * 0.04)), Color(1, 1, 1), 0.0, 0.0)   # glint
-		kit.add_primitive(MeshKit.sphere(head_len * 0.1, 8, 4), Transform3D(Basis.from_scale(Vector3(1.1, 0.45, 1.1)), eye + Vector3(0, head_len * 0.07, 0)), coat.darkened(0.08), 0.0, 0.03)   # brow
+		var eye := skull + Vector3(side * head_len * 0.27, 0, 0) + up * head_len * 0.08 + fwd * head_len * 0.05
+		kit.add_primitive(MeshKit.sphere(head_len * 0.075, 9, 6), Transform3D(Basis(), eye), Color(0.07, 0.05, 0.04), 0.0, 0.0)
+		kit.add_primitive(MeshKit.sphere(head_len * 0.025, 6, 4), Transform3D(Basis(), eye + Vector3(side * head_len * 0.03, head_len * 0.035, 0) + fwd * head_len * 0.03), Color(1, 1, 1), 0.0, 0.0)   # glint
 	if not arch in ["shellback", "strider", "wader"]:
-		_ears(kit, rng, role, skull, head_len, coat, belly)
-	_horns(kit, rng, arch, skull, head_len, size, nose)
+		_ears(kit, rng, role, skull - fwd * head_len * 0.1, head_len, coat, belly)
+	_horns(kit, rng, arch, skull - fwd * head_len * 0.1, head_len, size, nose)
 	s.head_mesh = kit.commit(material)
 
 	# --- Legs: jointed. Front legs nearly straight; hind legs bend back at the hock. ---
@@ -285,14 +309,14 @@ func _make_quadruped(rng: RandomNumberGenerator, arch: String) -> Species:
 	var hoof := Color(0.16, 0.13, 0.11)
 	var ll := s.leg_len
 	kit = MeshKit.new(rng.randi())
-	kit.add_primitive(MeshKit.sphere(leg_r * 2.0, 9, 6), Transform3D(Basis.from_scale(Vector3(1, 1.3, 1.2)), Vector3(0, -leg_r * 0.6, 0)), thigh_col, 0.0, 0.04)
+	kit.add_primitive(MeshKit.sphere(leg_r * 1.4, 9, 6), Transform3D(Basis.from_scale(Vector3(1, 1.4, 1.2)), Vector3(0, -leg_r * 0.4, 0)), thigh_col, 0.0, 0.04)
 	var knee := Vector3(0, -ll * 0.5, -ll * 0.04)
 	_segment(kit, Vector3(0, -leg_r, 0), knee, leg_r * 1.35, leg_r, thigh_col, Callable())
 	_segment(kit, knee, Vector3(0, -ll + leg_r * 0.5, 0), leg_r, leg_r * 0.72, shin_col, Callable())
 	kit.add_primitive(MeshKit.cylinder(leg_r * 0.85, leg_r * 0.95, leg_r * 1.3, 8), Transform3D(Basis(), Vector3(0, -ll + leg_r * 0.55, -leg_r * 0.1)), hoof, 0.0, 0.0)
 	s.leg_mesh = kit.commit(material)
 	kit = MeshKit.new(rng.randi())
-	kit.add_primitive(MeshKit.sphere(leg_r * 2.4, 9, 6), Transform3D(Basis.from_scale(Vector3(1, 1.3, 1.3)), Vector3(0, -leg_r * 0.8, 0)), thigh_col, 0.0, 0.04, null, coat_fn)
+	kit.add_primitive(MeshKit.sphere(leg_r * 1.7, 9, 6), Transform3D(Basis.from_scale(Vector3(1, 1.4, 1.3)), Vector3(0, -leg_r * 0.5, 0)), thigh_col, 0.0, 0.04, null, coat_fn)
 	var stifle := Vector3(0, -ll * 0.4, -ll * 0.1)
 	var hock := Vector3(0, -ll * 0.68, ll * 0.1)
 	_segment(kit, Vector3(0, -leg_r, 0), stifle, leg_r * 1.6, leg_r * 1.1, thigh_col, Callable())

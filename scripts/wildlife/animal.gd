@@ -37,6 +37,7 @@ var _look_cd := 0.0
 var _breath := 0.0
 var _rng := RandomNumberGenerator.new()
 var _collider: StaticBody3D
+var _world: Node
 
 
 func setup(sp: FaunaLibrary.Species, pos: Vector3, p: Node3D) -> void:
@@ -297,10 +298,11 @@ func _best_heading(want: Vector3) -> float:
 
 ## Trees and rocks near a point (looked up in the loaded chunk's resource list).
 func _obstacle_penalty(p: Vector3) -> float:
-	var world := get_node_or_null("/root/Main/World")
-	if not world:
-		return 0.0
-	var chunk = world.get_chunk(world.world_to_chunk(p))
+	if not _world:
+		_world = get_node_or_null("/root/Main/World")
+		if not _world:
+			return 0.0
+	var chunk = _world.get_chunk(_world.world_to_chunk(p))
 	if not chunk:
 		return 0.0
 	var penalty := 0.0

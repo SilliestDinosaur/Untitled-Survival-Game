@@ -26,15 +26,22 @@ Each seed produces its own:
 - **Island**: terrain shape, mountain height, coastline (2 km x 2 km)
 - **Biomes**: Meadow, Forest, Autumn Grove, Savanna, Taiga, Marsh, Desert + Beach, Highlands, Snowfields
 - **Mountains**: warped ridged ranges with foothills, alpine meadows and snow caps
-- **Clutter**: fallen logs, stumps, mushrooms, pebbles, boulders, ferns, reeds, dry brush
+- **Plants & clutter**: palms, saplings, flowering shrubs, agave, barrel cacti, tumbleweeds,
+  ferns, tall grass, clover, reeds, dry brush, fallen logs (with shelf fungi), stumps with roots,
+  fallen branches, mushrooms, pebbles, scree, boulders
 - **Palette**: grass, foliage, rock, sky, water, flower colors (~1 in 5 worlds is "exotic")
 - **Species**: tree/bush/rock/ore shapes and their names
 - **World name**
 - **Wildlife**: 10 body plans (slender, stocky, bulky, shellback, two-legged strider, wader,
-  boar, horned brute, hopper, ferret) plus birds, each with generated proportions, coat pattern,
-  horns/antlers/tusks, behavior, call and name
+  boar, horned brute, hopper, ferret) plus birds. Counting only the discrete choices (pattern,
+  ears, horns/antlers/tusks, tail, hump, temperament) there are 968 distinct animal designs;
+  each also has ~15 continuous traits (size, proportions, neck, head, horn length, three coat
+  colors), so no two worlds share the same animals. Bodies, necks and heads are lofted surfaces.
 
 ## Items & tiers
+Held items float in view (no hands). Every model is built from lofts, bevelled outlines and
+faceted surfaces in `scripts/items/item_models.gd`, and the same models lie in the world when dropped.
+
 Tools come in tiers: **Rock → Stone → three materials generated per world → Duskforged**.
 Every island invents its own metals and gem (name, color, trait like *Swift*, *Keen*, *Sturdy*,
 *Vicious* or *Luminous*) found at different altitudes: the first metal in the hills, the second in
