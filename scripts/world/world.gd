@@ -222,8 +222,8 @@ static func _cheb(a: Vector2i, b: Vector2i) -> int:
 
 # --- Ocean ------------------------------------------------------------------
 
-## River surfaces: a flat water level per river reach (see Hydrology). A cell gets water where the
-## ground is below that level at all four corners, so the banks hold the water in.
+## River and lake surfaces: at the levels from Hydrology, where the ground lies below them. A quad gets
+## water where any of its corners is under a level.
 func _build_rivers() -> void:
 	if _rivers:
 		remove_child(_rivers)
@@ -234,37 +234,33 @@ func _build_rivers() -> void:
 		return
 	var n: int = gen.hydro.n
 	var cell: float = Hydrology.CELL
-	var level: PackedFloat32Array = gen.hydro.level
-	var ground := PackedFloat32Array()
-	ground.resize(n * n)
-	for j in n:
-		for i in n:
-			ground[j * n + i] = gen.get_base_height(i * cell, j * cell)
+	# Each grid corner's water level (a lake's surface, or a river's bed plus its depth; 0 where dry), as Hydrology gives it.
+	var surf := Hydrology.surface(gen)
+	var bed: PackedFloat32Array = surf.bed
+	var level: PackedFloat32Array = surf.level
 	var verts := PackedVector3Array()
 	var indices := PackedInt32Array()
 	var normals := PackedVector3Array()
 	for j in n - 1:
 		for i in n - 1:
 			var k00 := j * n + i
-			var k10 := k00 + 1
-			var k01 := k00 + n
-			var k11 := k01 + 1
-			var ks := [k00, k10, k11, k01]
-			var lo := INF
-			var wet := true
+			var ks := [k00, k00 + 1, k00 + n + 1, k00 + n]
+			var any_level := false
 			for k: int in ks:
-				lo = minf(lo, level[k])
-				if ground[k] >= level[k] - 0.02:
-					wet = false
-			if not wet or lo == INF:
+				if level[k] > 0.0:
+					any_level = true
+			if not any_level:
 				continue
-			var water_y := lo
+			# Each corner is at its water level, so the surface follows the river down its length. A corner
+			# with no water sits just under the ground, so the land covers it and the shore comes out where
+			# the water meets the bank.
 			var b := verts.size()
-			verts.append(Vector3(i * cell, water_y, j * cell))
-			verts.append(Vector3((i + 1) * cell, water_y, j * cell))
-			verts.append(Vector3((i + 1) * cell, water_y, (j + 1) * cell))
-			verts.append(Vector3(i * cell, water_y, (j + 1) * cell))
-			for _c in 4:
+			var corners := [[i, j], [i + 1, j], [i + 1, j + 1], [i, j + 1]]
+			for c: int in 4:
+				var p: Array = corners[c]
+				var k: int = ks[c]
+				var y: float = level[k] if level[k] > 0.0 else bed[k] - 0.3
+				verts.append(Vector3(p[0] * cell, y, p[1] * cell))
 				normals.append(Vector3.UP)
 			# Wound so the front faces up (Godot draws the side a triangle's winding points away from).
 			indices.append_array([b, b + 1, b + 2, b, b + 2, b + 3])
