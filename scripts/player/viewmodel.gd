@@ -55,9 +55,12 @@ func hold(item_id: String) -> void:
 	_item.scale = Vector3.ONE * float(HELD_SCALE.get(_held_type, 1.0))
 	# Long tools lean in toward the middle of the screen; small things sit a little higher.
 	# A head's blade runs along the model's -Z, so it's turned a quarter turn to put the blade's face toward you.
-	if _held_type in ["hatchet", "pickaxe"]:
-		_item.position = Vector3(0.02, -0.05, 0)
-		_item.rotation = Vector3(-0.1, PI * 0.5 - 0.35, 0.2)
+	if _held_type == "pickaxe":
+		# The arms point away and the broad face turns a little toward you, so the blade reads as wide.
+		_pose_tool(Vector3(0.06, -0.08, 0.0), 0.5, 0.7, -0.3)
+	elif _held_type == "hatchet":
+		# The head points away from you, as a Minecraft tool does, and tips up a little.
+		_pose_tool(Vector3(0.06, -0.08, 0.0), 0.5, 0.0, -0.3)
 	elif _held_type in ["knife", "torch"]:
 		# Turned so you see the face of the head, not just its edge.
 		_item.position = Vector3(0, -0.06, 0)
@@ -69,6 +72,14 @@ func hold(item_id: String) -> void:
 	else:
 		_item.position = Vector3(0, 0.03, 0)
 		_item.rotation = Vector3(0.2, 0.5, 0.0)
+
+
+## Hold a tool the Minecraft way: the handle comes in from the bottom right and leans so the head tips up and to
+## the left, while the blade's face turns toward you. `roll` leans it in the view, `turn` turns the blade about Y.
+## The basis is built directly (not from Euler angles) so the lean is applied in the view's frame.
+func _pose_tool(at: Vector3, roll: float, turn: float, pitch := 0.0) -> void:
+	var rot := Basis(Vector3.BACK, roll) * Basis(Vector3.UP, turn) * Basis(Vector3.RIGHT, pitch)
+	_item.transform = Transform3D(rot.scaled(Vector3.ONE * float(HELD_SCALE.get(_held_type, 1.0))), at)
 
 
 func is_busy() -> bool:

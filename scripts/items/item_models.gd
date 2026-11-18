@@ -199,10 +199,31 @@ static func _head_colors(tier: int, col: Color) -> Array:
 	return [m.base, m.edge]
 
 
-## Flint heads are set into the haft with a lump of resin at the joint, not wrapped.
-static func _resin_joint(k: MeshKit, y: float, radius: float) -> void:
-	var resin := Color(0.66, 0.42, 0.18)
-	k.add_primitive(MeshKit.sphere(radius * 2.1, 10, 7), Transform3D(Basis.from_scale(Vector3(1.0, 0.9, 1.0)), Vector3(0, y, 0)), resin, 0.0, 0.03)
+## Flint heads are bound to the haft with rawhide: a strap wound round the eye in a few turns. It's square in
+## section (a flat strap, not a ball), and its width and thickness vary a little round the turns, so it reads
+## as wound by hand.
+static func _lashing(k: MeshKit, y: float, radius: float) -> void:
+	var turns := 4.0
+	var span := 0.05
+	var r_wrap := radius * 1.2
+	var path: Array = []
+	var radii: Array = []
+	var steps := 40
+	for i in steps + 1:
+		var t := float(i) / steps
+		var a := t * turns * TAU
+		path.append(Vector3(cos(a) * r_wrap, y - span * 0.5 + span * t, sin(a) * r_wrap))
+		# Swells where the strap passes the front and thins behind, the way a hand-wound strap bunches.
+		radii.append(0.0052 * (1.0 + 0.2 * sin(a) + 0.07 * sin(a * 3.0)))
+	k.loft(path, radii, 8,
+		Color(0.62, 0.48, 0.3),
+		func(t: float, a: float) -> Color: return Color(0.62, 0.48, 0.3).darkened(0.1 * (sin(t * 160.0) * 0.5 + 0.5)),
+		func(t: float, a: float) -> Vector2:
+			# A square section (corners at 45 degrees), a little flatter and lumpier as it goes round.
+			var sq := 1.0 / maxf(absf(cos(a)), absf(sin(a)))
+			var w := 1.0 + 0.12 * sin(a * 3.0 + t * 20.0)
+			return Vector2(sq * w, sq * w * 0.55),
+		true, true)
 
 
 # --- Hatchets ---------------------------------------------------------------------------
@@ -237,7 +258,7 @@ static func _hatchet(k: MeshKit, tier: int, col: Color) -> void:
 	k.add_primitive(wedge, Transform3D(Basis(), Vector3(0, top + 0.046, 0)), WOOD.darkened(0.15) if tier == 1 else m.fitting, 0.0, 0.04)
 	if tier == 1:
 		# Rawhide lashing crossing the eye, the way a knapped head was bound on.
-		_resin_joint(k, top, hr)
+		_lashing(k, top, hr)
 	else:
 		# A metal socket around the eye, with a ring band where it meets the head.
 		var fit: Color = m.fitting if tier != 2 else m.base.darkened(0.2)
@@ -255,11 +276,11 @@ static func _pickaxe(k: MeshKit, tier: int, col: Color) -> void:
 	_handle(k, top + 0.04, tier, hr)
 	if tier == 1:
 		# A long flint point lashed across the top of the handle.
-		var outline := _knap(PackedVector2Array([Vector2(-0.045, 0.0), Vector2(-0.02, -0.026), Vector2(0.06, -0.024), Vector2(0.17, 0.0), Vector2(0.06, 0.026), Vector2(-0.02, 0.026)]), 41, 0.004)
+		var outline := _knap(PackedVector2Array([Vector2(-0.045, 0.0), Vector2(-0.02, -0.04), Vector2(0.06, -0.038), Vector2(0.17, 0.0), Vector2(0.06, 0.04), Vector2(-0.02, 0.04)]), 41, 0.004)
 		var ridge := PackedVector2Array(outline)
 		ridge.append(outline[0])
 		k.sculpt(outline, Transform3D(FORWARD_PLANE, Vector3(0, top, 0)), _head_thickness(ridge, 0.03, 0.02, 0.0, 0.0, 0.003), _head_color(1, m, ridge, 0.02), 3, 0.006)
-		_resin_joint(k, top, hr)
+		_lashing(k, top, hr)
 		return
 	# The head: a bar in the swing plane that curves down to a point at each end, thinned to a crisp
 	# edge. Tier 3's back end is a square chisel instead of a point.
@@ -272,6 +293,9 @@ static func _pickaxe(k: MeshKit, tier: int, col: Color) -> void:
 	if tier == 3:
 		bar[0] = Vector2(-back, -0.02)
 		bar.append(Vector2(-back, -0.055))
+	# A wider blade: the head stands taller across the handle than the first cut's did.
+	for i in bar.size():
+		bar[i] = Vector2(bar[i].x, bar[i].y * 1.7)
 	var ridge := PackedVector2Array(bar)
 	ridge.append(bar[0])
 	if tier == 4:
@@ -328,7 +352,7 @@ static func _spear(k: MeshKit, tier: int, col: Color) -> void:
 	k.flat_shading = false
 	if tier == 1:
 		# Rawhide binding just below the knapped point.
-		_resin_joint(k, head_y - 0.01, hr)
+		_lashing(k, head_y - 0.01, hr)
 		return
 	# Socket: a tapered metal sleeve over the shaft, with rings, and a cord binding below it.
 	var sock: Color = m.fitting if tier != 2 else m.base.darkened(0.12)
