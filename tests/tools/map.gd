@@ -7,6 +7,9 @@ extends SceneTree
 ##   OUT=/tmp/map.png      output (one image, islands side by side)
 
 func _initialize() -> void:
+	# Load the main scene first, as the other tools do: without it Godot aborts on exit (a double free) after
+	# the image is saved.
+	root.add_child(load("res://scenes/main.tscn").instantiate())
 	var g = root.get_node("Game")
 	var seeds: PackedStringArray = OS.get_environment("SEEDS").split(",") if OS.get_environment("SEEDS") != "" else PackedStringArray(["629946553"])
 	var res: int = int(OS.get_environment("RES")) if OS.get_environment("RES") != "" else 160
