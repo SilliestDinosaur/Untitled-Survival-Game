@@ -36,14 +36,22 @@ void sky() {
 	col += sun * (pow(sd, 10.0) * 0.15 + pow(sd, 220.0) * 0.5);
 	col += sun * smoothstep(0.9994, 0.9997, sd) * 5.0;
 
-	// Stars: hashed cells on the sky dome, twinkling, only at night and above the horizon.
+	// Stars: hashed cells on the sky dome, twinkling, only at night and above the horizon. They're added after the
+	// clouds, dimmed by how much cloud is in front of them, so none shine through a cloud.
+	vec3 stars = vec3(0.0);
+	float cover = 0.0;
 	if (night > 0.01 && h > 0.0) {
+		// Each star is a small round point somewhere inside its cell, of its own size and brightness. (A glow as big
+		// as the cell was clipped by the cell's edges into a white square, and read as snow.)
 		vec3 cell = floor(d * 160.0);
 		float star = step(0.99, hash(cell));
-		vec3 center = (cell + 0.5) / 160.0;
+		vec3 jitter = vec3(hash(cell + 1.7), hash(cell + 5.3), hash(cell + 9.1));
+		vec3 center = (cell + 0.25 + 0.5 * jitter) / 160.0;
 		float dist = length(d - normalize(center));
+		float size = mix(0.0008, 0.0022, hash(cell + 2.2));
+		float bright = mix(0.45, 1.5, hash(cell + 7.7));
 		float tw = 0.6 + 0.4 * sin(TIME * (1.5 + hash(cell + 3.1) * 3.0) + hash(cell) * 30.0);
-		col += vec3(0.9, 0.92, 1.0) * star * smoothstep(0.006, 0.0, dist) * tw * night * smoothstep(0.0, 0.25, h) * 1.4;
+		stars = vec3(0.9, 0.92, 1.0) * star * smoothstep(size, size * 0.2, dist) * bright * tw * night * smoothstep(0.0, 0.25, h) * 1.4;
 	}
 	// Moon: a soft disc with a halo.
 	float md = max(dot(d, moon_dir), 0.0);
@@ -68,6 +76,8 @@ void sky() {
 		vec3 cc = mix(shade, lit_col * (1.0 + 0.25 * pow(sd, 4.0) * (1.0 - night)), 0.35 + 0.65 * lit);
 		cc = mix(cc, horizon_color, 0.3 * (1.0 - smoothstep(0.0, 0.3, h)));
 		col = mix(col, cc, c * mix(0.95, 0.9, night));
+		cover = c;
 	}
+	col += stars * (1.0 - smoothstep(0.0, 0.6, cover));
 	COLOR = col;
 }
