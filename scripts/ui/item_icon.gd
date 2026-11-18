@@ -112,6 +112,15 @@ func _draw() -> void:
 				draw_circle(c, s * (0.3 - i * 0.08), Color(0.45, 0.25, 0.7, 0.35 + i * 0.25))
 		"tool":
 			_tool(info, c, s)
+		"hammer":
+			_capsule(c + Vector2(-s * 0.3, s * 0.32), c + Vector2(s * 0.14, -s * 0.16), s * 0.045, Color(0.55, 0.4, 0.26))
+			draw_colored_polygon(PackedVector2Array([c + Vector2(-0.04, -0.4) * s, c + Vector2(0.36, -0.02) * s,
+				c + Vector2(0.24, 0.1) * s, c + Vector2(-0.16, -0.28) * s]), Color(0.45, 0.45, 0.5))
+		"plan":
+			_capsule(c + Vector2(-s * 0.3, s * 0.28), c + Vector2(s * 0.3, -s * 0.28), s * 0.12, Color(0.3, 0.46, 0.74))
+			for p: Vector2 in [c + Vector2(-s * 0.3, s * 0.28), c + Vector2(s * 0.3, -s * 0.28)]:
+				draw_circle(p, s * 0.12, Color(0.5, 0.65, 0.9))
+			draw_line(c + Vector2(-s * 0.06, -s * 0.1), c + Vector2(s * 0.1, s * 0.06), Color(0.74, 0.64, 0.42), s * 0.06)
 		"doorway":
 			draw_rect(Rect2(c + Vector2(-s * 0.3, -s * 0.3), Vector2(s * 0.6, s * 0.6)), Color(0.7, 0.5, 0.38))
 			draw_rect(Rect2(c + Vector2(-s * 0.13, -s * 0.12), Vector2(s * 0.26, s * 0.42)), Color(0.2, 0.14, 0.1))

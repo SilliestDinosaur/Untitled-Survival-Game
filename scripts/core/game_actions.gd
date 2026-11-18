@@ -266,6 +266,65 @@ const DOOR_KINDS := ["brick_door", "wood_door", "stone_door"]
 const STAIR_KINDS := ["brick_stairs", "wood_stairs", "stone_stairs"]
 const COVER_KINDS := ["roof", "wood_roof", "stone_roof"]
 
+## Building pieces aren't items. The Building Plan lays a free blueprint of any shape in any material; the hammer
+## builds it a share at a time, taking that share of its cost with each hit, and repairs it the same way.
+const MATERIALS := ["wood", "stone", "brick"]
+const SHAPES := ["floor", "wall", "half", "window", "doorway", "door", "stairs", "roof"]
+## Health of a finished piece, by material.
+const MAT_HP := {"wood": 200.0, "stone": 400.0, "brick": 320.0}
+## Hammer hits to finish a blueprint; a repair hit restores the same share of health.
+const BUILD_HITS := {"wood": 4, "stone": 6, "brick": 5}
+## The tool that knocks a finished piece down, by material, and the damage a hit does (times the tool's power).
+const BREAK_TOOL := {"wood": "hatchet", "stone": "pickaxe", "brick": "pickaxe"}
+const BREAK_HIT := 25.0
+## What each piece takes to finish. Knocking a finished piece down gives back half.
+const PIECE_COSTS := {
+	"foundation": {"stone": 6}, "wood_floor": {"plank": 4}, "brick_floor": {"brick": 5},
+	"wall": {"brick": 3}, "wood_wall": {"plank": 3}, "stone_wall": {"stone": 6},
+	"brick_half": {"brick": 2}, "wood_half": {"plank": 2}, "stone_half": {"stone": 3},
+	"window_wall": {"brick": 3, "plank": 2}, "wood_window": {"plank": 5}, "stone_window": {"stone": 6, "plank": 2},
+	"doorway": {"brick": 3}, "wood_doorway": {"plank": 3}, "stone_doorway": {"stone": 6},
+	"brick_door": {"brick": 3, "plank": 3}, "wood_door": {"plank": 6, "rope": 1}, "stone_door": {"stone": 6, "plank": 2},
+	"brick_stairs": {"brick": 8}, "wood_stairs": {"plank": 8}, "stone_stairs": {"stone": 12},
+	"roof": {"plank": 6}, "wood_roof": {"plank": 8}, "stone_roof": {"stone": 10, "plank": 2},
+}
+
+
+## The piece kind for a shape in a material (both from the building wheel).
+static func piece_kind(shape: String, mat: String) -> String:
+	for kind: String in PIECES:
+		if PIECES[kind].shape == shape and PIECES[kind].mat == mat:
+			return kind
+	return ""
+
+
+static func piece_mat(kind: String) -> String:
+	return String(PIECES[kind].mat) if PIECES.has(kind) else ""
+
+
+## Still a blueprint (not yet finished with the hammer)?
+static func is_blueprint(st: Dictionary) -> bool:
+	return is_building(st.kind) and float(st.get("built", 1.0)) < 1.0
+
+
+## A piece's health: Vector2(now, most). Pieces from older saves (before blueprints) count as finished and whole.
+static func piece_health(st: Dictionary) -> Vector2:
+	var most: float = MAT_HP.get(piece_mat(st.kind), 1.0)
+	if not st.has("max_hp"):
+		return Vector2(most, most)
+	return Vector2(float(st.hp), float(st.max_hp))
+
+
+## Bring a piece from an older save up to date before changing it.
+static func _upgrade_piece(st: Dictionary) -> void:
+	if st.has("max_hp"):
+		return
+	var most: float = MAT_HP.get(piece_mat(st.kind), 1.0)
+	st["built"] = 1.0
+	st["max_hp"] = most
+	st["hp"] = most
+	st["spent"] = PIECE_COSTS.get(st.kind, {}).duplicate()
+
 
 static func is_building(kind: String) -> bool:
 	return PIECES.has(kind)
@@ -520,12 +579,28 @@ static func _stairs_problem(pos: Vector3, kind: String, yaw: float) -> String:
 
 
 ## Place the held placeable. Result: {ok, reason, id, kind, level}
+## Place a station (campfire, workbench, forge) from the selected slot.
 static func place_structure(player_id: int, slot: int, pos: Vector3, yaw: float) -> Dictionary:
 	var inv := Game.inventory_of(player_id)
 	var s: Dictionary = inv.slots[slot]
 	if s.is_empty() or ItemDB.info(s.id).kind != "placeable":
 		return {"ok": false, "reason": ""}
 	var kind: String = ItemDB.info(s.id).station
+	var problem := placement_problem(pos, kind, yaw)
+	if problem != "":
+		return {"ok": false, "reason": problem}
+	inv.take_from_slot(slot, 1)
+	var id := Game.new_entity_id("s")
+	Game.structures[id] = {"id": id, "kind": kind, "pos": [pos.x, pos.y, pos.z], "yaw": yaw, "hp": 3, "level": 0}
+	Game.structures_changed.emit()
+	return {"ok": true, "id": id, "kind": kind, "level": 0, "pos": pos, "yaw": yaw}
+
+
+## Lay a blueprint of a building piece (free). Needs a Building Plan in the pack. The hammer then builds it.
+static func place_blueprint(player_id: int, kind: String, pos: Vector3, yaw: float) -> Dictionary:
+	var inv := Game.inventory_of(player_id)
+	if not is_building(kind) or inv.count("building_plan") < 1:
+		return {"ok": false, "reason": ""}
 	var problem := placement_problem(pos, kind, yaw)
 	if problem != "":
 		return {"ok": false, "reason": problem}
@@ -541,12 +616,11 @@ static func place_structure(player_id: int, slot: int, pos: Vector3, yaw: float)
 		pos = sn_s.pos
 		yaw = sn_s.yaw
 		level = int(sn_s.level)
-	elif is_building(kind):
+	else:
 		level = level_of(kind, pos.y, wall_base(pos, yaw) if kind in EDGE_KINDS else base_y(cell_of(pos)))
-	inv.take_from_slot(slot, 1)
 	var id := Game.new_entity_id("s")
-	var hp := 8 if is_building(kind) else 3
-	var st := {"id": id, "kind": kind, "pos": [pos.x, pos.y, pos.z], "yaw": yaw, "hp": hp, "level": level}
+	var st := {"id": id, "kind": kind, "pos": [pos.x, pos.y, pos.z], "yaw": yaw, "level": level,
+		"built": 0.0, "hp": 0.0, "max_hp": float(MAT_HP[piece_mat(kind)]), "spent": {}}
 	if kind in DOOR_KINDS:
 		st["open"] = false
 	Game.structures[id] = st
@@ -559,7 +633,7 @@ static func toggle_door(_player_id: int, structure_id: String) -> Dictionary:
 	if not Game.structures.has(structure_id):
 		return {"ok": false}
 	var st: Dictionary = Game.structures[structure_id]
-	if not st.kind in DOOR_KINDS:
+	if not st.kind in DOOR_KINDS or is_blueprint(st):
 		return {"ok": false}
 	st["open"] = not bool(st.get("open", false))
 	Game.structures_changed.emit()
@@ -597,11 +671,16 @@ static func _edges_on_floor(cell: Vector2i, level: int) -> int:
 	return n
 
 
-## Knock a structure down a bit; after a few hits it's packed back up into an item.
+## A swing at a structure. Stations pack back up into an item after a few hits. Building pieces: the hammer
+## builds or repairs them; an unfinished blueprint comes down to any other hit (giving back what went into it);
+## a finished piece takes damage from the right tool for its material (hatchet for wood, pickaxe for stone and
+## brick), and drops half its materials when it falls.
 static func hit_structure(player_id: int, structure_id: String) -> Dictionary:
 	if not Game.structures.has(structure_id):
 		return {"ok": false}
 	var st: Dictionary = Game.structures[structure_id]
+	if is_building(st.kind):
+		return _hit_piece(player_id, st)
 	st.hp = int(st.hp) - 1
 	if st.hp > 0:
 		return {"ok": true, "packed": false}
@@ -616,6 +695,113 @@ static func hit_structure(player_id: int, structure_id: String) -> Dictionary:
 	if got < 1:
 		spawn_pickup(st.kind, 1, -1, Vector3(p[0], p[1] + 0.3, p[2]))
 	return {"ok": true, "packed": true, "kind": st.kind}
+
+
+static func _hit_piece(player_id: int, st: Dictionary) -> Dictionary:
+	var inv := Game.inventory_of(player_id)
+	var tool := ItemDB.tool_stats(inv.selected_item())
+	_upgrade_piece(st)
+	if tool.get("type", "") == "hammer":
+		return _hammer(inv, st)
+	var pos := _pos(st)
+	if is_blueprint(st):
+		var why := removal_problem(st)
+		if why != "":
+			return {"ok": false, "reason": why}
+		_remove_piece(st)
+		_refund(inv, st.get("spent", {}), 1.0, pos)
+		return {"ok": true, "removed": true, "kind": st.kind}
+	var mat := piece_mat(st.kind)
+	if tool.get("type", "") != BREAK_TOOL[mat]:
+		return {"ok": false, "reason": "%s needs a %s to knock down" % [ItemDB.display_name(st.kind), BREAK_TOOL[mat]]}
+	var power: float = tool.tree if mat == "wood" else tool.rock
+	st.hp = float(st.hp) - BREAK_HIT * power
+	var broke := inv.damage_selected(1)
+	if float(st.hp) > 0.0:
+		Game.structures_changed.emit()
+		return {"ok": true, "hp": st.hp, "max_hp": st.max_hp, "broke": broke}
+	var why := removal_problem(st)
+	if why != "":
+		st.hp = 1.0
+		Game.structures_changed.emit()
+		return {"ok": false, "reason": why, "broke": broke}
+	_remove_piece(st)
+	_refund(inv, PIECE_COSTS.get(st.kind, {}), 0.5, pos)
+	return {"ok": true, "destroyed": true, "kind": st.kind, "broke": broke}
+
+
+## The hammer: one share of building on a blueprint, or one share of repair on a damaged piece. Either way the
+## share of the piece's cost is taken from the pack first; nothing happens if it isn't there.
+static func _hammer(inv: Inventory, st: Dictionary) -> Dictionary:
+	var hits: int = BUILD_HITS[piece_mat(st.kind)]
+	var cost: Dictionary = PIECE_COSTS.get(st.kind, {})
+	var spent: Dictionary = st.get("spent", {})
+	var take := {}
+	if is_blueprint(st):
+		var step := mini(roundi(float(st.built) * hits) + 1, hits)
+		for item: String in cost:
+			var due := roundi(float(cost[item]) * step / hits) - int(spent.get(item, 0))
+			if due > 0:
+				take[item] = due
+		var short := _shortfall(inv, take)
+		if short != "":
+			return {"ok": false, "reason": "Needs %s" % short}
+		for item: String in take:
+			inv.remove(item, int(take[item]))
+			spent[item] = int(spent.get(item, 0)) + int(take[item])
+		st.spent = spent
+		st.built = float(step) / hits
+		st.hp = float(st.max_hp) * float(st.built)
+		Game.structures_changed.emit()
+		return {"ok": true, "built": st.built, "finished": step >= hits, "took": take, "hammer": true}
+	if float(st.hp) >= float(st.max_hp) - 0.01:
+		return {"ok": false, "reason": "%s is in good repair" % ItemDB.display_name(st.kind), "hammer": true}
+	# A repair hit restores one build share of health and costs that share of the materials, rounded (but at least
+	# one of the main material, so repairs are never free; a small share of a minor one, like a door's rope, rounds
+	# away).
+	var share := minf(1.0 / hits, (float(st.max_hp) - float(st.hp)) / float(st.max_hp))
+	var first := true
+	for item: String in cost:
+		var due := roundi(float(cost[item]) * share)
+		if first:
+			due = maxi(due, 1)
+			first = false
+		if due > 0:
+			take[item] = due
+	var short := _shortfall(inv, take)
+	if short != "":
+		return {"ok": false, "reason": "Repairing needs %s" % short, "hammer": true}
+	for item: String in take:
+		inv.remove(item, int(take[item]))
+	st.hp = minf(float(st.max_hp), float(st.hp) + float(st.max_hp) * share)
+	Game.structures_changed.emit()
+	return {"ok": true, "repaired": true, "hp": st.hp, "max_hp": st.max_hp, "took": take, "hammer": true}
+
+
+## "" if the pack holds everything in `need`, else what's missing ("2 Planks, 1 Rope").
+static func _shortfall(inv: Inventory, need: Dictionary) -> String:
+	var parts: Array[String] = []
+	for item: String in need:
+		var have := inv.count(item)
+		if have < int(need[item]):
+			parts.append("%d %s" % [int(need[item]) - have, ItemDB.display_name(item)])
+	return ", ".join(parts)
+
+
+static func _remove_piece(st: Dictionary) -> void:
+	Game.structures.erase(st.id)
+	Game.structures_changed.emit()
+
+
+## Give back a share of some materials: into the pack, and onto the ground at `pos` if the pack is full.
+static func _refund(inv: Inventory, items: Dictionary, share: float, pos: Vector3) -> void:
+	for item: String in items:
+		var n := floori(float(items[item]) * share)
+		if n <= 0:
+			continue
+		var got := inv.add(item, n)
+		if got < n:
+			spawn_pickup(item, n - got, -1, pos + Vector3(0, 0.5, 0))
 
 
 # --- Items in the world -----------------------------------------------------------------

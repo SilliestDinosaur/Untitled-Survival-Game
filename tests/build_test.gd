@@ -43,8 +43,7 @@ func _process(_d: float) -> bool:
 					if TerrainEditScript.tree_near(cand, 6.0) == null and _game.world_gen.get_height(cand.x, cand.z) > 2.0:
 						_spot = cand
 						break
-				_game.inventory_of(1).add("foundation", 2, true)
-				_game.inventory_of(1).add("wall", 2, true)
+				_game.inventory_of(1).add("building_plan", 1, true)
 				_step = 1
 				_f = 0
 		1:
@@ -55,8 +54,7 @@ func _process(_d: float) -> bool:
 			var problem: String = _GA.placement_problem(snap.pos, "foundation", 0.0)
 			_check(problem == "", "foundation is allowed here (%s)" % problem)
 			var inv = _game.inventory_of(1)
-			var slot := _slot_of(inv, "foundation")
-			var placed: Dictionary = _GA.place_structure(1, slot, snap.pos, 0.0)
+			var placed: Dictionary = _GA.place_blueprint(1, "foundation", snap.pos, 0.0)
 			_check(placed.ok, "foundation placed")
 			if placed.ok:
 				_Terrain.commit(_Terrain.level_ground(placed.pos, 1.5, 1.5, 0.0, placed.pos.y))
@@ -69,8 +67,7 @@ func _process(_d: float) -> bool:
 			_check(absf(wsnap.pos.x - (_spot.x + 1.5)) < 0.01 and absf(wsnap.yaw - PI * 0.5) < 0.01, "wall snaps to the east edge")
 			var problem: String = _GA.placement_problem(wsnap.pos, "wall", wsnap.yaw)
 			_check(problem == "", "wall on a foundation edge is allowed (%s)" % problem)
-			var wall_slot := _slot_of(_game.inventory_of(1), "wall")
-			var placed: Dictionary = _GA.place_structure(1, wall_slot, wsnap.pos, wsnap.yaw)
+			var placed: Dictionary = _GA.place_blueprint(1, "wall", wsnap.pos, wsnap.yaw)
 			_check(placed.ok, "wall placed")
 			# A wall out in the open (no foundation) is refused.
 			var far := _spot + Vector3(45, 0, 45)
@@ -97,7 +94,7 @@ func _process(_d: float) -> bool:
 			_check(one_wall != "", "a roof with one wall is refused: %s" % one_wall)
 			# Second wall on the north edge, then the roof is allowed.
 			var north: Dictionary = _GA.snap_piece("wall", _spot + Vector3(0, 1.5, -1.4))
-			_check(_GA.place_structure(1, _slot_of(_game.inventory_of(1), "wall"), north.pos, north.yaw).ok, "second wall placed")
+			_check(_GA.place_blueprint(1, "wall", north.pos, north.yaw).ok, "second wall placed")
 			var roof_ok: String = _GA.placement_problem(roof_snap.pos, "roof", 0.0)
 			_check(roof_ok == "", "a roof on two walls is allowed (%s)" % roof_ok)
 			# Taking one of those walls down would leave the roof unsupported.

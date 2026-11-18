@@ -8,6 +8,7 @@ var _mat: ShaderMaterial
 var _glow_mat: StandardMaterial3D
 var _flame_mat: StandardMaterial3D
 var _flame_mesh: ArrayMesh
+var _blueprint_mat: StandardMaterial3D   ## see-through blue for pieces not yet finished with the hammer
 
 
 func _ready() -> void:
@@ -25,6 +26,10 @@ func _ready() -> void:
 	_flame_mat.blend_mode = BaseMaterial3D.BLEND_MODE_ADD
 	_flame_mat.cull_mode = BaseMaterial3D.CULL_DISABLED
 	_flame_mesh = _build_flame()
+	_blueprint_mat = StandardMaterial3D.new()
+	_blueprint_mat.albedo_color = Color(0.45, 0.72, 1.0, 0.38)
+	_blueprint_mat.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
+	_blueprint_mat.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
 	# The first world was built before this node existed, so its models are built here too.
 	_prewarm()
 	Game.structures_changed.connect(_sync)
@@ -45,7 +50,7 @@ func _prewarm() -> void:
 	for id: String in ItemDB.all_ids():
 		var info: Dictionary = ItemDB.info(id)
 		var kind: String = info.get("station", "")
-		if info.get("kind", "") == "placeable" and kind != "" and not seen.has(kind):
+		if info.get("kind", "") in ["placeable", "piece"] and kind != "" and not seen.has(kind):
 			seen[kind] = true
 			StructureModels.get_model(kind, _mat, _glow_mat)
 
@@ -74,8 +79,11 @@ func _sync() -> void:
 			_free_node(id)
 	_corners = StructureModels.corner_index(Game.structures)
 	for id: String in Game.structures:
+		var st: Dictionary = Game.structures[id]
+		if _nodes.has(id) and is_instance_valid(_nodes[id]) and bool(_nodes[id].get_meta("blueprint", false)) != GameActions.is_blueprint(st):
+			_free_node(id)   # a blueprint just finished: rebuild it solid
 		if not _nodes.has(id) or not is_instance_valid(_nodes[id]):
-			_nodes[id] = _make(Game.structures[id])
+			_nodes[id] = _make(st)
 		else:
 			_apply_door(_nodes[id], Game.structures[id])
 			_apply_ends(_nodes[id], Game.structures[id])
@@ -108,9 +116,14 @@ func _make(st: Dictionary) -> Node3D:
 	var ends := StructureModels.wall_ends(st, _corners) if st.kind in GameActions.EDGE_KINDS else Vector2.ZERO
 	root.set_meta("ends", ends)
 	var model := StructureModels.get_model(st.kind, _mat, _glow_mat, ends)
+	var blueprint := GameActions.is_blueprint(st)
+	root.set_meta("blueprint", blueprint)
 	var mi := MeshInstance3D.new()
 	mi.name = "Body"
 	mi.mesh = model.body
+	if blueprint:
+		mi.material_override = _blueprint_mat
+		mi.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
 	root.add_child(mi)
 	if model.glow:
 		var gi := MeshInstance3D.new()
@@ -133,7 +146,8 @@ func _make(st: Dictionary) -> Node3D:
 		flame.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
 		root.add_child(flame)
 	var body := StaticBody3D.new()
-	body.collision_layer = TerrainChunk.LAYER_SOLID | TerrainChunk.LAYER_INTERACT
+	# A blueprint can be aimed at (to hammer it) but walked through.
+	body.collision_layer = TerrainChunk.LAYER_INTERACT if blueprint else TerrainChunk.LAYER_SOLID | TerrainChunk.LAYER_INTERACT
 	body.collision_mask = 0
 	body.set_meta("structure", st.id)
 	var panel: CollisionShape3D = null
@@ -155,6 +169,8 @@ func _make(st: Dictionary) -> Node3D:
 		pivot.position = Vector3(-StructureModels.DOOR_W, 0.0, 0.0)
 		var door_mi := MeshInstance3D.new()
 		door_mi.mesh = door_mesh
+		if blueprint:
+			door_mi.material_override = _blueprint_mat
 		pivot.add_child(door_mi)
 		root.add_child(pivot)
 		root.set_meta("pivot", pivot)

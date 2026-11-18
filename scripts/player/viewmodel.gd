@@ -9,7 +9,7 @@ signal grab     ## the moment an Interact reach arrives
 const REST := Vector3(0.25, -0.24, -0.42)
 
 ## How big each long tool is in the hand (1.0 is the model's real size: a hatchet is 0.5 m, a spear 1.3 m).
-const HELD_SCALE := {"hatchet": 0.62, "pickaxe": 0.62, "knife": 0.9, "spear": 0.6}   ## (the torch stays full size: its flame is a child of the model)
+const HELD_SCALE := {"hatchet": 0.62, "pickaxe": 0.62, "hammer": 0.62, "knife": 0.9, "spear": 0.6, "plan": 0.6}   ## (the torch stays full size: its flame is a child of the model)
 
 var _item: MeshInstance3D
 var _mat: ShaderMaterial
@@ -58,10 +58,10 @@ func hold(item_id: String) -> void:
 	if _held_type == "pickaxe":
 		# The arms point away and the broad face turns a little toward you, so the blade reads as wide.
 		_pose_tool(Vector3(0.06, -0.08, 0.0), 0.5, 0.7, -0.3)
-	elif _held_type == "hatchet":
+	elif _held_type in ["hatchet", "hammer"]:
 		# The head points away from you, as a Minecraft tool does, and tips up a little.
 		_pose_tool(Vector3(0.06, -0.08, 0.0), 0.5, 0.0, -0.3)
-	elif _held_type in ["knife", "torch"]:
+	elif _held_type in ["knife", "torch", "plan"]:
 		# Turned so you see the face of the head, not just its edge.
 		_item.position = Vector3(0, -0.06, 0)
 		_item.rotation = Vector3(-0.15, 0.9, 0.3)

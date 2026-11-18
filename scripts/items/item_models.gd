@@ -48,6 +48,10 @@ static func mesh_for(id: String, material: Material) -> ArrayMesh:
 			_flint_rock(k, 0.045)
 		elif t.type == "torch":
 			_torch(k)
+		elif t.type == "hammer":
+			_hammer_tool(k)
+		elif t.type == "plan":
+			_plan(k)
 		else:
 			var tier := int(t.tier)
 			var col: Color = info.get("color", STONE)
@@ -389,6 +393,29 @@ static func _knife(k: MeshKit, tier: int, col: Color) -> void:
 # --- Torch ----------------------------------------------------------------------------
 
 ## A branch with a resin-soaked fiber wrap at the top (the flame is a separate glowing mesh).
+## A builder's hammer: a wooden haft with a squared stone head, its striking face forward (-Z).
+static func _hammer_tool(k: MeshKit) -> void:
+	_handle(k, 0.36, 1, 0.016)
+	var head := BoxMesh.new()
+	head.size = Vector3(0.065, 0.075, 0.17)
+	k.add_primitive(head, Transform3D(Basis(), Vector3(0, 0.34, -0.02)), STONE.darkened(0.1), 0.0, 0.05)
+	var face := BoxMesh.new()   # the worn striking face, a shade lighter
+	face.size = Vector3(0.07, 0.08, 0.02)
+	k.add_primitive(face, Transform3D(Basis(), Vector3(0, 0.34, -0.11)), STONE.lightened(0.2), 0.0, 0.03)
+	var band := BoxMesh.new()   # a cord binding where the head meets the haft
+	band.size = Vector3(0.04, 0.03, 0.05)
+	k.add_primitive(band, Transform3D(Basis(), Vector3(0, 0.29, 0)), CORD, 0.0, 0.05)
+
+
+## The Building Plan: a rolled sheet of blue drafting paper, tied with cord, held at its middle.
+static func _plan(k: MeshKit) -> void:
+	var paper := Color(0.3, 0.46, 0.74)
+	k.add_primitive(MeshKit.cylinder(0.032, 0.032, 0.34, 14), Transform3D(Basis(), Vector3(0, 0.08, 0)), paper, 0.0, 0.04)
+	for y in [-0.09, 0.25]:   # the rolled ends, paler where the sheet's edge shows
+		k.add_primitive(MeshKit.cylinder(0.034, 0.034, 0.012, 14), Transform3D(Basis(), Vector3(0, y, 0)), paper.lightened(0.35), 0.0, 0.03)
+	k.add_primitive(MeshKit.cylinder(0.036, 0.036, 0.018, 14), Transform3D(Basis(), Vector3(0, 0.1, 0)), CORD, 0.0, 0.04)
+
+
 static func _torch(k: MeshKit) -> void:
 	_handle(k, 0.3, 1, 0.017)
 	# The rag head: a bundle of cloth soaked in pitch, bulging in the middle and charred at the tip.

@@ -233,11 +233,22 @@ func to_data() -> Dictionary:
 func from_data(d: Dictionary, keep_selection := false) -> void:
 	var sel := selected
 	clear(true)
+	# Building pieces used to be items; any still in a pack from an older save turn back into their materials.
+	var returned := {}
 	if d.has("slots"):
 		var list: Array = d.slots
 		for i in mini(list.size(), SIZE):
 			var s: Dictionary = list[i]
-			if not s.is_empty() and ItemDB.exists(String(s.get("id", ""))):
-				slots[i] = {"id": String(s.id), "count": int(s.count), "dur": int(s.get("dur", -1))}
+			var id := String(s.get("id", ""))
+			if s.is_empty() or not ItemDB.exists(id):
+				continue
+			if GameActions.PIECE_COSTS.has(id):
+				var cost: Dictionary = GameActions.PIECE_COSTS[id]
+				for item: String in cost:
+					returned[item] = int(returned.get(item, 0)) + int(cost[item]) * int(s.count)
+				continue
+			slots[i] = {"id": id, "count": int(s.count), "dur": int(s.get("dur", -1))}
+	for item: String in returned:
+		add(item, int(returned[item]), true)
 	selected = sel if keep_selection else clampi(int(d.get("selected", 0)), 0, HOTBAR_SIZE - 1)
 	changed.emit()

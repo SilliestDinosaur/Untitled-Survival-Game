@@ -32,21 +32,23 @@ func _process(_d: float) -> bool:
 			if _main.state == _main.State.PLAYING:
 				var spot := _find_clear_cell()
 				var inv = _game.inventory_of(1)
-				inv.add("brick_floor", 1, true)
-				inv.add("stone_stairs", 1, true)
+				inv.add("building_plan", 1, true)
 				var fsnap: Dictionary = _GA.snap_piece("brick_floor", spot)
-				_GA.place_structure(1, _slot_of(inv, "brick_floor"), fsnap.pos, 0.0)
+				_build(String(_GA.place_blueprint(1, "brick_floor", fsnap.pos, 0.0).id))
 				_Terrain.commit(_Terrain.level_ground(fsnap.pos, 1.5, 1.5, 0.0, fsnap.pos.y))
 				var ssnap: Dictionary = _GA.snap_piece("stone_stairs", spot, -1.0, 0.0)
-				var placed: Dictionary = _GA.place_structure(1, _slot_of(inv, "stone_stairs"), ssnap.pos, ssnap.yaw)
+				var placed: Dictionary = _GA.place_blueprint(1, "stone_stairs", ssnap.pos, ssnap.yaw)
 				_check(placed.ok, "stairs placed on the floor (%s)" % placed.get("reason", ""))
+				if placed.ok:
+					_build(String(placed.id))
 				# A second floor south of the stairs: the player starts there and walks north, up the treads.
 				var south := spot + Vector3(0, 0, 3.0)
 				south.y = _game.world_gen.get_height(south.x, south.z)
-				inv.add("brick_floor", 1, true)
 				var ssouth: Dictionary = _GA.snap_piece("brick_floor", south)
-				var placed_south: Dictionary = _GA.place_structure(1, _slot_of(inv, "brick_floor"), ssouth.pos, 0.0)
+				var placed_south: Dictionary = _GA.place_blueprint(1, "brick_floor", ssouth.pos, 0.0)
 				_check(placed_south.ok, "the floor the player starts on is placed (%s)" % placed_south.get("reason", ""))
+				if placed_south.ok:
+					_build(String(placed_south.id))
 				_Terrain.commit(_Terrain.level_ground(ssouth.pos, 1.5, 1.5, 0.0, ssouth.pos.y))
 				var floor_top: float = ssouth.pos.y + _GA.FLOOR_TOP
 				_main.player.global_position = Vector3(south.x, floor_top + 0.2, south.z)
@@ -97,3 +99,19 @@ func _check(ok: bool, what: String) -> void:
 func _finish() -> bool:
 	print("RESULT: ", "PASS" if _fails.is_empty() else "FAIL")
 	return true
+
+## Finish a blueprint the way a player does: a hammer in hand and the materials in the pack, hit until it's built.
+func _build(id: String) -> void:
+	var inv = _game.inventory_of(1)
+	var st: Dictionary = _game.structures[id]
+	for item: String in _GA.PIECE_COSTS[st.kind]:
+		inv.add(item, int(_GA.PIECE_COSTS[st.kind][item]), true)
+	if inv.count("hammer") < 1:
+		inv.add("hammer", 1, true)
+	var keep: int = inv.selected
+	inv.select(_slot_of(inv, "hammer"))
+	for i in 20:
+		if not _GA.is_blueprint(_game.structures[id]):
+			break
+		_GA.hit_structure(1, id)
+	inv.select(keep)

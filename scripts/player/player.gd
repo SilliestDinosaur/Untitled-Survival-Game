@@ -62,6 +62,9 @@ var placement := {}
 var _snapped_level := 0   ## storey the building preview is on (for the prompt)
 var _ghost: MeshInstance3D
 var _place_turns := 0   ## quarter turns from Rotate (R) for the piece being placed
+## The building wheel's pick for the Building Plan: a shape (GameActions.SHAPES) in a material (GameActions.MATERIALS).
+var build_choice := {"shape": "wall", "mat": "wood"}
+var wheel_open := false   ## set by the building wheel while it's up (placing waits until it closes)
 var _ghost_kind := ""
 var _ghost_ok_mat: StandardMaterial3D
 var _ghost_bad_mat: StandardMaterial3D
@@ -302,6 +305,42 @@ func _update_camera(delta: float, sprinting: bool, input: Vector2) -> void:
 	underwater = not Game.in_cave and camera.global_position.y < Game.SEA_LEVEL - 0.05
 
 
+## What the crosshair says about a building piece. The hammer shows its health (or, on a blueprint, how far it's
+## built and what it needs) and builds or repairs it; the right tool for its material knocks it down.
+func _piece_look(sid: String, st: Dictionary) -> Dictionary:
+	var name := ItemDB.display_name(st.kind)
+	var tool_type: String = ItemDB.tool_stats(inventory.selected_item()).get("type", "")
+	var look := {"name": name, "label": "Building piece", "structure": sid}
+	var hp := GameActions.piece_health(st)
+	if GameActions.is_blueprint(st):
+		look.name = "%s blueprint" % name
+		look.label = "Blueprint · %d%% built" % roundi(float(st.get("built", 0.0)) * 100.0)
+		if tool_type == "hammer":
+			look.label += " · costs %s" % _cost_text(GameActions.PIECE_COSTS.get(st.kind, {}))
+			look.attack = "Build"
+		elif tool_type != "plan":
+			look.attack = "Take down"
+	else:
+		if tool_type == "hammer":
+			look.label = "Health %d / %d" % [ceili(hp.x), roundi(hp.y)]
+			if hp.x < hp.y - 0.01:
+				look.attack = "Repair"
+		elif tool_type == GameActions.BREAK_TOOL[GameActions.piece_mat(st.kind)]:
+			look.label = "Health %d / %d" % [ceili(hp.x), roundi(hp.y)]
+			look.attack = "Knock down"
+		if st.kind in GameActions.DOOR_KINDS:
+			look.door = sid
+			look.interact = "Close" if bool(st.get("open", false)) else "Open"
+	return look
+
+
+static func _cost_text(items: Dictionary) -> String:
+	var parts: Array[String] = []
+	for item: String in items:
+		parts.append("%d %s" % [int(items[item]), ItemDB.display_name(item)])
+	return ", ".join(parts)
+
+
 func _update_looking_at() -> void:
 	looking_at = {}
 	if not ray.is_colliding():
@@ -325,16 +364,13 @@ func _update_looking_at() -> void:
 		var sid: String = body.get_meta("structure")
 		if Game.structures.has(sid):
 			var st: Dictionary = Game.structures[sid]
-			if st.kind in GameActions.DOOR_KINDS:
-				looking_at = {"name": ItemDB.display_name(st.kind), "label": "Door", "structure": sid, "door": sid,
-					"interact": "Close" if bool(st.get("open", false)) else "Open", "attack": "Pack up"}
+			if GameActions.is_building(st.kind):
+				looking_at = _piece_look(sid, st)
 			elif st.kind in Recipes.STATION_NAMES and st.kind != "":
 				looking_at = {"name": ItemDB.display_name(st.kind), "label": "Crafting station", "structure": sid,
 					"station": st.kind, "interact": "Craft", "attack": "Pack up"}
 			else:
-				# Walls, floors, roofs and stairs: nothing to use, only to take down.
-				looking_at = {"name": ItemDB.display_name(st.kind), "label": "Building piece", "structure": sid,
-					"attack": "Pack up"}
+				looking_at = {"name": ItemDB.display_name(st.kind), "label": "Structure", "structure": sid, "attack": "Pack up"}
 		return
 	if body.has_meta("animal"):
 		var animal: Node = body.get_meta("animal")
@@ -409,6 +445,20 @@ func _update_actions(delta: float) -> void:
 	if not Input.is_action_pressed("attack") or _swing_cooldown > 0.0:
 		return
 	var item := inventory.selected_item()
+	if item != "" and ItemDB.tool_stats(item).get("type", "") == "plan":
+		_swing_cooldown = 0.3
+		if wheel_open:
+			return
+		if placement.get("ok", false):
+			var at: Vector3 = placement.pos
+			Net.request("place_blueprint", {"kind": placement.kind, "pos": at, "yaw": placement.yaw}, func(res: Dictionary) -> void:
+				if res.get("ok", false):
+					Audio.play_3d("click", at, -4.0, 1.1)
+				elif res.get("reason", "") != "":
+					hint.emit(res.reason))
+		elif placement.get("reason", "") != "":
+			hint.emit(placement.reason)
+		return
 	if item != "" and ItemDB.info(item).kind == "placeable" and looking_at.is_empty():
 		_swing_cooldown = 0.4
 		if placement.get("ok", false):
@@ -470,11 +520,20 @@ func _on_strike() -> void:
 		return
 	if look.has("structure"):
 		hit_landed.emit()
-		Audio.play_3d("chop", point, -2.0, 0.8)
+		var hammer: bool = ItemDB.tool_stats(inventory.selected_item()).get("type", "") == "hammer"
+		Audio.play_3d("clink" if hammer else "chop", point, -2.0, 1.15 if hammer else 0.8)
 		Effects.chips(get_parent(), point, Game.palette.bark.lightened(0.2), 6, 0.06)
 		Net.request("hit_structure", {"structure": look.structure, "slot": inventory.selected}, func(res: Dictionary) -> void:
 			if res.get("packed", false):
-				hint.emit("Packed up the %s" % ItemDB.display_name(res.kind)))
+				hint.emit("Packed up the %s" % ItemDB.display_name(res.kind))
+			elif res.get("finished", false):
+				hint.emit("Finished building")
+			elif res.get("destroyed", false):
+				hint.emit("Knocked down the %s" % ItemDB.display_name(res.kind))
+			elif res.get("removed", false):
+				hint.emit("Took down the blueprint")
+			elif not res.get("ok", false) and res.get("reason", "") != "":
+				hint.emit(res.reason))
 		return
 	if look.has("resource"):
 		_hit_resource(look.chunk, look.resource, point)
@@ -587,17 +646,28 @@ func drop_slot(slot: int, whole_stack := true) -> void:
 
 # --- Placing stations -----------------------------------------------------------------
 
-func _update_placement() -> void:
+## What the held item places: a station's kind, the building wheel's piece for the Building Plan, or "".
+func held_build_kind() -> String:
 	var item := inventory.selected_item()
-	var info := ItemDB.info(item) if item != "" else {}
-	if info.get("kind", "") != "placeable" or not active:
+	if item == "":
+		return ""
+	var info := ItemDB.info(item)
+	if info.get("kind", "") == "placeable":
+		return String(info.station)
+	if ItemDB.tool_stats(item).get("type", "") == "plan":
+		return GameActions.piece_kind(String(build_choice.shape), String(build_choice.mat))
+	return ""
+
+
+func _update_placement() -> void:
+	var kind_now := held_build_kind()
+	if kind_now == "" or not active:
 		placement = {}
 		if _ghost:
 			_ghost.visible = false
 		return
 	var from := camera.global_position
 	var dir := -camera.global_transform.basis.z
-	var kind_now: String = info.station
 	var pos := Vector3.INF
 	# Building pieces snap to whatever the crosshair is on: the ground, a foundation's top, a wall face.
 	if GameActions.is_building(kind_now) and ray.is_colliding() and ray.get_collision_point().distance_to(from) <= REACH + 2.0:
@@ -624,7 +694,7 @@ func _update_placement() -> void:
 	if Input.is_action_just_pressed("rotate_piece"):
 		_place_turns = (_place_turns + 1) % 4
 	var yaw := rotation.y + PI + _place_turns * PI * 0.5
-	var kind: String = info.station
+	var kind := kind_now
 	if GameActions.is_building(kind):
 		# Building pieces snap to the grid (and walls to a foundation edge).
 		var prefer := float(placement.get("yaw", -1.0)) if placement.get("kind", "") == kind else -1.0
@@ -644,9 +714,11 @@ func _update_placement() -> void:
 	if reason == "" and GameActions.is_building(kind) and _overlaps_player(pos, kind, yaw):
 		reason = "You're standing there"
 	var level := int(_snapped_level)
-	var label: String = info.name
-	if GameActions.is_building(kind) and level > 0:
-		label = "%s (level %d)" % [info.name, level + 1]
+	var label := ItemDB.display_name(kind)
+	if GameActions.is_building(kind):
+		label += " blueprint"
+		if level > 0:
+			label += " (level %d)" % (level + 1)
 	placement = {"ok": reason == "", "reason": reason, "pos": pos, "yaw": yaw, "name": label, "kind": kind}
 	if not _ghost:
 		_ghost = MeshInstance3D.new()
@@ -654,9 +726,9 @@ func _update_placement() -> void:
 		_ghost_ok_mat = _ghost_material(Color(0.55, 1.0, 0.6, 0.45))
 		_ghost_bad_mat = _ghost_material(Color(1.0, 0.4, 0.35, 0.45))
 		get_parent().add_child(_ghost)
-	if _ghost_kind != info.station:
-		_ghost_kind = info.station
-		_ghost.mesh = StructureModels.get_model(info.station, _ghost_ok_mat, _ghost_ok_mat).body
+	if _ghost_kind != kind:
+		_ghost_kind = kind
+		_ghost.mesh = StructureModels.get_model(kind, _ghost_ok_mat, _ghost_ok_mat).body
 	_ghost.visible = true
 	_ghost.material_override = _ghost_ok_mat if placement.ok else _ghost_bad_mat
 	_ghost.global_position = pos

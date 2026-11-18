@@ -32,6 +32,7 @@ var _feed: InventoryUI.PickupFeed
 var _hint: Label
 var _target_bar: StatBar
 var _prompt: Label
+var _wheel: BuildWheel
 var _effects: Label
 var _hit_marker := 0.0
 var _clock: Label
@@ -57,6 +58,8 @@ func _ready() -> void:
 	_water_fx = _overlay(Color(0.05, 0.25, 0.35), 0.0, 0.9)
 	_damage_fx = _overlay(Color(0.65, 0.02, 0.02), 0.0, 0.5)
 	_cold_fx = _overlay(Color(0.7, 0.85, 1.0), 0.0, 0.75)
+	_wheel = BuildWheel.new()
+	add_child(_wheel)
 
 	# Crosshair: a dot that grows into a ring when you can interact with something.
 	_crosshair = Control.new()
@@ -279,6 +282,7 @@ func _process(delta: float) -> void:
 			_biome.modulate = Color(1.6, 1.4, 1.1)
 	_biome.modulate = _biome.modulate.lerp(Color.WHITE, 1.0 - exp(-1.5 * delta))
 
+	_wheel.player = player
 	# Crosshair target.
 	var look: Dictionary = player.looking_at
 	_target_name.text = look.get("name", "")
@@ -288,11 +292,16 @@ func _process(delta: float) -> void:
 		parts.append("[%s] %s" % [Settings.code_label(Settings.binding_of("interact")), look.interact])
 	if look.get("attack", "") != "":
 		parts.append("[%s] %s" % [Settings.code_label(Settings.binding_of("attack")).replace(" Click", ""), look.attack])
-	if look.is_empty() and not player.placement.is_empty():
+	var holding_plan: bool = ItemDB.tool_stats(player.inventory.selected_item()).get("type", "") == "plan"
+	if (look.is_empty() or holding_plan) and not player.placement.is_empty():
 		var pl: Dictionary = player.placement
+		if holding_plan:
+			parts.clear()   # the plan only lays blueprints, whatever the crosshair is on
 		parts.append(("[%s] Place %s" % [Settings.code_label(Settings.binding_of("attack")).replace(" Click", ""), pl.name]) if pl.ok else pl.reason)
 		parts.append("[%s] Rotate" % Settings.code_label(Settings.binding_of("rotate_piece")))
-	_prompt.text = "     ".join(parts)
+		if holding_plan:
+			parts.append("[%s] Building wheel" % Settings.code_label(Settings.binding_of("build_menu")))
+	_prompt.text = "" if _wheel.visible else "     ".join(parts)   # the wheel has its own caption
 	var eff: Array[String] = []
 	for e: String in player.stats.effects:
 		eff.append("%s %ds" % [ItemDB.EFFECTS[e].name, ceili(player.stats.effects[e])])
