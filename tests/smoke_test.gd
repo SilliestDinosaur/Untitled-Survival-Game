@@ -26,6 +26,9 @@ func _process(_delta: float) -> bool:
 			if _main.state == _main.State.PLAYING:
 				print("loaded in %d frames, %d ms" % [_frames - 30, Time.get_ticks_msec() - _t0])
 				_start_pos = player.global_position
+				# The game faces a new player a random way; walk somewhere clear instead, so a tree right in front of
+				# the spawn doesn't decide the result.
+				player.rotation.y = _clear_heading(player)
 				Input.action_press("move_forward")
 				Input.action_press("sprint")
 				_phase = "walking"
@@ -55,3 +58,26 @@ func _report(player, world) -> bool:
 	SaveManager.delete(root.get_node("Game").save_id)
 	print("RESULT: ", "PASS" if ok else "FAIL")
 	return true
+
+
+## A heading with nothing solid in the first 18 m (checked with rays a metre above the ground, 2 m at a time).
+func _clear_heading(player) -> float:
+	var space: PhysicsDirectSpaceState3D = player.get_world_3d().direct_space_state
+	var gen = root.get_node("Game").world_gen
+	for k in 16:
+		var yaw := TAU * k / 16.0
+		var dir := Vector3(-sin(yaw), 0.0, -cos(yaw))   # the player's forward (-Z) turned by yaw
+		var clear := true
+		var p: Vector3 = player.global_position
+		for s in 9:
+			var q := p + dir * 2.0
+			var a := Vector3(p.x, gen.get_height(p.x, p.z) + 1.0, p.z)
+			var b := Vector3(q.x, gen.get_height(q.x, q.z) + 1.0, q.z)
+			var hit := space.intersect_ray(PhysicsRayQueryParameters3D.create(a, b, 1, [player.get_rid()]))
+			if not hit.is_empty() or gen.get_height(q.x, q.z) < 0.5:
+				clear = false
+				break
+			p = q
+		if clear:
+			return yaw
+	return player.rotation.y

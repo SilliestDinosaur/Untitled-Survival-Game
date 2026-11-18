@@ -121,9 +121,14 @@ func _process(_delta: float) -> bool:
 		"pickup":
 			if _frames < 30:
 				return false
-			var pid: String = _game.pickups.keys()[0]
+			# The stone's pickup (anything else lying about, such as a broken tool's leftovers, is not this test's).
+			var pid := ""
+			for id: String in _game.pickups:
+				if _game.pickups[id].item == "stone":
+					pid = id
 			_GA.pick_up(_game.LOCAL_PLAYER, pid)
-			_check(_player.inventory.count("stone") == _dropped and _game.pickups.is_empty(), "picked the stone back up: %d" % _player.inventory.count("stone"))
+			_check(_player.inventory.count("stone") == _dropped and not _game.pickups.has(pid),
+				"picked the stone back up: %d (pickups: %s)" % [_player.inventory.count("stone"), str(_game.pickups.values().map(func(p: Dictionary) -> String: return "%s x%d" % [p.item, int(p.count)]))])
 			_next("eat")
 		"eat":
 			_player.inventory.add("berries", 3)
