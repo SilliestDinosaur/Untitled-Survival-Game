@@ -164,7 +164,7 @@ func _build_assets() -> void:
 	flora = FloraLibrary.new(world_seed, palette)
 	flora.prebuild()   # while loading, so no flora mesh is built in the middle of play
 	fauna = FaunaLibrary.new(world_seed, palette)
-	MeshKit.detail = 1.0
+	# The detail setting stays in force after the build: item models, animals and structures are made later too.
 
 
 var _last_detail := ""
@@ -177,6 +177,7 @@ func _on_settings_changed() -> void:
 	if (Settings.model_detail != _last_detail or Settings.leaf_detail != _last_leaves) and palette:
 		_last_detail = Settings.model_detail
 		_last_leaves = Settings.leaf_detail
+		ItemModels.clear_cache()   # held items and dropped items pick up the new detail too
 		_build_assets()
 		assets_rebuilt.emit()
 
