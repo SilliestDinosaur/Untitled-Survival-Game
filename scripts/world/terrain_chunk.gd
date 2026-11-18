@@ -119,7 +119,8 @@ func _build_multimeshes(buffers: Dictionary, flora: FloraLibrary) -> void:
 			mmi.visibility_range_end_margin = 10.0
 		# Shadows only where they read: tiny ground clutter and far bushes don't need them.
 		var small: bool = FloraLibrary.KINDS[kind].get("shape", "") == "small"
-		if cat in ["grass", "flower", "fern"] or small or (cat in ["bush", "clutter"] and tier > 0):
+		# Trees a little way off skip shadows too: the sun's shadow only reaches 100-160 m, and they are re-drawn into it.
+		if cat in ["grass", "flower", "fern"] or small or (cat in ["bush", "clutter"] and tier > 0) or (cat == "tree" and tier > 0):
 			mmi.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
 		add_child(mmi)
 
