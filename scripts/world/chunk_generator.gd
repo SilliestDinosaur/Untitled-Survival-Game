@@ -8,7 +8,10 @@ const Biome := WorldGen.Biome
 
 ## Detail tiers: 0 = right around the player, 2 = far away.
 const TIER_RES := [32, 16, 8]          ## terrain quads per side
-const TIER_SKIRT := [3.0, 6.0, 10.0]   ## depth of the edge "skirt" that hides gaps between tiers
+## Every heightfield chunk's border is sampled at FINE metres between points, whatever its own detail level, so
+## neighbours at different levels share their border points exactly (no cracks, no skirts). Interiors use TIER_RES.
+const FINE := 2.0
+const FINE_SEGS := 32                   ## fine segments per side of a chunk (64 m / FINE)
 const VOXEL_STEP := [1.0, 2.0, 4.0]    ## grid size of the solid ground near caves, per tier
 
 const TREE_ATTEMPTS := 110
@@ -47,17 +50,12 @@ static func generate(job: Dictionary) -> void:
 			"step": step,
 		}
 	else:
-		var n := res + 1
-		var heights := PackedFloat32Array()
-		heights.resize(n * n)
-		for z in n:
-			for x in n:
-				heights[z * n + x] = gen.get_height(origin.x + x * step, origin.z + z * step)
+		var cache := {}   # fine sample key -> height, shared by the mesh and the collision of this chunk
 		result = {
-			"mesh": _terrain_arrays(heights, n, res, step, origin, gen, TIER_SKIRT[tier]),
-			"collision": _collision_data(heights, step) if tier <= 1 else PackedFloat32Array(),
-			"collision_width": n,
-			"step": step,
+			"mesh": _terrain_arrays(origin, gen, res, cache),
+			"collision": _collision_data(origin, gen, cache) if tier <= 1 else PackedFloat32Array(),
+			"collision_width": FINE_SEGS + 1,
+			"step": FINE,
 		}
 	var resources := _place_resources(coord, origin, gen, flora, job.removed)
 	result.resources = resources
@@ -69,80 +67,92 @@ static func generate(job: Dictionary) -> void:
 
 # --- Terrain ------------------------------------------------------------------
 
-static func _terrain_arrays(heights: PackedFloat32Array, n: int, res: int, step: float, origin: Vector3, gen: WorldGen, skirt: float) -> Array:
-	# Smooth, shared vertices (painterly look). Normals come from a grid padded by one
-	# sample on every side, so lighting matches seamlessly across chunk borders.
-	var pn := n + 2
-	var pad := PackedFloat32Array()
-	pad.resize(pn * pn)
-	for z in pn:
-		for x in pn:
-			var gx := x - 1
-			var gz := z - 1
-			if gx >= 0 and gx < n and gz >= 0 and gz < n:
-				pad[z * pn + x] = heights[gz * n + gx]
-			else:
-				pad[z * pn + x] = gen.get_height(origin.x + gx * step, origin.z + gz * step)
+## The height at a fine sample (key = fine grid coordinates), cached for the chunk being built.
+static func _fine_h(cache: Dictionary, gen: WorldGen, origin: Vector3, key: Vector2i) -> float:
+	if not cache.has(key):
+		cache[key] = gen.get_height(origin.x + key.x * FINE, origin.z + key.y * FINE)
+	return cache[key]
 
+
+static func _on_border(p: Vector2i) -> bool:
+	return p.x == 0 or p.y == 0 or p.x == FINE_SEGS or p.y == FINE_SEGS
+
+
+static func _edge_on_border(a: Vector2i, b: Vector2i) -> bool:
+	return (a.x == b.x and (a.x == 0 or a.x == FINE_SEGS)) or (a.y == b.y and (a.y == 0 or a.y == FINE_SEGS))
+
+
+## The outline of one coarse cell: its four corners, with the fine samples inserted on any edge that lies on the
+## chunk's border. Starts at a corner that is not on the border, so the cell fans out from there.
+static func _cell_outline(corners: Array, k: int) -> Array:
+	var start := 0
+	for i in 4:
+		if not _on_border(corners[i]):
+			start = i
+			break
+	var out: Array = []
+	for step in 4:
+		var a: Vector2i = corners[(start + step) % 4]
+		var b: Vector2i = corners[(start + step + 1) % 4]
+		out.append(a)
+		if _edge_on_border(a, b):
+			var d: Vector2i = (b - a) / k
+			for t in range(1, k):
+				out.append(a + d * t)
+	return out
+
+
+static func _terrain_arrays(origin: Vector3, gen: WorldGen, res: int, cache: Dictionary) -> Array:
+	var k := FINE_SEGS / res   # fine steps per coarse cell: 1 for the finest tier
+	# Every vertex, by fine key, and every cell's outline (which names the vertices it needs).
+	var keys: Array[Vector2i] = []
+	var index := {}
+	var outlines: Array = []
+	for cz in res:
+		for cx in res:
+			var corners := [Vector2i(cx * k, cz * k), Vector2i((cx + 1) * k, cz * k),
+				Vector2i((cx + 1) * k, (cz + 1) * k), Vector2i(cx * k, (cz + 1) * k)]
+			var outline := _cell_outline(corners, k)
+			for key: Vector2i in outline:
+				if not index.has(key):
+					index[key] = keys.size()
+					keys.append(key)
+			outlines.append(outline)
 	var verts := PackedVector3Array()
 	var normals := PackedVector3Array()
 	var colors := PackedColorArray()
+	verts.resize(keys.size())
+	normals.resize(keys.size())
+	colors.resize(keys.size())
+	for i in keys.size():
+		var key: Vector2i = keys[i]
+		var h := _fine_h(cache, gen, origin, key)
+		var hl := _fine_h(cache, gen, origin, key + Vector2i(-1, 0))
+		var hr := _fine_h(cache, gen, origin, key + Vector2i(1, 0))
+		var hd := _fine_h(cache, gen, origin, key + Vector2i(0, -1))
+		var hu := _fine_h(cache, gen, origin, key + Vector2i(0, 1))
+		var nrm := Vector3(hl - hr, 2.0 * FINE, hd - hu).normalized()
+		var wx := origin.x + key.x * FINE
+		var wz := origin.z + key.y * FINE
+		verts[i] = Vector3(key.x * FINE, h, key.y * FINE)
+		normals[i] = nrm
+		colors[i] = gen.get_terrain_color(h, nrm.y, wx, wz).srgb_to_linear()
 	var indices := PackedInt32Array()
-	verts.resize(n * n)
-	normals.resize(n * n)
-	colors.resize(n * n)
-	for z in n:
-		for x in n:
-			var i := z * n + x
-			var hl := pad[(z + 1) * pn + x]
-			var hr := pad[(z + 1) * pn + x + 2]
-			var hd := pad[z * pn + x + 1]
-			var hu := pad[(z + 2) * pn + x + 1]
-			var nrm := Vector3(hl - hr, 2.0 * step, hd - hu).normalized()
-			var h := heights[i]
-			verts[i] = Vector3(x * step, h, z * step)
-			normals[i] = nrm
-			colors[i] = gen.get_terrain_color(h, nrm.y, origin.x + x * step, origin.z + z * step).srgb_to_linear()
-	for z in res:
-		for x in res:
-			var i00 := z * n + x
-			var i10 := i00 + 1
-			var i01 := i00 + n
-			var i11 := i01 + 1
-			if (x + z) % 2 == 0:
-				indices.append_array([i00, i10, i01, i10, i11, i01])
-			else:
-				indices.append_array([i00, i10, i11, i00, i11, i01])
-
-	# Skirts: short walls hanging down from each edge. Neighbouring chunks at different
-	# detail levels don't line up exactly; the skirts hide the tiny gaps.
-	var edges := []
-	for k in res:
-		edges.append([Vector2i(k, 0), Vector2i(k + 1, 0)])
-		edges.append([Vector2i(res, k), Vector2i(res, k + 1)])
-		edges.append([Vector2i(k + 1, res), Vector2i(k, res)])
-		edges.append([Vector2i(0, k + 1), Vector2i(0, k)])
-	for e: Array in edges:
-		var a: int = e[0].y * n + e[0].x
-		var b: int = e[1].y * n + e[1].x
-		var base := verts.size()
-		verts.append(verts[a] - Vector3(0, skirt, 0))
-		verts.append(verts[b] - Vector3(0, skirt, 0))
-		normals.append(normals[a])
-		normals.append(normals[b])
-		colors.append(colors[a])
-		colors.append(colors[b])
-		indices.append_array([a, b, base, b, base + 1, base])
+	for outline: Array in outlines:
+		for t in range(1, outline.size() - 1):
+			indices.append_array([index[outline[0]], index[outline[t]], index[outline[t + 1]]])
 	return [verts, normals, colors, indices]
 
 
-static func _collision_data(heights: PackedFloat32Array, step: float) -> PackedFloat32Array:
-	# HeightMapShape3D samples are 1 unit apart; the shape gets scaled by `step`,
-	# so heights are divided by `step` to compensate.
+## Heights on the fine grid for the collision shape (HeightMapShape3D samples are 1 unit apart, scaled by FINE,
+## so heights are divided by FINE to compensate).
+static func _collision_data(origin: Vector3, gen: WorldGen, cache: Dictionary) -> PackedFloat32Array:
+	var n := FINE_SEGS + 1
 	var data := PackedFloat32Array()
-	data.resize(heights.size())
-	for k in heights.size():
-		data[k] = heights[k] / step
+	data.resize(n * n)
+	for z in n:
+		for x in n:
+			data[z * n + x] = _fine_h(cache, gen, origin, Vector2i(x, z)) / FINE
 	return data
 
 
