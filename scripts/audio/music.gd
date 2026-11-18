@@ -108,7 +108,12 @@ func _on_world_changed() -> void:
 	_layers.clear()
 	_seed = Game.world_seed
 	var s := _seed
-	_task = WorkerThreadPool.add_task(func() -> void: _instruments = Instruments.build(s))
+	# A method and a bound argument, not a lambda: a closure over a local here made Godot double-free at exit.
+	_task = WorkerThreadPool.add_task(_build_instruments.bind(s))
+
+
+func _build_instruments(world_seed: int) -> void:
+	_instruments = Instruments.build(world_seed)
 
 
 ## Called when something fights back: an animal charging or hitting you.
@@ -119,6 +124,13 @@ func combat_ping(amount := 1.0) -> void:
 ## Called while hunting: hitting prey, prey bolting from you.
 func hunt_ping(amount := 1.0) -> void:
 	hunt_heat = minf(hunt_heat + amount, 3.0)
+
+
+func _exit_tree() -> void:
+	# Don't leave an instrument build running into shutdown.
+	if _task >= 0:
+		WorkerThreadPool.wait_for_task_completion(_task)
+		_task = -1
 
 
 func _process(delta: float) -> void:
