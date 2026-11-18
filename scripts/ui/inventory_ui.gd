@@ -304,16 +304,26 @@ class CraftingPanel extends PanelContainer:
 		col.add_child(UITheme.heading("Crafting", 36))
 		_near_label = UITheme.label("", 15, UITheme.INK_DIM)
 		col.add_child(_near_label)
-		var tabs := HFlowContainer.new()
-		tabs.add_theme_constant_override("h_separation", 4)
-		tabs.add_theme_constant_override("v_separation", 4)
+		# One row of tabs: tighter padding than the theme's buttons, so all the groups fit across the panel.
+		var tabs := HBoxContainer.new()
+		tabs.add_theme_constant_override("separation", 2)
 		col.add_child(tabs)
 		for g: String in Recipes.GROUPS:
 			var b := Button.new()
 			b.text = g
 			b.toggle_mode = true
 			b.focus_mode = Control.FOCUS_NONE
+			b.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 			b.add_theme_font_size_override("font_size", 15)
+			# The painted theme only applies once the button is in the scene, so its styles are tightened then.
+			b.ready.connect(func() -> void:
+				for state: String in ["normal", "hover", "pressed", "hover_pressed", "disabled"]:
+					var sb := b.get_theme_stylebox(state)
+					if sb:
+						sb = sb.duplicate()
+						sb.content_margin_left = 6.0
+						sb.content_margin_right = 6.0
+						b.add_theme_stylebox_override(state, sb), CONNECT_ONE_SHOT)
 			b.pressed.connect(func() -> void:
 				_group = g
 				Audio.click()

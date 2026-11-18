@@ -177,9 +177,13 @@ func _draw() -> void:
 			for i in 2:
 				draw_arc(c + Vector2((i - 0.5) * s * 0.2, -s * 0.28), s * 0.06, PI, TAU, 6, Color(1, 1, 1, 0.5), 1.5)
 		"bandage":
-			_capsule(c + Vector2(-s * 0.2, 0), c + Vector2(s * 0.12, 0), s * 0.18, Color(0.9, 0.86, 0.74))
-			draw_rect(Rect2(c + Vector2(s * 0.08, -s * 0.15), Vector2(s * 0.3, s * 0.3)), Color(0.88, 0.84, 0.72))
-			draw_line(c + Vector2(-s * 0.05, -s * 0.18), c + Vector2(-s * 0.05, s * 0.18), Color(0.7, 0.66, 0.55), 1.5)
+			# A rolled wrap with its loose end, outlined so it reads on the paper slots, and a red cross.
+			var edge := Color(0.55, 0.48, 0.38)
+			_capsule(c + Vector2(-s * 0.2, 0), c + Vector2(s * 0.12, 0), s * 0.2, edge)
+			_capsule(c + Vector2(-s * 0.2, 0), c + Vector2(s * 0.12, 0), s * 0.17, Color(0.96, 0.93, 0.84))
+			draw_line(c + Vector2(-s * 0.05, -s * 0.17), c + Vector2(-s * 0.05, s * 0.17), edge, 1.5)
+			draw_rect(Rect2(c + Vector2(-s * 0.2, -s * 0.035), Vector2(s * 0.14, s * 0.07)), Color(0.8, 0.18, 0.15))
+			draw_rect(Rect2(c + Vector2(-s * 0.165, -s * 0.07), Vector2(s * 0.07, s * 0.14)), Color(0.8, 0.18, 0.15))
 		"torch":
 			_capsule(c + Vector2(-s * 0.28, s * 0.36), c + Vector2(s * 0.08, -s * 0.08), s * 0.05, Color(0.55, 0.4, 0.26))
 			_capsule(c + Vector2(s * 0.04, -s * 0.04), c + Vector2(s * 0.14, -s * 0.14), s * 0.08, Color(0.4, 0.28, 0.18))

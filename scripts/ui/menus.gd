@@ -695,7 +695,9 @@ class MultiplayerBox extends VBoxContainer:
 		copy.pressed.connect(func() -> void:
 			DisplayServer.clipboard_set(value.text)
 			copy.text = "Copied"
-			get_tree().create_timer(1.2).timeout.connect(func() -> void: copy.text = "Copy"))
+			get_tree().create_timer(1.2).timeout.connect(func() -> void:
+				if is_instance_valid(copy):   # the panel may have closed in the meantime
+					copy.text = "Copy"))
 		return Menus._row([v, copy])
 
 	func refresh() -> void:
