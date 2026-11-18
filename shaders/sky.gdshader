@@ -71,7 +71,7 @@ void sky() {
 		float dens_l = texture(cloud_noise, uv + drift + to_light).r * 0.72 + texture(cloud_noise, (uv + to_light) * 2.7 - drift * 1.7).r * 0.28;
 		float lit = smoothstep(-0.02, 0.03, dens - dens_l + 0.01);
 		vec3 shade = mix(top_color, horizon_color, 0.55) * 0.92;
-		vec3 night_cloud = mix(top_color, vec3(0.45, 0.5, 0.65), 0.35);
+		vec3 night_cloud = mix(top_color, vec3(0.22, 0.25, 0.34), 0.35);   // moonlit, but dim
 		vec3 lit_col = mix(mix(cloud_color, sun_glow * 1.1, sunset * 0.6), night_cloud, night);
 		vec3 cc = mix(shade, lit_col * (1.0 + 0.25 * pow(sd, 4.0) * (1.0 - night)), 0.35 + 0.65 * lit);
 		cc = mix(cc, horizon_color, 0.3 * (1.0 - smoothstep(0.0, 0.3, h)));

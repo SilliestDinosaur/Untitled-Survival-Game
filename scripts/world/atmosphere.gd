@@ -12,6 +12,13 @@ const NIGHT_HORIZON := Color(0.08, 0.1, 0.2)
 const DUSK_TOP := Color(0.32, 0.3, 0.55)
 const DUSK_HORIZON := Color(0.98, 0.62, 0.42)
 const DUSK_GLOW := Color(1.0, 0.55, 0.3)
+## How much of the sky's light reaches the ground as ambient, by day and on a moonless-dark night. (The ambient
+## comes from the sky itself, so this share is the dimmer: Environment.ambient_light_energy only scales the flat
+## ambient colour, which is black above ground.)
+const SKY_AMBIENT_DAY := 0.85
+const SKY_AMBIENT_NIGHT := 0.3
+## Underground there's no sky at all: just a faint cool fill so walls are barely there without a torch.
+const CAVE_AMBIENT := Color(0.06, 0.068, 0.09)
 
 var _day_top: Color
 var _day_horizon: Color
@@ -47,7 +54,8 @@ func _ready() -> void:
 	environment.background_mode = Environment.BG_SKY
 	environment.sky = sky
 	environment.ambient_light_source = Environment.AMBIENT_SOURCE_SKY
-	environment.ambient_light_sky_contribution = 0.85
+	environment.ambient_light_sky_contribution = SKY_AMBIENT_DAY
+	environment.ambient_light_color = Color.BLACK
 	environment.reflected_light_source = Environment.REFLECTION_SOURCE_SKY
 	environment.tonemap_mode = Environment.TONE_MAPPER_FILMIC
 	environment.tonemap_white = 6.0
@@ -108,12 +116,14 @@ func _apply_time(_force := false) -> void:
 	if Game.in_cave:   # underground: no sun or moon, only the dark
 		sun.visible = false
 		moon.visible = false
-		environment.ambient_light_energy = 0.0
+		environment.ambient_light_sky_contribution = 0.0
+		environment.ambient_light_color = CAVE_AMBIENT
 		environment.reflected_light_source = Environment.REFLECTION_SOURCE_DISABLED
 		environment.fog_light_color = Color(0.02, 0.02, 0.03)
 		sky_material.set_shader_parameter("night", 1.0)
 		return
 	environment.reflected_light_source = Environment.REFLECTION_SOURCE_SKY
+	environment.ambient_light_color = Color.BLACK
 	var t := Game.time_of_day
 	var st := light_state(t)
 	var day: float = st.day
@@ -128,7 +138,7 @@ func _apply_time(_force := false) -> void:
 	sun.light_energy = 1.25 * smoothstep(-0.05, 0.15, sun_dir.y)
 	sun.light_color = _day_sun.lerp(DUSK_GLOW, golden * 0.85)
 	sun.visible = sun_dir.y > -0.08
-	moon.light_energy = 0.28 * smoothstep(0.0, 0.2, moon_dir.y) * (1.0 - day)
+	moon.light_energy = 0.13 * smoothstep(0.0, 0.2, moon_dir.y) * (1.0 - day)
 	moon.visible = moon.light_energy > 0.01 and Settings.shadow_quality != "Off"
 	moon.shadow_enabled = Settings.shadow_quality in ["High", "Ultra"]
 
@@ -142,9 +152,9 @@ func _apply_time(_force := false) -> void:
 	sky_material.set_shader_parameter("sun_dir", sun_dir)
 	sky_material.set_shader_parameter("moon_dir", moon_dir)
 	environment.fog_light_color = horizon.lerp(top, 0.3 * (1.0 - day))
-	environment.ambient_light_energy = lerpf(0.3, 1.0, day)
+	environment.ambient_light_sky_contribution = lerpf(SKY_AMBIENT_NIGHT, SKY_AMBIENT_DAY, day)
 	environment.fog_sun_scatter = 0.35 + golden * 0.4
-	environment.adjustment_saturation = lerpf(0.7, 1.1, day)
+	environment.adjustment_saturation = lerpf(0.55, 1.1, day)
 	var water := get_tree().get_first_node_in_group("water") as MeshInstance3D
 	if water and water.mesh:
 		var wm := (water.mesh as PlaneMesh).material as ShaderMaterial

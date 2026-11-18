@@ -124,6 +124,9 @@ func _make(st: Dictionary) -> Node3D:
 	if blueprint:
 		mi.material_override = _blueprint_mat
 		mi.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+	elif st.kind == "campfire":
+		# Its light sits inside the log teepee: the logs would throw hard spokes of shadow across the ground.
+		mi.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
 	root.add_child(mi)
 	if model.glow:
 		var gi := MeshInstance3D.new()

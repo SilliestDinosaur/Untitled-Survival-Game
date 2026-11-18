@@ -63,6 +63,13 @@ void light() {
 	// Stroke-jittered terminator and shadow edge: brushed rather than crisp.
 	float jitter = (paint_stroke - 0.5) * 0.45;
 	float r = paint_ramp(dot(NORMAL, LIGHT) + jitter);
-	float shadow = smoothstep(0.25, 0.75, ATTENUATION + jitter * 0.6);
-	DIFFUSE_LIGHT += r * shadow * LIGHT_COLOR / PI;
+	if (LIGHT_IS_DIRECTIONAL) {
+		// ATTENUATION is only the shadow here: brush its edge.
+		float shadow = smoothstep(0.25, 0.75, ATTENUATION + jitter * 0.6);
+		DIFFUSE_LIGHT += r * shadow * LIGHT_COLOR / PI;
+	} else {
+		// Torches, fires and glowcaps: ATTENUATION carries the distance falloff too, so keep its smooth pool of
+		// light (capped, so a surface right beside the flame doesn't blow out).
+		DIFFUSE_LIGHT += r * min(ATTENUATION, 1.2) * LIGHT_COLOR / PI;
+	}
 }

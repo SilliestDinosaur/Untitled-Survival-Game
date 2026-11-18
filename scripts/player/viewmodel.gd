@@ -185,8 +185,8 @@ func _process(delta: float) -> void:
 	if not _torch_light or not _torch_light.visible:
 		return
 	_t += delta
-	var night := 1.0 - Game.daylight()
+	var dark := 1.0 if Game.in_cave else 1.0 - Game.daylight()   # underground it's always night
 	var flicker := 0.85 + 0.1 * sin(_t * 13.0) + 0.06 * sin(_t * 29.0)
-	_torch_light.light_energy = flicker * lerpf(0.6, 1.8, night)
+	_torch_light.light_energy = flicker * lerpf(0.6, 1.8, dark)
 	_torch_flame.scale = Vector3(1.0, flicker * 1.15, 1.0)
 	_torch_flame.rotation.y = _t * 1.5
