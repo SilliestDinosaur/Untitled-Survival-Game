@@ -228,7 +228,11 @@ static func _place_resources(coord: Vector2i, origin: Vector3, gen: WorldGen, fl
 		if h < 1.4 or h > 6.0 or gen.get_normal(a.x, a.z).y < 0.85 or gen.get_climate(a.x, a.z, h).x < 0.45 or a.r_place > 0.35:
 			counter[0] += 1
 			continue
-		# Palms belong on beaches: warm shoreline, with the sea within a few meters.
+		# Palms belong on beaches: warm shoreline on the island's edge (not a lake shore inland), with the sea within a
+		# few metres.
+		if gen.island_mask(a.x, a.z) > 0.98:
+			counter[0] += 1
+			continue
 		var near_sea := false
 		for k in 4:
 			var ang := TAU * k / 4.0

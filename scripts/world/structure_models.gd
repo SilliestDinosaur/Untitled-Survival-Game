@@ -16,19 +16,121 @@ static var _cache := {}
 
 static func clear_cache() -> void:
 	_cache.clear()
+	_extents.clear()
+
+
+# --- Wall joints ----------------------------------------------------------------------------
+# Wall pieces stand on cell edges and reach the cell's corners. Where walls at right angles meet, the
+# taller one (or the east-west one, if they're the same height) runs through the corner and the other
+# stops flush against its face: a butt joint, so no two walls fill the same corner.
+
+static var _extents := {}   # material -> Vector2(min, max) of a wall's thickness along its own z
+
+
+## Every wall piece's corners: Vector3i(level, x, z) (in decimetres) -> the pieces that end there.
+static func corner_index(structures: Dictionary) -> Dictionary:
+	var out := {}
+	for id: String in structures:
+		var st: Dictionary = structures[id]
+		if not st.kind in GameActions.EDGE_KINDS:
+			continue
+		for corner: Vector3 in _wall_corners(st):
+			var key := _corner_key(st, corner)
+			if not out.has(key):
+				out[key] = []
+			out[key].append(st)
+	return out
+
+
+## How far a wall piece's left and right ends reach past (+) or stop short of (-) its corners; see get_model.
+static func wall_ends(st: Dictionary, index: Dictionary) -> Vector2:
+	var out := Vector2.ZERO
+	var axis := _axis(st)
+	var corners := _wall_corners(st)
+	for e in 2:
+		var at: Array = index.get(_corner_key(st, corners[e]), [])
+		var same: Array = []    # walls in line with this one, ending here
+		var cross: Array = []   # walls at right angles, ending here
+		for o: Dictionary in at:
+			if o.id == st.id:
+				continue
+			if absf(_axis(o).dot(axis)) > 0.5:
+				same.append(o)
+			else:
+				cross.append(o)
+		if cross.is_empty():
+			continue
+		var mine := _height(st.kind)
+		for o: Dictionary in same:
+			mine = maxf(mine, _height(o.kind))
+		var theirs := 0.0
+		for o: Dictionary in cross:
+			theirs = maxf(theirs, _height(o.kind))
+		var runs_through := mine > theirs + 0.01 or (absf(mine - theirs) <= 0.01 and absf(axis.x) > 0.5)
+		# The band the crossing walls fill, as distances along this wall from the corner.
+		var lo := INF
+		var hi := -INF
+		for o: Dictionary in cross:
+			var ext := _extent(o.kind)
+			var s := (Basis(Vector3.UP, float(o.get("yaw", 0.0))) * Vector3.BACK).dot(axis)
+			lo = minf(lo, minf(s * ext.x, s * ext.y))
+			hi = maxf(hi, maxf(s * ext.x, s * ext.y))
+		var right := e == 1
+		if runs_through:
+			if same.is_empty():   # walls in line through the corner already fill it between them
+				out[e] = hi if right else lo
+		else:
+			out[e] = lo if right else hi
+	return out
+
+
+## The piece's two corners in world space: left (its -x end), then right.
+static func _wall_corners(st: Dictionary) -> Array:
+	var p: Array = st.pos
+	var pos := Vector3(p[0], p[1], p[2])
+	var half := _axis(st) * GameActions.CELL * 0.5
+	return [pos - half, pos + half]
+
+
+## The direction a wall piece runs along (its own +x), in world space.
+static func _axis(st: Dictionary) -> Vector3:
+	return Basis(Vector3.UP, float(st.get("yaw", 0.0))) * Vector3.RIGHT
+
+
+static func _corner_key(st: Dictionary, corner: Vector3) -> Vector3i:
+	return Vector3i(int(st.get("level", 0)), roundi(corner.x * 10.0), roundi(corner.z * 10.0))
+
+
+static func _height(kind: String) -> float:
+	return 1.0 if kind in GameActions.HALF_KINDS else GameActions.WALL_H
+
+
+## A wall's thickness range along its own z, measured once per material from a plain wall.
+static func _extent(kind: String) -> Vector2:
+	var mat: String = GameActions.PIECES[kind].mat
+	if not _extents.has(mat):
+		var k := MeshKit.new(1)
+		_edge(k, mat, 1.0, [], RandomNumberGenerator.new(), -0.5, 0.5)
+		var aabb := k.commit(StandardMaterial3D.new()).get_aabb()
+		_extents[mat] = Vector2(aabb.position.z, aabb.end.z)
+	return _extents[mat]
 
 
 ## {body: ArrayMesh, glow: ArrayMesh or null, light: Vector3 (local), radius: float (collision)}
-static func get_model(kind: String, material: Material, glow_material: Material) -> Dictionary:
+## `ends` (wall pieces only): how far the left and right ends reach past (+) or stop short of (-) the cell's corners,
+## for butt joints with the walls they meet (see wall_ends).
+static func get_model(kind: String, material: Material, glow_material: Material, ends := Vector2.ZERO) -> Dictionary:
 	var key := kind + str(material.get_instance_id())
+	if ends != Vector2.ZERO:
+		key += "|%d|%d" % [roundi(ends.x * 1000.0), roundi(ends.y * 1000.0)]
 	if _cache.has(key):
 		return _cache[key]
 	if GameActions.is_building(kind):
-		var parts := _build_piece(kind)
+		var parts := _build_piece(kind, ends)
 		var door_kit: MeshKit = parts.door
 		var piece := {"body": (parts.body as MeshKit).commit(material), "glow": null, "light": Vector3(0, 1, 0), "radius": 1.0,
 			"door": door_kit.commit(material) if door_kit != null else null}
-		_cache[kind + str(material.get_instance_id())] = piece
+		_cache[key] = piece
 		return piece
 	var k := MeshKit.new(hash(kind))
 	var g := MeshKit.new(hash(kind) + 1)
@@ -75,7 +177,7 @@ const DOOR_H := 2.3     ## height of a doorway's opening
 
 
 ## {body: MeshKit, door: MeshKit or null}. A door's panel is its own mesh, hinged at its left edge.
-static func _build_piece(kind: String) -> Dictionary:
+static func _build_piece(kind: String, ends := Vector2.ZERO) -> Dictionary:
 	var spec: Dictionary = GameActions.PIECES[kind]
 	var shape: String = spec.shape
 	var mat: String = spec.mat
@@ -84,21 +186,23 @@ static func _build_piece(kind: String) -> Dictionary:
 	var rng := RandomNumberGenerator.new()
 	rng.seed = hash(kind)
 	var opening := Rect2(-DOOR_W, 0.0, DOOR_W * 2.0, DOOR_H)
+	var x0 := -GameActions.CELL * 0.5 + ends.x
+	var x1 := GameActions.CELL * 0.5 + ends.y
 	match shape:
 		"floor":
 			_floor(k, mat, rng)
 		"wall":
-			_edge(k, mat, GameActions.WALL_H, [], rng)
+			_edge(k, mat, GameActions.WALL_H, [], rng, x0, x1)
 		"half":
-			_edge(k, mat, 1.0, [], rng)
+			_edge(k, mat, 1.0, [], rng, x0, x1)
 		"window":
-			_edge(k, mat, GameActions.WALL_H, [Rect2(-0.55, 1.0, 1.1, 1.0)], rng)
+			_edge(k, mat, GameActions.WALL_H, [Rect2(-0.55, 1.0, 1.1, 1.0)], rng, x0, x1)
 			_window_fittings(k)
 		"doorway":
-			_edge(k, mat, GameActions.WALL_H, [opening], rng)
+			_edge(k, mat, GameActions.WALL_H, [opening], rng, x0, x1)
 			_door_fittings(k)
 		"door":
-			_edge(k, mat, GameActions.WALL_H, [opening], rng)
+			_edge(k, mat, GameActions.WALL_H, [opening], rng, x0, x1)
 			_door_fittings(k)
 			door = MeshKit.new(hash(kind) + 3)
 			_door_panel(door, mat, rng)
@@ -154,8 +258,8 @@ static func _floor(k: MeshKit, mat: String, rng: RandomNumberGenerator) -> void:
 
 ## Walls, half walls and the wall around an opening: a mortar core split round the openings, then the
 ## courses of bricks, stones or boards on its face.
-static func _edge(k: MeshKit, mat: String, height: float, openings: Array, rng: RandomNumberGenerator) -> void:
-	var h := GameActions.CELL * 0.5
+## The wall runs from x0 to x1 along its own x (the cell's corners are at -CELL/2 and CELL/2).
+static func _edge(k: MeshKit, mat: String, height: float, openings: Array, rng: RandomNumberGenerator, x0: float, x1: float) -> void:
 	var core := MORTAR
 	if mat == "stone":
 		core = STONE_MORTAR
@@ -163,21 +267,21 @@ static func _edge(k: MeshKit, mat: String, height: float, openings: Array, rng: 
 		core = WOOD_DARK.darkened(0.2)
 	# Boards are thin, so their core is too: a thick core would hide them behind its face.
 	var core_thick := 0.06 if mat == "wood" else 0.2
-	for r: Rect2 in _core_rects(height, openings, h):
+	for r: Rect2 in _core_rects(height, openings, x0, x1):
 		k.sculpt(_rect_outline(r), Transform3D(), func(_p: Vector2) -> float: return core_thick,
 			func(_p: Vector2, _t: float) -> Color: return core, 0, 0.06)
 	match mat:
 		"brick":
-			_brick_courses(k, height, openings, rng)
+			_brick_courses(k, height, openings, rng, x0, x1)
 		"stone":
-			_stone_courses(k, height, openings, rng)
+			_stone_courses(k, height, openings, rng, x0, x1)
 		_:
-			_wood_boards(k, height, openings, rng)
+			_wood_boards(k, height, openings, rng, x0, x1)
 
 
 ## The mortar core as rectangles covering the wall except the openings. Each band of the wall is cut
 ## by the openings that cross it; bands overlap a little so no two pieces share an edge.
-static func _core_rects(height: float, openings: Array, h: float) -> Array:
+static func _core_rects(height: float, openings: Array, x0: float, x1: float) -> Array:
 	var ys: Array = [0.0, height]
 	for o: Rect2 in openings:
 		ys.append(o.position.y)
@@ -194,13 +298,13 @@ static func _core_rects(height: float, openings: Array, h: float) -> Array:
 			if o.position.y <= ya + 0.001 and o.end.y >= yb - 0.001:
 				gaps.append(Vector2(o.position.x, o.end.x))
 		gaps.sort_custom(func(a: Vector2, b: Vector2) -> bool: return a.x < b.x)
-		var x := -h
+		var x := x0
 		for g: Vector2 in gaps:
 			if g.x > x:
 				out.append(Rect2(x, ya, g.x - x, yb - ya))
 			x = maxf(x, g.y)
-		if x < h:
-			out.append(Rect2(x, ya, h - x, yb - ya))
+		if x < x1:
+			out.append(Rect2(x, ya, x1 - x, yb - ya))
 	for i in out.size():
 		var r: Rect2 = out[i]
 		var grow := 0.02 if r.end.y < height - 0.001 else 0.0
@@ -220,60 +324,62 @@ static func _hits(r: Rect2, openings: Array) -> bool:
 	return false
 
 
-static func _brick_courses(k: MeshKit, height: float, openings: Array, rng: RandomNumberGenerator) -> void:
+static func _brick_courses(k: MeshKit, height: float, openings: Array, rng: RandomNumberGenerator, x0: float, x1: float) -> void:
 	var h := GameActions.CELL * 0.5
 	var bw := 0.5
 	var bh := 0.25
 	var base := _mat_colour("brick")
 	for row in int(round(height / bh)):
 		var y0 := row * bh
+		# The bond is laid from the cell's corner, so it carries on unbroken where a wall runs past a corner.
 		var x := -h - (bw * 0.5 if row % 2 == 1 else 0.0)
-		while x < h:
-			var x0 := maxf(x + 0.015, -h)
-			var x1 := minf(x + bw - 0.015, h)
+		while x > x0:
+			x -= bw
+		while x < x1:
+			# Bricks stop a joint short of the wall's ends, so their end faces never share a plane with the core's.
+			var bx0 := maxf(x + 0.015, x0 + 0.015)
+			var bx1 := minf(x + bw - 0.015, x1 - 0.015)
 			x += bw
-			if x1 - x0 < 0.15:
+			if bx1 - bx0 < 0.15:
 				continue
-			if _hits(Rect2(x0, y0, x1 - x0, bh), openings):
+			if _hits(Rect2(bx0, y0, bx1 - bx0, bh), openings):
 				continue
 			var b := base.lightened(rng.randf_range(-0.07, 0.05))
 			var face := func(p: Vector2, _t: float) -> Color:
 				return b.darkened(0.12) if p.y < -bh * 0.5 + 0.045 or p.y > bh * 0.5 - 0.045 else b
-			var outline := _rounded_rect((x1 - x0) * 0.5, bh * 0.5 - 0.015, 0.025, 2)
-			k.sculpt(outline, Transform3D(Basis(), Vector3((x0 + x1) * 0.5, y0 + bh * 0.5, 0.07)),
+			var outline := _rounded_rect((bx1 - bx0) * 0.5, bh * 0.5 - 0.015, 0.025, 2)
+			k.sculpt(outline, Transform3D(Basis(), Vector3((bx0 + bx1) * 0.5, y0 + bh * 0.5, 0.07)),
 				func(_p: Vector2) -> float: return 0.22, face, 1, 0.03)
 
 
-static func _stone_courses(k: MeshKit, height: float, openings: Array, rng: RandomNumberGenerator) -> void:
-	var h := GameActions.CELL * 0.5
+static func _stone_courses(k: MeshKit, height: float, openings: Array, rng: RandomNumberGenerator, x0: float, x1: float) -> void:
 	var rh := 0.5
 	var base := _mat_colour("stone")
 	for row in maxi(1, int(round(height / rh))):
 		var y0 := row * rh
-		var x := -h - (rng.randf_range(0.1, 0.35) if row % 2 == 1 else 0.0)
-		while x < h - 0.05:
-			var x0 := maxf(x, -h)
-			var x1 := minf(x0 + rng.randf_range(0.5, 0.85), h)
-			if h - x1 < 0.35:
-				x1 = h
-			x = x1
-			if x1 - x0 < 0.15 or _hits(Rect2(x0, y0, x1 - x0, rh), openings):
+		var x := x0 - (rng.randf_range(0.1, 0.35) if row % 2 == 1 else 0.0)
+		while x < x1 - 0.05:
+			var sx0 := maxf(x, x0)
+			var sx1 := minf(sx0 + rng.randf_range(0.5, 0.85), x1)
+			if x1 - sx1 < 0.35:
+				sx1 = x1
+			x = sx1
+			if sx1 - sx0 < 0.15 or _hits(Rect2(sx0, y0, sx1 - sx0, rh), openings):
 				continue
 			var s := base.lightened(rng.randf_range(-0.08, 0.06))
 			var face := func(p: Vector2, _t: float) -> Color:
-				return s.darkened(0.12) if absf(p.x) > (x1 - x0) * 0.5 - 0.06 or absf(p.y) > rh * 0.5 - 0.06 else s
-			k.sculpt(_rounded_rect((x1 - x0) * 0.5 - 0.012, rh * 0.5 - 0.012, 0.07, 2),
-				Transform3D(Basis(), Vector3((x0 + x1) * 0.5, y0 + rh * 0.5, 0.09)),
+				return s.darkened(0.12) if absf(p.x) > (sx1 - sx0) * 0.5 - 0.06 or absf(p.y) > rh * 0.5 - 0.06 else s
+			k.sculpt(_rounded_rect((sx1 - sx0) * 0.5 - 0.012, rh * 0.5 - 0.012, 0.07, 2),
+				Transform3D(Basis(), Vector3((sx0 + sx1) * 0.5, y0 + rh * 0.5, 0.09)),
 				func(_p: Vector2) -> float: return 0.26, face, 1, 0.025)
 
 
 ## Boards standing between a bottom and a top rail. Rails and boards stop short where an opening crosses them.
-static func _wood_boards(k: MeshKit, height: float, openings: Array, rng: RandomNumberGenerator) -> void:
+static func _wood_boards(k: MeshKit, height: float, openings: Array, rng: RandomNumberGenerator, x0: float, x1: float) -> void:
 	var lo := 0.1
 	var hi := height - 0.1
-	var h := GameActions.CELL * 0.5
 	for ry in [lo, hi]:
-		var segs: Array = [[-h, h]]
+		var segs: Array = [[x0 + 0.01, x1 - 0.01]]   # rails stop just short of the ends, clear of the core's end faces
 		for o: Rect2 in openings:
 			if o.position.y < ry + 0.1 and o.end.y > ry - 0.1:
 				segs = _subtract(segs, o.position.x, o.end.x)
@@ -282,12 +388,24 @@ static func _wood_boards(k: MeshKit, height: float, openings: Array, rng: Random
 			if len < 0.05:
 				continue
 			k.add_primitive(_box(Vector3(len, 0.2, 0.26)), Transform3D(Basis(), Vector3((sg[0] + sg[1]) * 0.5, ry, 0.0)), WOOD_DARK, 0.0, 0.03)
-	for i in 15:
-		var bx := -1.4 + i * 0.2
+	# Boards on a 0.2 m grid from the cell's corner; narrower boards fill any end that runs past the grid.
+	var cols: Array = []
+	for i in range(ceili((x0 + 1.4 + 0.082) / 0.2), floori((x1 + 1.4 - 0.082) / 0.2) + 1):
+		cols.append([-1.4 + i * 0.2, 0.092])
+	if not cols.is_empty():
+		var left: float = cols[0][0] - 0.1 - x0
+		var right: float = x1 - (cols[-1][0] + 0.1)
+		if left > 0.03:
+			cols.push_front([x0 + left * 0.5, left * 0.5 - 0.008])
+		if right > 0.03:
+			cols.append([x1 - right * 0.5, right * 0.5 - 0.008])
+	for col: Array in cols:
+		var bx: float = col[0]
+		var bhw: float = col[1]
 		var off := rng.randf_range(-0.01, 0.01)
 		var segs: Array = [[lo, hi]]
 		for o: Rect2 in openings:
-			if bx + 0.092 > o.position.x and bx - 0.092 < o.end.x:
+			if bx + bhw > o.position.x and bx - bhw < o.end.x:
 				segs = _subtract(segs, o.position.y, o.end.y)
 		for sg: Array in segs:
 			var ln: float = sg[1] - sg[0]
@@ -296,7 +414,7 @@ static func _wood_boards(k: MeshKit, height: float, openings: Array, rng: Random
 			var board := WOOD.lightened(rng.randf_range(-0.05, 0.06))
 			var grain := func(p: Vector2, _t: float) -> Color:
 				return board.darkened(0.08) if fposmod(p.y * 6.0 + sin(p.x * 30.0), 1.0) < 0.08 else board
-			k.sculpt(_rounded_rect(0.092, ln * 0.5, 0.02, 1), Transform3D(Basis(), Vector3(bx, (sg[0] + sg[1]) * 0.5 + off, 0.0)),
+			k.sculpt(_rounded_rect(bhw, ln * 0.5, minf(0.02, bhw * 0.5), 1), Transform3D(Basis(), Vector3(bx, (sg[0] + sg[1]) * 0.5 + off, 0.0)),
 				func(_p: Vector2) -> float: return 0.08, grain, 1, 0.02)
 
 

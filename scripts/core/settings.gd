@@ -28,6 +28,7 @@ const ACTIONS := [
 	["attack", "Swing / destroy / eat", ["mouse:%d" % MOUSE_BUTTON_LEFT]],
 	["interact", "Harvest / pick up / open", ["key:%d" % KEY_E]],
 	["drop", "Drop held item", ["key:%d" % KEY_Q]],
+	["rotate_piece", "Rotate piece", ["key:%d" % KEY_R]],
 	["inventory", "Satchel", ["key:%d" % KEY_TAB]],
 	["map", "Map", ["key:%d" % KEY_M]],
 	["slot_1", "Hotbar 1", ["key:%d" % KEY_1]],

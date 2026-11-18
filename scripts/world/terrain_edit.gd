@@ -52,7 +52,7 @@ static func tree_near(p: Vector3, radius: float) -> Variant:
 ## the ground blends back over RIM metres. Returns the cell changes (not applied yet).
 static func level_ground(center: Vector3, hx: float, hz: float, yaw: float, y: float) -> Array:
 	var gen: WorldGen = Game.world_gen
-	var rot := absf(yaw - PI * 0.5) < 0.01
+	var rot := absf(sin(yaw)) > 0.5   # a quarter turn (either way) swaps the footprint's sides
 	var ex := hz if rot else hx
 	var ez := hx if rot else hz
 	var reach := ceili(maxf(ex, ez) + RIM) + 1
@@ -76,7 +76,7 @@ static func level_ground(center: Vector3, hx: float, hz: float, yaw: float, y: f
 ## footprint (never fill, the piece just needs clear space). Returns the cell changes.
 static func clear_rect(center: Vector3, hx: float, hz: float, yaw: float, y: float) -> Array:
 	var gen: WorldGen = Game.world_gen
-	var rot := absf(yaw - PI * 0.5) < 0.01
+	var rot := absf(sin(yaw)) > 0.5   # a quarter turn (either way) swaps the footprint's sides
 	var ex := (hz if rot else hx) + 0.5   # every 1 m cell the footprint touches, even a thin wall's
 	var ez := (hx if rot else hz) + 0.5
 	var cells: Array = []

@@ -61,6 +61,7 @@ var _exposure_timer := 0.0
 var placement := {}
 var _snapped_level := 0   ## storey the building preview is on (for the prompt)
 var _ghost: MeshInstance3D
+var _place_turns := 0   ## quarter turns from Rotate (R) for the piece being placed
 var _ghost_kind := ""
 var _ghost_ok_mat: StandardMaterial3D
 var _ghost_bad_mat: StandardMaterial3D
@@ -327,9 +328,13 @@ func _update_looking_at() -> void:
 			if st.kind in GameActions.DOOR_KINDS:
 				looking_at = {"name": ItemDB.display_name(st.kind), "label": "Door", "structure": sid, "door": sid,
 					"interact": "Close" if bool(st.get("open", false)) else "Open", "attack": "Pack up"}
-			else:
+			elif st.kind in Recipes.STATION_NAMES and st.kind != "":
 				looking_at = {"name": ItemDB.display_name(st.kind), "label": "Crafting station", "structure": sid,
-					"interact": "Craft", "attack": "Pack up"}
+					"station": st.kind, "interact": "Craft", "attack": "Pack up"}
+			else:
+				# Walls, floors, roofs and stairs: nothing to use, only to take down.
+				looking_at = {"name": ItemDB.display_name(st.kind), "label": "Building piece", "structure": sid,
+					"attack": "Pack up"}
 		return
 	if body.has_meta("animal"):
 		var animal: Node = body.get_meta("animal")
@@ -524,7 +529,7 @@ func _on_grab() -> void:
 	if look.has("door"):
 		Net.request("toggle_door", {"structure": look.door})
 		return
-	if look.has("structure"):
+	if look.has("station"):
 		open_crafting.emit()
 		return
 	if look.has("pickup"):
@@ -616,7 +621,9 @@ func _update_placement() -> void:
 	pos.y = maxf(pos.y, Game.world_gen.get_height(pos.x, pos.z)) if not GameActions.is_building(kind_now) else pos.y
 	if not GameActions.is_building(kind_now):
 		pos.y = Game.world_gen.get_height(pos.x, pos.z)
-	var yaw := rotation.y + PI
+	if Input.is_action_just_pressed("rotate_piece"):
+		_place_turns = (_place_turns + 1) % 4
+	var yaw := rotation.y + PI + _place_turns * PI * 0.5
 	var kind: String = info.station
 	if GameActions.is_building(kind):
 		# Building pieces snap to the grid (and walls to a foundation edge).
@@ -624,7 +631,12 @@ func _update_placement() -> void:
 		var snap := GameActions.snap_piece(kind, pos, prefer, rotation.y)
 		pos = snap.pos
 		yaw = snap.yaw
+		if kind in GameActions.EDGE_KINDS:
+			yaw += PI * (_place_turns % 2)   # a wall stays on its edge, so Rotate flips which face looks out
+		else:
+			yaw += _place_turns * PI * 0.5
 		_snapped_level = int(snap.get("level", 0))
+	yaw = fposmod(yaw, TAU)
 	var flat_dist := Vector2(pos.x - global_position.x, pos.z - global_position.z).length()
 	var reason := GameActions.placement_problem(pos, kind, yaw)
 	if reason == "" and flat_dist < 1.2:
@@ -655,7 +667,7 @@ func _update_placement() -> void:
 func _overlaps_player(pos: Vector3, kind: String, yaw: float) -> bool:
 	var half := Vector2(GameActions.CELL * 0.5, GameActions.CELL * 0.5)
 	if kind in GameActions.EDGE_KINDS:
-		half = Vector2(GameActions.CELL * 0.5, 0.15) if absf(yaw) < 0.01 else Vector2(0.15, GameActions.CELL * 0.5)
+		half = Vector2(GameActions.CELL * 0.5, 0.15) if absf(sin(yaw)) < 0.5 else Vector2(0.15, GameActions.CELL * 0.5)
 	elif kind in GameActions.COVER_KINDS:
 		half = Vector2(GameActions.CELL * 0.5, GameActions.CELL * 0.5)
 	var lo := pos.y - 0.2

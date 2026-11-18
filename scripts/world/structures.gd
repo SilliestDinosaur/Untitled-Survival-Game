@@ -3,6 +3,7 @@ extends Node3D
 ## forges with glowing coals. Pure view of shared data, re-synced when it changes.
 
 var _nodes := {}   # structure id -> Node3D
+var _corners := {}  # wall corners -> the wall pieces ending there (StructureModels.corner_index), for butt joints
 var _mat: ShaderMaterial
 var _glow_mat: StandardMaterial3D
 var _flame_mat: StandardMaterial3D
@@ -71,11 +72,26 @@ func _sync() -> void:
 	for id: String in _nodes.keys():
 		if not Game.structures.has(id):
 			_free_node(id)
+	_corners = StructureModels.corner_index(Game.structures)
 	for id: String in Game.structures:
 		if not _nodes.has(id) or not is_instance_valid(_nodes[id]):
 			_nodes[id] = _make(Game.structures[id])
 		else:
 			_apply_door(_nodes[id], Game.structures[id])
+			_apply_ends(_nodes[id], Game.structures[id])
+
+
+## A wall's ends follow the walls it meets: placing or removing a neighbour can turn its corner joint around.
+func _apply_ends(root: Node3D, st: Dictionary) -> void:
+	if not st.kind in GameActions.EDGE_KINDS:
+		return
+	var ends := StructureModels.wall_ends(st, _corners)
+	if root.get_meta("ends", Vector2.ZERO) == ends:
+		return
+	root.set_meta("ends", ends)
+	var body := root.get_node_or_null("Body") as MeshInstance3D
+	if body:
+		body.mesh = StructureModels.get_model(st.kind, _mat, _glow_mat, ends).body
 
 
 func _free_node(id: String) -> void:
@@ -89,8 +105,11 @@ func _make(st: Dictionary) -> Node3D:
 	var pos: Array = st.pos
 	root.position = Vector3(pos[0], pos[1], pos[2])
 	root.rotation.y = float(st.get("yaw", 0.0))
-	var model := StructureModels.get_model(st.kind, _mat, _glow_mat)
+	var ends := StructureModels.wall_ends(st, _corners) if st.kind in GameActions.EDGE_KINDS else Vector2.ZERO
+	root.set_meta("ends", ends)
+	var model := StructureModels.get_model(st.kind, _mat, _glow_mat, ends)
 	var mi := MeshInstance3D.new()
+	mi.name = "Body"
 	mi.mesh = model.body
 	root.add_child(mi)
 	if model.glow:

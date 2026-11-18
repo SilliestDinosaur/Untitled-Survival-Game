@@ -137,16 +137,28 @@ func edit_at(x: float, z: float) -> float:
 	return lerpf(lerpf(a, b, fx), lerpf(c, d, fx), fz)
 
 
-## The procedural ground, before any digging or building.
-func get_base_height(x: float, z: float) -> float:
+## How far out a point is, as a share of the way from the island's middle to the map edge, with the coastline's
+## bays and headlands: x is the broad outline, y adds the rocky edge's finer wobble.
+func _coast_at(x: float, z: float) -> Vector2:
 	var half := Game.WORLD_SIZE * 0.5
 	var dx := (x - half) / half
 	var dz := (z - half) / half
-	# Island mask: 1 in the middle, fades to 0 near the map edge, with a wobbly coastline.
-	# Bays and headlands: a broad wobble for the big shape, a finer one for the rocky edge.
 	var coast_raw := sqrt(dx * dx + dz * dz) + _coast.get_noise_2d(x, z) * 0.13 + _detail.get_noise_2d(x * 0.12, z * 0.12) * 0.035
-	var coast := coast_raw + _detail.get_noise_2d(x * 0.12, z * 0.12) * 0.09
-	var mask := 1.0 - smoothstep(0.55, 0.92, coast)
+	return Vector2(coast_raw, coast_raw + _detail.get_noise_2d(x * 0.12, z * 0.12) * 0.09)
+
+
+## The island's outline: 1 inland, falling to 0 out at sea. Lakes lie inland, where it is 1; the sea's beaches are
+## where it falls away.
+func island_mask(x: float, z: float) -> float:
+	return 1.0 - smoothstep(0.55, 0.92, _coast_at(x, z).y)
+
+
+## The procedural ground, before any digging or building.
+func get_base_height(x: float, z: float) -> float:
+	var cv := _coast_at(x, z)
+	var coast_raw := cv.x
+	var coast := cv.y
+	var mask := 1.0 - smoothstep(0.55, 0.92, coast)   # island mask (see island_mask)
 
 	var c := _continent.get_noise_2d(x, z) * 0.5 + 0.5          # 0..1
 	var lowlands := c * hill_scale

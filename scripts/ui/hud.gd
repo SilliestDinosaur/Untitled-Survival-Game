@@ -291,6 +291,7 @@ func _process(delta: float) -> void:
 	if look.is_empty() and not player.placement.is_empty():
 		var pl: Dictionary = player.placement
 		parts.append(("[%s] Place %s" % [Settings.code_label(Settings.binding_of("attack")).replace(" Click", ""), pl.name]) if pl.ok else pl.reason)
+		parts.append("[%s] Rotate" % Settings.code_label(Settings.binding_of("rotate_piece")))
 	_prompt.text = "     ".join(parts)
 	var eff: Array[String] = []
 	for e: String in player.stats.effects:

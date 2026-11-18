@@ -14,7 +14,7 @@ const BIOME_TREES := {
 	Biome.TAIGA: [["fir", 0.8], ["pine", 0.2]],
 	Biome.MARSH: [["willow", 0.65], ["birch", 0.2], ["dead_tree", 0.15]],
 	Biome.DESERT: [["cactus", 0.8], ["dead_tree", 0.2]],
-	Biome.JUNGLE: [["jungle_tree", 0.7], ["palm", 0.2], ["willow", 0.1]],
+	Biome.JUNGLE: [["jungle_tree", 0.85], ["willow", 0.15]],   # no palms: they grow only on beaches (see ChunkGenerator)
 	Biome.TUNDRA: [["fir", 0.4], ["dead_tree", 0.6]],
 	Biome.BADLANDS: [["dead_tree", 0.5], ["cactus", 0.3], ["acacia", 0.2]],
 	Biome.FUNGAL: [["giant_mushroom", 0.85], ["dead_tree", 0.15]],

@@ -327,7 +327,7 @@ static func base_y(cell: Vector2i) -> float:
 
 ## The two grid cells a wall at `pos` with `yaw` separates.
 static func wall_sides(pos: Vector3, yaw: float) -> Array:
-	if absf(yaw) < 0.01:   # along x, on a z boundary
+	if absf(sin(yaw)) < 0.5:   # along x, on a z boundary (yaw 0 or a half turn)
 		return [cell_of(Vector3(pos.x, 0, pos.z - 0.5)), cell_of(Vector3(pos.x, 0, pos.z + 0.5))]
 	return [cell_of(Vector3(pos.x - 0.5, 0, pos.z)), cell_of(Vector3(pos.x + 0.5, 0, pos.z))]
 
@@ -406,7 +406,7 @@ static func snap_piece(kind: String, aim: Vector3, prefer_yaw := -1.0, facing :=
 	var yaw := 0.0
 	var east_west := absf(dx) > absf(dz)
 	if prefer_yaw >= 0.0 and absf(absf(dx) - absf(dz)) < CELL * 0.1:
-		east_west = absf(prefer_yaw - PI * 0.5) < 0.01   # too close to call: stay on the same edge
+		east_west = absf(sin(prefer_yaw)) > 0.5   # too close to call: stay on the same edge
 	if east_west:             # runs north-south, on an east or west edge
 		pos = Vector3(c.x + signf(dx) * CELL * 0.5, 0.0, c.z)
 		yaw = PI * 0.5
@@ -535,7 +535,7 @@ static func place_structure(player_id: int, slot: int, pos: Vector3, yaw: float)
 		var sn := snap_piece(kind, pos)
 		pos = sn.pos
 		level = int(sn.level)
-		yaw = 0.0
+		yaw = snappedf(yaw, PI * 0.5)
 	elif kind in STAIR_KINDS:
 		var sn_s := snap_piece(kind, pos, -1.0, yaw)
 		pos = sn_s.pos
