@@ -620,6 +620,15 @@ static func hit_structure(player_id: int, structure_id: String) -> Dictionary:
 
 # --- Items in the world -----------------------------------------------------------------
 
+## Everything in the pack falls to the ground at `pos` (used when you die).
+static func drop_all(inv: Inventory, pos: Vector3) -> void:
+	for i in Inventory.SIZE:
+		var s: Dictionary = inv.slots[i]
+		if s.is_empty():
+			continue
+		spawn_pickup(String(s.id), int(s.count), int(s.get("dur", -1)), pos + Vector3(0, 0.3, 0))
+
+
 ## Drop items from a slot onto the ground in front of the player.
 static func drop(player_id: int, slot: int, amount: int, pos: Vector3) -> String:
 	var inv := Game.inventory_of(player_id)
