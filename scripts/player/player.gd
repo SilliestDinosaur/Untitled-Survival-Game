@@ -123,11 +123,13 @@ func apply_save_data(d: Dictionary) -> void:
 
 
 ## Fresh start: just a rock in hand (also used after dying).
+## Dying drops everything you carried where you fall, and leaves you with a rock.
 func reset_inventory() -> void:
 	if Net.is_client():
-		Net.request("reset", {})
+		Net.request("reset", {"pos": global_position})
 		inventory.select(0)
 		return
+	GameActions.drop_all(inventory, global_position)
 	inventory.clear(true)
 	inventory.add("rock", 1, true)
 	inventory.select(0)

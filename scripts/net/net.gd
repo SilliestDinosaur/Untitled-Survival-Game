@@ -518,6 +518,7 @@ func run_action(pid: int, peer: int, action: String, a: Dictionary) -> Dictionar
 				"quick": inv.quick_move(int(a.a))
 			return {"ok": true}
 		"reset":
+			GameActions.drop_all(inv, a.get("pos", Vector3.ZERO))
 			inv.clear(true)
 			inv.add("rock", 1, true)
 			inv.changed.emit()
