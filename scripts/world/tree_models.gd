@@ -73,9 +73,14 @@ static func _midpoint(v: Array, cache: Dictionary, a: int, b: int) -> int:
 	return cache[key]
 
 
-## Subdivision level for blobs: finer when the detail setting is high, coarser for the LOD twin.
+## Subdivision level for blobs: finer when the detail is high. The far twins are built at low detail, which gets
+## the plain 20-face icosahedron; full trees get one subdivision.
 static func _level() -> int:
-	return 2 if MeshKit.detail >= 0.7 else 1
+	if MeshKit.detail >= 0.7:
+		return 2
+	if MeshKit.detail >= 0.4:
+		return 1
+	return 0
 
 
 # --- Canopy blobs and leaves --------------------------------------------------------------------
@@ -125,8 +130,8 @@ static func blob(kit: MeshKit, rng: RandomNumberGenerator, center: Vector3, radi
 		var centroid := (a + b + c) / 3.0
 		var outward := centroid - center
 		_tri(kit, a, b, c, nrm[f[0]], nrm[f[1]], nrm[f[2]], cols[f[0]], cols[f[1]], cols[f[2]])
-		# Leaves on some faces, pointing out of the surface.
-		if rng.randf() < leaf_density:
+		# Leaves on some faces, pointing out of the surface. Fewer at lower detail (leaf cards are most of a crown's triangles).
+		if rng.randf() < leaf_density * MeshKit.detail:
 			var fn := (c - a).cross(b - a).normalized()
 			if fn.dot(outward) < 0.0:
 				fn = -fn
