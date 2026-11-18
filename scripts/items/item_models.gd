@@ -214,87 +214,48 @@ static func _head_colors(tier: int, col: Color) -> Array:
 # through x = 0. FORWARD_PLANE turns that into the model's -Z forward.
 
 static func _hatchet(k: MeshKit, tier: int, col: Color) -> void:
+	# Every tier is the same tool, a knapped head on a trimmed branch; only the head's material changes.
 	var top := 0.34
 	var m := _metal(tier, col)
 	var hr := 0.016
-	_handle(k, top + 0.045, tier, hr * 1.25, 0.008 if tier > 1 else 0.0)
-	# An axe blade: a thick poll behind the eye, a convex face that thins to a honed bit.
-	# The eye (where the haft goes through) is the thick middle of the head.
-	# Squared poll, a straight top edge rising to the toe, and a convex bit sweeping down to the lower corner.
+	_handle(k, top + 0.045, 1, hr * 1.25)
 	# A chunky block of a head: a squared poll behind the eye, a flat top, and a blade that flares out and down
-	# to a straight-edged bit (the Muck look: blocky, not curved).
+	# to a straight-edged bit.
 	var outline := PackedVector2Array([Vector2(-0.085, 0.040), Vector2(-0.100, 0.030), Vector2(-0.100, -0.030),
 		Vector2(-0.060, -0.040), Vector2(0.020, -0.046), Vector2(0.110, -0.062), Vector2(0.158, -0.050),
 		Vector2(0.168, 0.010), Vector2(0.140, 0.052), Vector2(0.050, 0.046), Vector2(-0.030, 0.046)])
-	var size := 1.0 + 0.04 * tier
 	for i in outline.size():
-		outline[i] *= size
-	if tier == 1:
-		outline = _knap(outline, 11, 0.002)   # knapped flint: a little irregular, but crisp
+		outline[i] *= 1.04
+	outline = _knap(outline, 11, 0.002)   # a little irregular, but crisp
 	var ridge := PackedVector2Array(outline)
 	ridge.append(outline[0])
 	var xf := Transform3D(FORWARD_PLANE, Vector3(0, top, 0))
-	# (A segment length of 0.005 left duplicate faces in the tier-four head; 0.0055 is clean at every tier.)
-	k.sculpt(outline, xf, _head_thickness(ridge, 0.027 + 0.002 * tier, 0.014, 0.034, 0.022, 0.001),
-		_head_color(tier, m, ridge, 0.014), 3, 0.0055)
-	# The haft's end: a wedge driven into the top of it, standing proud of the head.
+	k.flat_shading = tier == 4   # crystal: crisp facets
+	# (A segment length of 0.005 left duplicate faces in one head; 0.0055 is clean.)
+	k.sculpt(outline, xf, _head_thickness(ridge, 0.029, 0.014, 0.034, 0.022, 0.001), _head_color(tier, m, ridge, 0.014), 3, 0.0055)
+	k.flat_shading = false
+	# The haft's end: a wooden wedge driven into the top of it, standing proud of the head.
 	var wedge := BoxMesh.new()
 	wedge.size = Vector3(0.03, 0.012, 0.014)
-	k.add_primitive(wedge, Transform3D(Basis(), Vector3(0, top + 0.046, 0)), WOOD.darkened(0.15) if tier == 1 else m.fitting, 0.0, 0.04)
-	if tier > 1:
-		# A metal socket around the eye, with a ring band where it meets the head.
-		var fit: Color = m.fitting if tier != 2 else m.base.darkened(0.2)
-		k.loft([Vector3(0, top - 0.04, 0), Vector3(0, top - 0.02, 0), Vector3(0, top + 0.02, 0), Vector3(0, top + 0.042, 0)],
-			[hr * 1.3, hr * 1.55, hr * 1.55, hr * 1.3], 12, fit,
-			func(t: float, _a: float) -> Color: return fit.lightened(0.15) if fposmod(t * 3.0, 1.0) < 0.12 else fit)
+	k.add_primitive(wedge, Transform3D(Basis(), Vector3(0, top + 0.046, 0)), WOOD.darkened(0.15), 0.0, 0.04)
 
 
 # --- Pickaxes ---------------------------------------------------------------------------
 
 static func _pickaxe(k: MeshKit, tier: int, col: Color) -> void:
+	# Every tier is the same tool, a long point lashed across a squared branch; only the point's material changes.
 	var top := 0.35
 	var m := _metal(tier, col)
 	var hr := 0.017
-	_handle(k, top + 0.04, tier, hr * 1.2, 0.0, true)
-	if tier == 1:
-		# A long flint point lashed across the top of the handle.
-		var outline := _knap(PackedVector2Array([Vector2(-0.045, 0.0), Vector2(-0.02, -0.04), Vector2(0.06, -0.038), Vector2(0.17, 0.0), Vector2(0.06, 0.04), Vector2(-0.02, 0.04)]), 41, 0.004)
-		for i in outline.size():   # broad, like the metal heads
-			outline[i] = Vector2(outline[i].x, outline[i].y * 1.8)
-		var ridge := PackedVector2Array(outline)
-		ridge.append(outline[0])
-		k.sculpt(outline, Transform3D(FORWARD_PLANE, Vector3(0, top, 0)), _head_thickness(ridge, 0.03, 0.02, 0.0, 0.0, 0.003), _head_color(1, m, ridge, 0.02), 3, 0.006)
-		return
-	# The head: a bar in the swing plane that curves down to a point at each end, thinned to a crisp
-	# edge. Tier 3's back end is a square chisel instead of a point.
-	var front := 0.17
-	var back := 0.12 if tier == 3 else 0.15
-	var bar := PackedVector2Array([Vector2(-back, -0.05), Vector2(-0.10, -0.014), Vector2(-0.05, 0.012), Vector2(0.0, 0.02),
-		Vector2(0.05, 0.014), Vector2(0.11, -0.012), Vector2(front, -0.05),
-		Vector2(0.11, -0.03), Vector2(0.05, -0.004), Vector2(0.0, -0.001),
-		Vector2(-0.05, -0.004), Vector2(-0.10, -0.03)])
-	if tier == 3:
-		bar[0] = Vector2(-back, -0.02)
-		bar.append(Vector2(-back, -0.055))
-	# A broad, curved head: it stands tall across the handle, like the Muck pick.
-	for i in bar.size():
-		bar[i] = Vector2(bar[i].x, bar[i].y * 2.6)
-	var ridge := PackedVector2Array(bar)
-	ridge.append(bar[0])
-	if tier == 4:
-		k.flat_shading = true
-	k.sculpt(bar, Transform3D(FORWARD_PLANE, Vector3(0, top, 0)), _head_thickness(ridge, 0.024 + 0.002 * tier, 0.012, 0.03, 0.02, 0.001),
-		_head_color(tier, m, ridge, 0.012), 3, 0.005)
+	_handle(k, top + 0.04, 1, hr * 1.2, 0.0, true)
+	var outline := _knap(PackedVector2Array([Vector2(-0.045, 0.0), Vector2(-0.02, -0.04), Vector2(0.06, -0.038), Vector2(0.17, 0.0), Vector2(0.06, 0.04), Vector2(-0.02, 0.04)]), 41, 0.004)
+	for i in outline.size():   # broad
+		outline[i] = Vector2(outline[i].x, outline[i].y * 1.8)
+	var ridge := PackedVector2Array(outline)
+	ridge.append(outline[0])
+	k.flat_shading = tier == 4   # crystal: crisp facets
+	k.sculpt(outline, Transform3D(FORWARD_PLANE, Vector3(0, top, 0)), _head_thickness(ridge, 0.03, 0.02, 0.0, 0.0, 0.003), _head_color(tier, m, ridge, 0.02), 3, 0.006)
 	k.flat_shading = false
-	# The eye: a metal sleeve where the haft goes through the head, and a cord binding above it.
-	var fit: Color = m.fitting if tier != 2 else m.base.darkened(0.2)
-	k.loft([Vector3(0, top - 0.03, 0), Vector3(0, top - 0.012, 0), Vector3(0, top + 0.012, 0), Vector3(0, top + 0.03, 0)],
-		[hr * 1.3, hr * 1.55, hr * 1.55, hr * 1.3], 12, fit,
-		func(t: float, _a: float) -> Color: return fit.lightened(0.15) if fposmod(t * 3.0, 1.0) < 0.12 else fit)
-	# The haft's end: a wedge pinned into the top of it.
-	var wedge := BoxMesh.new()
-	wedge.size = Vector3(0.012, 0.012, 0.022)
-	k.add_primitive(wedge, Transform3D(Basis(), Vector3(0, top + 0.044, 0)), fit, 0.0, 0.04)
 
 
 # --- Spears -----------------------------------------------------------------------------

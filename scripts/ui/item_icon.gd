@@ -274,13 +274,13 @@ func _tool(info: Dictionary, c: Vector2, s: float) -> void:
 		"hatchet":
 			_capsule(a, b, s * 0.045, wood)
 			draw_colored_polygon(PackedVector2Array([b + Vector2(-s * 0.06, -s * 0.06), b + Vector2(s * 0.18, -s * 0.2), b + Vector2(s * 0.22, s * 0.06), b + Vector2(s * 0.04, s * 0.06)]), head)
-		"pickaxe":
+		"pickaxe":   # one long point lashed across the top of the haft
 			_capsule(a, b, s * 0.045, wood)
-			var pts := PackedVector2Array()
-			for k in 9:
-				var u := (k / 8.0 - 0.5) * 1.6
-				pts.append(b + Vector2(u * s * 0.32 + s * 0.06, -s * 0.03 + u * u * s * 0.12 - s * 0.06))
-			draw_polyline(pts, head, s * 0.09, true)
+			var dir := (b - a).normalized()
+			var across := Vector2(dir.y, -dir.x)   # square to the haft, toward the upper left
+			var back := b - across * s * 0.08
+			var tip := b + across * s * 0.36
+			draw_colored_polygon(PackedVector2Array([back + dir * s * 0.07, tip, back - dir * s * 0.07]), head)
 		"spear":
 			_capsule(c + Vector2(-s * 0.36, s * 0.36), c + Vector2(s * 0.24, -s * 0.24), s * 0.035, wood)
 			draw_colored_polygon(PackedVector2Array([c + Vector2(s * 0.18, -s * 0.3), c + Vector2(s * 0.4, -s * 0.4), c + Vector2(s * 0.3, -s * 0.18)]), head)
