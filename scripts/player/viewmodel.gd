@@ -8,6 +8,9 @@ signal grab     ## the moment an Interact reach arrives
 
 const REST := Vector3(0.25, -0.24, -0.42)
 
+## How big each long tool is in the hand (1.0 is the model's real size: a hatchet is 0.5 m, a spear 1.3 m).
+const HELD_SCALE := {"hatchet": 0.62, "pickaxe": 0.62, "knife": 0.9, "spear": 0.6}   ## (the torch stays full size: its flame is a child of the model)
+
 var _item: MeshInstance3D
 var _mat: ShaderMaterial
 var _tween: Tween
@@ -49,18 +52,20 @@ func hold(item_id: String) -> void:
 		_item.position = Vector3(-0.02, -0.04, 0)
 		_item.rotation = Vector3(0.35, 0.6, 0.0)
 		return
+	_item.scale = Vector3.ONE * float(HELD_SCALE.get(_held_type, 1.0))
 	# Long tools lean in toward the middle of the screen; small things sit a little higher.
-	if _held_type in ["hatchet", "knife", "torch"]:
+	# A head's blade runs along the model's -Z, so it's turned a quarter turn to put the blade's face toward you.
+	if _held_type in ["hatchet", "pickaxe"]:
+		_item.position = Vector3(0.02, -0.05, 0)
+		_item.rotation = Vector3(-0.1, PI * 0.5 - 0.35, 0.2)
+	elif _held_type in ["knife", "torch"]:
 		# Turned so you see the face of the head, not just its edge.
 		_item.position = Vector3(0, -0.06, 0)
 		_item.rotation = Vector3(-0.15, 0.9, 0.3)
-	elif _held_type == "pickaxe":
-		_item.position = Vector3(0, -0.06, 0)
-		_item.rotation = Vector3(-0.15, 0.3, 0.32)
 	elif _held_type == "spear":
-		# Leaning forward so the head is in view.
-		_item.position = Vector3(0.0, -0.36, 0.12)
-		_item.rotation = Vector3(-0.85, 0.25, 0.12)
+		# Upright and leaning left, so the head stays in view.
+		_item.position = Vector3(0.06, -0.2, 0.05)
+		_item.rotation = Vector3(-0.2, 0.3, 0.55)
 	else:
 		_item.position = Vector3(0, 0.03, 0)
 		_item.rotation = Vector3(0.2, 0.5, 0.0)

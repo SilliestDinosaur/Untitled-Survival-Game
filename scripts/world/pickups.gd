@@ -2,6 +2,12 @@ extends Node3D
 ## Shows the items lying in the world (Game.pickups) as small bobbing bundles you can pick up.
 ## Pure view of shared data: when the data changes (here or, later, from the host), it re-syncs.
 
+## How long a dropped item lies (its longest side, in metres), by tool type; other kinds below.
+const TOOL_LENGTH := {"hatchet": 0.5, "pickaxe": 0.5, "spear": 0.7, "knife": 0.3, "torch": 0.4, "rock": 0.15}
+const PLACEABLE_LENGTH := 0.3
+const ITEM_LENGTH := 0.2
+const REST_HEIGHT := 0.02   ## the bottom of a dropped item sits this far above the ground
+
 var _nodes := {}   # pickup id -> Node3D
 var _bundle: ArrayMesh
 var _materials := {}
@@ -33,10 +39,26 @@ func _make(p: Dictionary) -> Node3D:
 	var pos: Array = p.pos
 	root.position = Vector3(pos[0], pos[1], pos[2])
 	var mi := MeshInstance3D.new()
-	# The real item model, lying on its side (a little bigger so it's easy to spot).
-	mi.mesh = ItemModels.mesh_for(p.item, _item_material())
-	mi.scale = Vector3.ONE * (1.6 if ItemDB.info(p.item).kind == "tool" else 2.2)
-	mi.rotation = Vector3(0, 0, PI * 0.5) if ItemDB.info(p.item).kind == "tool" else Vector3.ZERO
+	# The real item model, sized by its own bounds so every dropped item is the same size for its kind, and
+	# lying on the ground (a tool's length runs along it).
+	var mesh: ArrayMesh = ItemModels.mesh_for(p.item, _item_material())
+	var box := mesh.get_aabb()
+	var longest := maxf(box.size.x, maxf(box.size.y, box.size.z))
+	var info: Dictionary = ItemDB.info(p.item)
+	var is_tool: bool = info.get("kind", "") == "tool"
+	var length := ITEM_LENGTH
+	if is_tool:
+		length = TOOL_LENGTH.get(String(info.get("tool", {}).get("type", "")), 0.4)
+	elif info.get("kind", "") == "placeable":
+		length = PLACEABLE_LENGTH
+	var s := length / maxf(longest, 0.001)
+	var lie := Vector3(0, 0, PI * 0.5) if is_tool and box.size.y >= longest - 0.001 else Vector3.ZERO
+	var orient := Basis.from_euler(lie) * Basis.from_scale(Vector3.ONE * s)
+	mi.mesh = mesh
+	mi.transform = Transform3D(orient, Vector3.ZERO)
+	var bounds: AABB = mi.transform * box
+	root.set_meta("lift", REST_HEIGHT - bounds.position.y)
+	mi.position.y = float(root.get_meta("lift"))
 	root.add_child(mi)
 	var body := StaticBody3D.new()
 	body.collision_layer = TerrainChunk.LAYER_INTERACT
@@ -76,5 +98,5 @@ func _process(delta: float) -> void:
 	for id: String in _nodes:
 		var n: Node3D = _nodes[id]
 		var mi := n.get_child(0) as Node3D
-		mi.position.y = sin(t * 2.0 + float(n.get_meta("phase"))) * 0.03 + 0.12
+		mi.position.y = float(n.get_meta("lift")) + sin(t * 2.0 + float(n.get_meta("phase"))) * 0.02
 		mi.rotate_y(delta * 0.6)
