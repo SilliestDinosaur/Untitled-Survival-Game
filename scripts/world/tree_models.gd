@@ -245,7 +245,7 @@ static func conifer(kit: MeshKit, rng: RandomNumberGenerator, bark: Color, leaf:
 ## One conifer tier: a ring of jagged points around `base`, meeting at a tip above it. Alternate points
 ## droop, so the edge reads as needles.
 static func _tier(kit: MeshKit, rng: RandomNumberGenerator, base: Vector3, r: float, h: float, color: Color) -> void:
-	var sides := maxi(6, roundi(10.0 * MeshKit.detail))
+	var sides := maxi(8, roundi(10.0 * MeshKit.detail))   # cheap, and fewer sides read as a pyramid
 	var spin := rng.randf() * TAU
 	var tip := base + Vector3(0, h, 0)
 	var ring: Array = []
@@ -279,7 +279,9 @@ static func umbrella(kit: MeshKit, rng: RandomNumberGenerator, bark: Color, leaf
 	var tips: Array = []
 	branch(kit, rng, top - Vector3(0, height * 0.2, 0), Vector3(rng.randf_range(-0.7, 0.7), 0.6, rng.randf_range(-0.7, 0.7)).normalized(), height * 0.4, radius * 0.6, 1, bark, tips, 5)
 	var canopy := top + Vector3(0, 0.3, 0)
-	var sides := maxi(7, roundi(12.0 * MeshKit.detail))
+	# The canopy disc stays round at any detail: it's a handful of triangles, and few sides leave corners jutting out
+	# past the crown.
+	var sides := maxi(12, roundi(16.0 * MeshKit.detail))
 	var rim_r := rng.randf_range(2.6, 3.4)
 	var noise := rng.randf() * TAU
 	var ring: Array = []

@@ -105,12 +105,13 @@ static func _height(kind: String) -> float:
 	return 1.0 if kind in GameActions.HALF_KINDS else GameActions.WALL_H
 
 
-## A wall's thickness range along its own z, measured once per material from a plain wall.
+## A wall's solid face, as a range along its own z, measured once per material from a plain wall. A plank wall's
+## rails stand proud of its boards and are left out: walls meet board to board, and the rails cross at the corner.
 static func _extent(kind: String) -> Vector2:
 	var mat: String = GameActions.PIECES[kind].mat
 	if not _extents.has(mat):
 		var k := MeshKit.new(1)
-		_edge(k, mat, 1.0, [], RandomNumberGenerator.new(), -0.5, 0.5)
+		_edge(k, mat, 1.0, [], RandomNumberGenerator.new(), -0.5, 0.5, false)
 		var aabb := k.commit(StandardMaterial3D.new()).get_aabb()
 		_extents[mat] = Vector2(aabb.position.z, aabb.end.z)
 	return _extents[mat]
@@ -259,7 +260,8 @@ static func _floor(k: MeshKit, mat: String, rng: RandomNumberGenerator) -> void:
 ## Walls, half walls and the wall around an opening: a mortar core split round the openings, then the
 ## courses of bricks, stones or boards on its face.
 ## The wall runs from x0 to x1 along its own x (the cell's corners are at -CELL/2 and CELL/2).
-static func _edge(k: MeshKit, mat: String, height: float, openings: Array, rng: RandomNumberGenerator, x0: float, x1: float) -> void:
+static func _edge(k: MeshKit, mat: String, height: float, openings: Array, rng: RandomNumberGenerator, x0: float, x1: float,
+		rails := true) -> void:
 	var core := MORTAR
 	if mat == "stone":
 		core = STONE_MORTAR
@@ -276,7 +278,7 @@ static func _edge(k: MeshKit, mat: String, height: float, openings: Array, rng: 
 		"stone":
 			_stone_courses(k, height, openings, rng, x0, x1)
 		_:
-			_wood_boards(k, height, openings, rng, x0, x1)
+			_wood_boards(k, height, openings, rng, x0, x1, rails)
 
 
 ## The mortar core as rectangles covering the wall except the openings. Each band of the wall is cut
@@ -375,10 +377,11 @@ static func _stone_courses(k: MeshKit, height: float, openings: Array, rng: Rand
 
 
 ## Boards standing between a bottom and a top rail. Rails and boards stop short where an opening crosses them.
-static func _wood_boards(k: MeshKit, height: float, openings: Array, rng: RandomNumberGenerator, x0: float, x1: float) -> void:
+static func _wood_boards(k: MeshKit, height: float, openings: Array, rng: RandomNumberGenerator, x0: float, x1: float,
+		rails := true) -> void:
 	var lo := 0.1
 	var hi := height - 0.1
-	for ry in [lo, hi]:
+	for ry in ([lo, hi] if rails else []):
 		var segs: Array = [[x0 + 0.01, x1 - 0.01]]   # rails stop just short of the ends, clear of the core's end faces
 		for o: Rect2 in openings:
 			if o.position.y < ry + 0.1 and o.end.y > ry - 0.1:
@@ -501,21 +504,28 @@ static func _roof(k: MeshKit, mat: String, rng: RandomNumberGenerator) -> void:
 		_:
 			tile = Color(0.62, 0.34, 0.26); hx = 0.24; hy = 0.16; pz = 0.3; px = 0.5
 	var frame := tile.darkened(0.3) if mat == "stone" else WOOD_DARK
-	for row in int(GameActions.CELL / pz):
-		var tz := -h + hy + row * pz
-		for col in int(GameActions.CELL / px) + 1:
+	# A solid deck under the tiles: tiles have rounded corners, so on their own they leave holes to the sky.
+	k.add_primitive(_box(Vector3(GameActions.CELL - 0.004, 0.05, GameActions.CELL - 0.004)), Transform3D(), frame.darkened(0.1), 0.0, 0.03)
+	# Rows and columns run right to the cell's edges (the last ones pulled in to fit), so neighbouring roofs meet.
+	var rows := ceili((GameActions.CELL - 2.0 * hy) / pz) + 1
+	for row in rows:
+		var tz := minf(-h + hy + row * pz, h - hy)
+		for col in int(GameActions.CELL / px) + 2:
 			var tx := -h + hx + col * px + (px * 0.5 if row % 2 == 1 else 0.0)
-			if tx + hx > h + 0.02:
+			if tx - hx > h - 0.01:
 				continue
+			tx = minf(tx, h - hx)
 			var t := tile.lightened(rng.randf_range(-0.06, 0.06))
 			var face := func(p: Vector2, _t: float) -> Color: return t.darkened(0.15) if p.y < -hy * 0.6 else t
 			# Tiles are nudged off a regular grid so their edges never line up exactly.
 			var jitter := Vector2(rng.randf_range(-0.004, 0.004), rng.randf_range(-0.004, 0.004))
 			k.sculpt(_rounded_rect(hx, hy, hx * 0.3, 1), Transform3D(Basis(Vector3.RIGHT, PI * 0.5), Vector3(tx + jitter.x, 0.03 + row * 0.004, tz + jitter.y)),
 				func(_p: Vector2) -> float: return 0.06, face, 1, 0.045)
+	# Edge beams inside the cell (a neighbouring roof's beams sit beside them, not in the same place), the short pair
+	# fitted between the long pair so no two beams overlap.
 	for side in [-1.0, 1.0]:
-		k.add_primitive(_box(Vector3(GameActions.CELL, 0.16, 0.14)), Transform3D(Basis(), Vector3(0, -0.02, side * h)), frame, 0.0, 0.03)
-		k.add_primitive(_box(Vector3(0.14, 0.16, GameActions.CELL)), Transform3D(Basis(), Vector3(side * h, -0.02, 0)), frame, 0.0, 0.03)
+		k.add_primitive(_box(Vector3(GameActions.CELL - 0.004, 0.16, 0.14)), Transform3D(Basis(), Vector3(0, -0.04, side * (h - 0.072))), frame, 0.0, 0.03)
+		k.add_primitive(_box(Vector3(0.14, 0.16, GameActions.CELL - 0.29)), Transform3D(Basis(), Vector3(side * (h - 0.072), -0.04, 0)), frame, 0.0, 0.03)
 
 
 ## A rounded rectangle outline (half sizes hx, hy; corner radius r; segments per corner).

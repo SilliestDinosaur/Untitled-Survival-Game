@@ -13,6 +13,7 @@ var tier := 0
 var resources: Array[Dictionary] = []
 
 var _mmis := {}          # mesh key -> MultiMeshInstance3D
+var _shadow_mmis := {}   # mesh key -> its shadow-only twin (near trees cast shadows from their low-poly shape)
 var _colliders := {}     # resource index -> CollisionShape3D
 var _wobbles := {}       # resource index -> time left
 var _bare := {}          # resource index -> MeshInstance3D showing the harvested look
@@ -123,6 +124,23 @@ func _build_multimeshes(buffers: Dictionary, flora: FloraLibrary) -> void:
 		if cat in ["grass", "flower", "fern"] or small or (cat in ["bush", "clutter"] and tier > 0) or (cat == "tree" and tier > 0):
 			mmi.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
 		add_child(mmi)
+		# Near trees cast their shadow from their low-poly twin: the shadow can't show the difference, and the sun's
+		# shadow draws every caster again in each of its cascades.
+		if cat == "tree" and not key.ends_with("_lod") and flora.has_mesh(key + "_lod") \
+				and mmi.cast_shadow != GeometryInstance3D.SHADOW_CASTING_SETTING_OFF:
+			mmi.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+			var smm := MultiMesh.new()
+			smm.transform_format = MultiMesh.TRANSFORM_3D
+			smm.use_colors = true
+			smm.mesh = flora.mesh(key + "_lod")
+			smm.instance_count = mm.instance_count
+			smm.buffer = buf
+			var smmi := MultiMeshInstance3D.new()
+			smmi.name = key + "_shadow"
+			smmi.multimesh = smm
+			smmi.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_SHADOWS_ONLY
+			_shadow_mmis[key] = smmi
+			add_child(smmi)
 
 
 func _build_resource_colliders(flora: FloraLibrary) -> void:
@@ -271,6 +289,8 @@ func _set_instance(index: int, xf: Transform3D) -> void:
 	if not r.has("mm_index") or not _mmis.has(r.mm_key):
 		return
 	_mmis[r.mm_key].multimesh.set_instance_transform(r.mm_index, xf)
+	if _shadow_mmis.has(r.mm_key):
+		_shadow_mmis[r.mm_key].multimesh.set_instance_transform(r.mm_index, xf)
 
 
 ## Point every MultiMesh at freshly generated meshes (after the model detail setting changes).
@@ -278,3 +298,5 @@ func swap_meshes(flora: FloraLibrary) -> void:
 	for key: String in _mmis:
 		if flora.has_mesh(key):
 			_mmis[key].multimesh.mesh = flora.mesh(key)
+	for key: String in _shadow_mmis:
+		_shadow_mmis[key].multimesh.mesh = flora.mesh(key + "_lod")
