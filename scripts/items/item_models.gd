@@ -246,8 +246,7 @@ static func _pickaxe(k: MeshKit, tier: int, col: Color) -> void:
 	# Every tier is the same tool, a long point lashed across a squared branch; only the point's material changes.
 	var top := 0.35
 	var m := _metal(tier, col)
-	var hr := 0.017
-	_handle(k, top + 0.04, 1, hr * 1.2, 0.0, true)
+	_handle(k, top + 0.04, 1, 0.02)   # the same round branch as the axe
 	var outline := _knap(PackedVector2Array([Vector2(-0.045, 0.0), Vector2(-0.02, -0.04), Vector2(0.06, -0.038), Vector2(0.17, 0.0), Vector2(0.06, 0.04), Vector2(-0.02, 0.04)]), 41, 0.004)
 	for i in outline.size():   # broad
 		outline[i] = Vector2(outline[i].x, outline[i].y * 1.8)
@@ -356,16 +355,23 @@ static func _knife(k: MeshKit, tier: int, col: Color) -> void:
 ## A branch with a resin-soaked fiber wrap at the top (the flame is a separate glowing mesh).
 ## A builder's hammer: a wooden haft with a squared stone head, its striking face forward (-Z).
 static func _hammer_tool(k: MeshKit) -> void:
-	_handle(k, 0.36, 1, 0.016)
-	var head := BoxMesh.new()
-	head.size = Vector3(0.065, 0.075, 0.17)
-	k.add_primitive(head, Transform3D(Basis(), Vector3(0, 0.34, -0.02)), STONE.darkened(0.1), 0.0, 0.05)
-	var face := BoxMesh.new()   # the worn striking face, a shade lighter
-	face.size = Vector3(0.07, 0.08, 0.02)
-	k.add_primitive(face, Transform3D(Basis(), Vector3(0, 0.34, -0.11)), STONE.lightened(0.2), 0.0, 0.03)
-	var band := BoxMesh.new()   # a cord binding where the head meets the haft
-	band.size = Vector3(0.04, 0.03, 0.05)
-	k.add_primitive(band, Transform3D(Basis(), Vector3(0, 0.29, 0)), CORD, 0.0, 0.05)
+	# Built like the axe: a trimmed branch with a knapped stone head across its top, but the head is a blunt,
+	# chunky block, broad at both ends, for driving pegs and knocking pieces into place.
+	var top := 0.33
+	_handle(k, top + 0.045, 1, 0.02)
+	var outline := _knap(PackedVector2Array([Vector2(-0.085, 0.03), Vector2(-0.095, 0.0), Vector2(-0.085, -0.035),
+		Vector2(-0.02, -0.042), Vector2(0.02, -0.042), Vector2(0.09, -0.04), Vector2(0.105, 0.0), Vector2(0.09, 0.04),
+		Vector2(0.02, 0.044), Vector2(-0.02, 0.044)]), 23, 0.003)
+	var ridge := PackedVector2Array(outline)
+	ridge.append(outline[0])
+	var m := _metal(1, Color.WHITE)
+	# Thick right out to the rim (no cutting edge): a rounded block, not a blade.
+	k.sculpt(outline, Transform3D(FORWARD_PLANE, Vector3(0, top, 0)), _head_thickness(ridge, 0.042, 0.022, 0.046, 0.022, 0.02),
+		_head_color(1, m, PackedVector2Array()), 3, 0.0055)
+	# The haft's end: a wooden wedge driven into the top of it, standing proud of the head.
+	var wedge := BoxMesh.new()
+	wedge.size = Vector3(0.03, 0.012, 0.014)
+	k.add_primitive(wedge, Transform3D(Basis(), Vector3(0, top + 0.046, 0)), WOOD.darkened(0.15), 0.0, 0.04)
 
 
 ## The Building Plan: a rolled sheet of blue drafting paper, tied with cord, held at its middle.
