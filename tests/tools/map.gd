@@ -5,7 +5,7 @@ extends SceneTree
 ##   SEEDS=629946553,777   worlds to draw (default 629946553)
 ##   RES=160               pixels per side (default 160)
 ##   OUT=/tmp/map.png      output (one image, islands side by side)
-##   RIVERS=1              show river cells in blue (default 1)
+##   RIVERS=1              show the water in blue where it would be built: the water level sits above the ground (default 1)
 
 func _initialize() -> void:
 	var g = root.get_node("Game")
@@ -28,7 +28,8 @@ func _initialize() -> void:
 				var c := Color(0.1, 0.25, 0.55)
 				if h > -0.5:
 					c = Color(0.92, 0.85, 0.6) if h < 2.0 else Color(0.35 + clampf(h / 90.0, 0, 0.5), 0.55 + clampf(h / 200.0, 0, 0.3), 0.25 + clampf(h / 120.0, 0, 0.3))
-					if rivers and wg.hydro.depth.size() > 0 and _sample(wg.hydro.depth, wg.hydro.n, x, z) > 0.4:
+					# Water is where the water level stands above the ground (the same test the water mesh uses).
+					if rivers and wg.hydro.level.size() > 0 and _sample(wg.hydro.level, wg.hydro.n, x, z) > wg.get_base_height(x, z) + 0.02:
 						c = Color(0.2, 0.5, 0.9)
 				sheet.set_pixel(si * res + i, j, c)
 		print("seed ", seeds[si], "  world ", t1 - t0, " ms  map ", Time.get_ticks_msec() - t1, " ms")
