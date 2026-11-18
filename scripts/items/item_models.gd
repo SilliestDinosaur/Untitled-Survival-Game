@@ -205,33 +205,6 @@ static func _head_colors(tier: int, col: Color) -> Array:
 	return [m.base, m.edge]
 
 
-## Flint heads are bound to the haft with rawhide: a strap wound round the eye in a few turns. It's square in
-## section (a flat strap, not a ball), and its width and thickness vary a little round the turns, so it reads
-## as wound by hand.
-static func _lashing(k: MeshKit, y: float, radius: float) -> void:
-	var turns := 4.0
-	var span := 0.05
-	var r_wrap := radius * 1.2
-	var path: Array = []
-	var radii: Array = []
-	var steps := 40
-	for i in steps + 1:
-		var t := float(i) / steps
-		var a := t * turns * TAU
-		path.append(Vector3(cos(a) * r_wrap, y - span * 0.5 + span * t, sin(a) * r_wrap))
-		# Swells where the strap passes the front and thins behind, the way a hand-wound strap bunches.
-		radii.append(0.0052 * (1.0 + 0.2 * sin(a) + 0.07 * sin(a * 3.0)))
-	k.loft(path, radii, 8,
-		Color(0.62, 0.48, 0.3),
-		func(t: float, a: float) -> Color: return Color(0.62, 0.48, 0.3).darkened(0.1 * (sin(t * 160.0) * 0.5 + 0.5)),
-		func(t: float, a: float) -> Vector2:
-			# A square section (corners at 45 degrees), a little flatter and lumpier as it goes round.
-			var sq := 1.0 / maxf(absf(cos(a)), absf(sin(a)))
-			var w := 1.0 + 0.12 * sin(a * 3.0 + t * 20.0)
-			return Vector2(sq * w, sq * w * 0.55),
-		true, true)
-
-
 # --- Hatchets ---------------------------------------------------------------------------
 # Head outlines are drawn with x = forward (the blade side) and y = up; the handle passes
 # through x = 0. FORWARD_PLANE turns that into the model's -Z forward.
@@ -257,19 +230,17 @@ static func _hatchet(k: MeshKit, tier: int, col: Color) -> void:
 	var ridge := PackedVector2Array(outline)
 	ridge.append(outline[0])
 	var xf := Transform3D(FORWARD_PLANE, Vector3(0, top, 0))
+	# (A segment length of 0.005 left duplicate faces in the tier-four head; 0.0055 is clean at every tier.)
 	k.sculpt(outline, xf, _head_thickness(ridge, 0.027 + 0.002 * tier, 0.014, 0.034, 0.022, 0.001),
-		_head_color(tier, m, ridge, 0.014), 3, 0.005)
+		_head_color(tier, m, ridge, 0.014), 3, 0.0055)
 	# The haft's end: a wedge driven into the top of it, standing proud of the head.
 	var wedge := BoxMesh.new()
 	wedge.size = Vector3(0.03, 0.012, 0.014)
 	k.add_primitive(wedge, Transform3D(Basis(), Vector3(0, top + 0.046, 0)), WOOD.darkened(0.15) if tier == 1 else m.fitting, 0.0, 0.04)
-	if tier == 1:
-		# Rawhide lashing crossing the eye, the way a knapped head was bound on.
-		_lashing(k, top, hr)
-	else:
+	if tier > 1:
 		# A metal socket around the eye, with a ring band where it meets the head.
 		var fit: Color = m.fitting if tier != 2 else m.base.darkened(0.2)
-		k.loft([Vector3(0, top - 0.042, 0), Vector3(0, top - 0.02, 0), Vector3(0, top + 0.02, 0), Vector3(0, top + 0.042, 0)],
+		k.loft([Vector3(0, top - 0.04, 0), Vector3(0, top - 0.02, 0), Vector3(0, top + 0.02, 0), Vector3(0, top + 0.042, 0)],
 			[hr * 1.3, hr * 1.55, hr * 1.55, hr * 1.3], 12, fit,
 			func(t: float, _a: float) -> Color: return fit.lightened(0.15) if fposmod(t * 3.0, 1.0) < 0.12 else fit)
 
@@ -289,7 +260,6 @@ static func _pickaxe(k: MeshKit, tier: int, col: Color) -> void:
 		var ridge := PackedVector2Array(outline)
 		ridge.append(outline[0])
 		k.sculpt(outline, Transform3D(FORWARD_PLANE, Vector3(0, top, 0)), _head_thickness(ridge, 0.03, 0.02, 0.0, 0.0, 0.003), _head_color(1, m, ridge, 0.02), 3, 0.006)
-		_lashing(k, top, hr)
 		return
 	# The head: a bar in the swing plane that curves down to a point at each end, thinned to a crisp
 	# edge. Tier 3's back end is a square chisel instead of a point.
@@ -359,10 +329,6 @@ static func _spear(k: MeshKit, tier: int, col: Color) -> void:
 		return t + (0.007 if tier != 1 else 0.004) * exp(-absf(p.x) * 60.0) * smoothstep(0.0, 0.05, p.y)
 	k.sculpt(outline, Transform3D(Basis(), Vector3(0, head_y, 0)), thick, _head_color(tier, m, rim, 0.01), 3, 0.005)
 	k.flat_shading = false
-	if tier == 1:
-		# Rawhide binding just below the knapped point.
-		_lashing(k, head_y - 0.01, hr)
-		return
 	# Socket: a tapered metal sleeve over the shaft, with rings, and a cord binding below it.
 	var sock: Color = m.fitting if tier != 2 else m.base.darkened(0.12)
 	k.loft([Vector3(0, top - 0.06, 0), Vector3(0, top - 0.02, 0), Vector3(0, head_y + 0.004, 0)], [hr * 1.32, hr * 1.18, hr * 0.85], 14, sock,

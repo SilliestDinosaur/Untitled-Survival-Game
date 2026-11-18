@@ -1,7 +1,7 @@
 extends SceneTree
 ## Item sheet (diagnostic): godot --headless --path . -s tests/tools/item_sheet.gd (under xvfb-run, it needs a real
 ## render). Stands each item's model upright on a plain stage in three-quarter view, in a row, to compare shapes.
-## Environment: IDS=hatchet_t1,pickaxe_t1,... (default: the five hatchets), OUT=file.png
+## Environment: IDS=hatchet_t1,pickaxe_t1,... (default: the five hatchets), OUT=file.png, ZOOM=1 for a close view of the head
 
 var _main: Node
 var _f := 0
@@ -74,4 +74,8 @@ func _build() -> void:
 	cam.position = Vector3(0.0, 0.42, 2.6)
 	cam.look_at(Vector3(0.0, 0.3, 0.0), Vector3.UP)
 	cam.fov = 40.0
+	if OS.get_environment("ZOOM") != "":   # ZOOM=1: close on the head
+		cam.position = Vector3(0.0, 0.36, 1.0)
+		cam.look_at(Vector3(0.0, 0.3, 0.0), Vector3.UP)
+		cam.fov = 24.0
 	cam.make_current()
