@@ -141,6 +141,9 @@ func _ready() -> void:
 	structures.name = "Structures"
 	add_child(structures)
 	player.cave_chest.connect(_open_cave_chest)
+	player.crafting_started.connect(func() -> void:
+		if _inventory.visible:
+			_toggle_inventory(false))
 	player.open_crafting.connect(func() -> void:
 		if state == State.PLAYING and not _inventory.visible:
 			_toggle_inventory(true))

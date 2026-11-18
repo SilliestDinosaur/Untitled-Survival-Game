@@ -8,6 +8,7 @@ signal hint(text: String)   ## short messages for the HUD ("Too hard to break by
 signal hit_landed           ## a swing connected with something
 signal open_crafting        ## Interact on a station
 signal cave_chest(index: int)    ## Interact with a cave's supply chest
+signal crafting_started      ## a crafting minigame began (the satchel should close)
 
 const REACH := 3.2
 const PICKUP_SCENE_LAYER := 2
@@ -65,6 +66,7 @@ var _place_turns := 0   ## quarter turns from Rotate (R) for the piece being pla
 ## The building wheel's pick for the Building Plan: a shape (GameActions.SHAPES) in a material (GameActions.MATERIALS).
 var build_choice := {"shape": "wall", "mat": "wood"}
 var wheel_open := false   ## set by the building wheel while it's up (placing waits until it closes)
+var crafting: Node = null  ## the crafting minigame you're at (CraftSession), if any: you stand still while it runs
 var _ghost_kind := ""
 var _ghost_ok_mat: StandardMaterial3D
 var _ghost_bad_mat: StandardMaterial3D
@@ -139,6 +141,25 @@ func reset_inventory() -> void:
 	inventory.select(0)
 
 
+## Craft a recipe: a minigame for cooking, ingots and tools (`times` in a row), at once for everything else.
+## The answer comes back through `done` ({ok, reason, out, made}) for an instant craft; a minigame reports its
+## own progress on screen.
+func craft(r: Dictionary, times: int, done: Callable) -> void:
+	if CraftSession.mode_for(r) < 0:
+		Net.request("craft", {"recipe": r.id, "pos": global_position, "times": times}, done)
+		return
+	if crafting:
+		return
+	var problem := CraftSession.problem(self, r)
+	if problem != "":
+		done.call({"ok": false, "reason": problem})
+		return
+	crafting_started.emit()
+	var session := CraftSession.new()
+	get_parent().add_child(session)
+	session.begin(self, r, times)
+
+
 func set_active(on: bool) -> void:
 	active = on
 	looking_at = {}
@@ -153,6 +174,8 @@ func set_active(on: bool) -> void:
 
 
 func _unhandled_input(event: InputEvent) -> void:
+	if crafting:
+		return
 	if event is InputEventMouseMotion and Input.mouse_mode == Input.MOUSE_MODE_CAPTURED:
 		var sens := 0.0022 * Settings.mouse_sensitivity
 		rotate_y(-event.relative.x * sens)
@@ -207,12 +230,12 @@ func _climb(wanted: Vector3, start: Vector3) -> bool:
 func _physics_process(delta: float) -> void:
 	var on_floor := is_on_floor()
 	swimming = not Game.in_cave and global_position.y + 1.0 < Game.SEA_LEVEL
-	var input := Input.get_vector("move_left", "move_right", "move_forward", "move_back")
+	var input := Input.get_vector("move_left", "move_right", "move_forward", "move_back") if not crafting else Vector2.ZERO
 	var dir := (transform.basis * Vector3(input.x, 0.0, input.y)).normalized()
 
 	# Timers that make jumping feel forgiving.
 	_coyote = coyote_time if on_floor else maxf(_coyote - delta, 0.0)
-	_jump_buffer = jump_buffer if Input.is_action_just_pressed("jump") else maxf(_jump_buffer - delta, 0.0)
+	_jump_buffer = jump_buffer if Input.is_action_just_pressed("jump") and not crafting else maxf(_jump_buffer - delta, 0.0)
 
 	if stats.stamina <= 0.0:
 		_exhausted = true
@@ -436,7 +459,7 @@ func _update_actions(delta: float) -> void:
 	_swing_cooldown = maxf(_swing_cooldown - delta, 0.0)
 	_interact_cooldown = maxf(_interact_cooldown - delta, 0.0)
 	var focused := Input.mouse_mode == Input.MOUSE_MODE_CAPTURED or DisplayServer.get_name() == "headless"
-	if not focused or viewmodel.is_busy():
+	if not focused or viewmodel.is_busy() or crafting:
 		return
 	if Input.is_action_pressed("interact") and _interact_cooldown <= 0.0 and looking_at.get("interact", "") != "":
 		_interact_cooldown = 0.35

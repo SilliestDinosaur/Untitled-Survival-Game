@@ -33,6 +33,7 @@ var _hint: Label
 var _target_bar: StatBar
 var _prompt: Label
 var _wheel: BuildWheel
+var _target_box: Control
 var _effects: Label
 var _hit_marker := 0.0
 var _clock: Label
@@ -69,6 +70,7 @@ func _ready() -> void:
 	add_child(_crosshair)
 
 	var target := VBoxContainer.new()
+	_target_box = target
 	UITheme.place(target, Control.PRESET_CENTER, Vector2(-200, 26), Vector2(400, 0))
 	target.add_theme_constant_override("separation", 0)
 	add_child(target)
@@ -284,6 +286,10 @@ func _process(delta: float) -> void:
 
 	_wheel.player = player
 	_banner.visible = not _wheel.visible   # the island's name card would sit on top of the wheel
+	# At a crafting minigame the cues take the middle of the screen.
+	var crafting: bool = player.crafting != null
+	_crosshair.visible = not crafting
+	_target_box.visible = not crafting
 	# Crosshair target.
 	var look: Dictionary = player.looking_at
 	_target_name.text = look.get("name", "")
@@ -302,7 +308,7 @@ func _process(delta: float) -> void:
 		parts.append("[%s] Rotate" % Settings.code_label(Settings.binding_of("rotate_piece")))
 		if holding_plan:
 			parts.append("[%s] Building wheel" % Settings.code_label(Settings.binding_of("build_menu")))
-	_prompt.text = "" if _wheel.visible else "     ".join(parts)   # the wheel has its own caption
+	_prompt.text = "" if _wheel.visible or crafting else "     ".join(parts)   # the wheel has its own caption
 	var eff: Array[String] = []
 	for e: String in player.stats.effects:
 		eff.append("%s %ds" % [ItemDB.EFFECTS[e].name, ceili(player.stats.effects[e])])

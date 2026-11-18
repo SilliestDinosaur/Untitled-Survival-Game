@@ -432,7 +432,7 @@ class CraftingPanel extends PanelContainer:
 
 	func _craft(r: Dictionary) -> void:
 		var times := 5 if Input.is_key_pressed(KEY_SHIFT) else 1
-		Net.request("craft", {"recipe": r.id, "pos": player.global_position, "times": times}, func(res: Dictionary) -> void:
+		player.craft(r, times, func(res: Dictionary) -> void:
 			if res.get("ok", false):
 				Audio.play("chop" if r.at in ["workbench", ""] else "clink", -6.0, 1.2)
 				_status.text = "Made %s%s" % [ItemDB.display_name(res.out), (" x%d" % res.made) if res.made > 1 else ""]
