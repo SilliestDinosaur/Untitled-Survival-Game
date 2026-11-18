@@ -49,8 +49,9 @@ static func compute(gen: WorldGen) -> Dictionary:
 		if h[k] > 0.0 and catch[k] >= RIVER_CATCHMENT and lake[k] == 0.0:
 			var size := log(catch[k] / RIVER_CATCHMENT + 1.0) / log(2.0)
 			raw[k] = clampf(0.9 + size * 0.9, 0.9, 3.2)
-	var depth := PackedFloat32Array()
-	depth.resize(total)
+	# The channel's cut: the raw river depth, spread to the 3x3 cells around each cell.
+	var channel := PackedFloat32Array()
+	channel.resize(total)
 	for j in n:
 		for i in n:
 			var best := 0.0
@@ -62,24 +63,150 @@ static func compute(gen: WorldGen) -> Dictionary:
 						continue
 					var w := 1.0 if (di == 0 and dj == 0) else 0.45
 					best = maxf(best, raw[nj * n + ni] * w)
-			depth[j * n + i] = best
-	# The river itself: the cut channel before the banks spread out (this is where the water goes).
-	var channel := PackedFloat32Array()
-	channel.resize(total)
+			channel[j * n + i] = best
+	# River cells: where the water runs (a river, not a lake). Each bed starts at its channel's cut.
+	var river := PackedByteArray()
+	river.resize(total)
+	var bed := PackedFloat32Array()
+	bed.resize(total)
 	for k in total:
-		channel[k] = depth[k]
-	# Banks: a cell can't be much shallower than its deepest neighbour, so the channel slopes out
-	# into the land over tens of metres (like a real valley) instead of dropping in one step.
-	depth = _relax_banks(depth, n)
-	# River water: the depth of water in each river cell, above the carved bed. It's kept shallower than
-	# the bank can hold (MAX_WATER_DEPTH): a deeper river would stand over the ground beside it.
+		# (A cell right at sea level has no room to cut a channel, so it's ground, not river.)
+		if channel[k] > 0.0 and lake[k] == 0.0 and h[k] > Game.SEA_LEVEL + BED_FLOOR + 0.1:
+			river[k] = 1
+			bed[k] = h[k] - channel[k]
+	# Gullies: a river holds its water at its bed plus the water's depth, and that must stay under the dry ground
+	# beside it, or the water stands over that ground. Where the ground beside a river is lower, its bed drops.
+	for k in total:
+		if river[k] == 0:
+			continue
+		var gi: int = k % n
+		var gj: int = k / n
+		for dj in [-1, 0, 1]:
+			for di in [-1, 0, 1]:
+				var ni: int = gi + di
+				var nj: int = gj + dj
+				if ni < 0 or nj < 0 or ni >= n or nj >= n:
+					continue
+				var m: int = nj * n + ni
+				if river[m] == 0 and h[m] > 0.0:
+					bed[k] = minf(bed[k], h[m] - MAX_WATER_DEPTH + CLEARANCE)
+	for k in total:
+		if river[k] == 1:
+			bed[k] = maxf(bed[k], Game.SEA_LEVEL + BED_FLOOR)
+	# The cut each river makes: its ground down to its bed.
+	var cut := PackedFloat32Array()
+	cut.resize(total)
+	for k in total:
+		if river[k] == 1:
+			cut[k] = h[k] - bed[k]
+	# Banks: the ground beside a river is cut down with it, BANK_SLOPE per step away, but never below the water's
+	# level there. Ground already under that level is left alone (the gully above has made the river drop to it).
+	var beside := PackedByteArray()
+	beside.resize(total)
+	var lower := PackedFloat32Array()
+	lower.resize(total)
+	var room := PackedFloat32Array()
+	room.resize(total)
+	room.fill(1000.0)
+	for k in total:
+		if river[k] == 0:
+			continue
+		var bi: int = k % n
+		var bj: int = k / n
+		for dj in [-1, 0, 1]:
+			for di in [-1, 0, 1]:
+				if di == 0 and dj == 0:
+					continue
+				var ni: int = bi + di
+				var nj: int = bj + dj
+				if ni < 0 or nj < 0 or ni >= n or nj >= n:
+					continue
+				var m: int = nj * n + ni
+				if river[m] == 1 or h[m] <= 0.0:
+					continue
+				var step := 1.0 if (di == 0 or dj == 0) else 1.414
+				beside[m] = 1
+				lower[m] = maxf(lower[m], cut[k] - BANK_SLOPE * step)
+				room[m] = minf(room[m], h[m] - (bed[k] + MAX_WATER_DEPTH - CLEARANCE))
+	var lake_cap := PackedFloat32Array()
+	lake_cap.resize(total)
+	lake_cap.fill(1000.0)
+	for k in total:
+		if lake[k] <= 0.0:
+			continue
+		var li: int = k % n
+		var lj: int = k / n
+		for dj in [-1, 0, 1]:
+			for di in [-1, 0, 1]:
+				if di == 0 and dj == 0:
+					continue
+				var ni: int = li + di
+				var nj: int = lj + dj
+				if ni < 0 or nj < 0 or ni >= n or nj >= n:
+					continue
+				var m: int = nj * n + ni
+				if lake[m] == 0.0 and river[m] == 0 and h[m] > 0.0:
+					lake_cap[m] = minf(lake_cap[m], h[m] - (lake[k] - CLEARANCE))
+	var queue := PackedInt32Array()
+	for k in total:
+		if beside[k] == 1:
+			cut[k] = clampf(lower[k], 0.0, maxf(minf(room[k], lake_cap[k]), 0.0))
+			queue.append(k)
+	# Ground further out: the bank slope carries on from the cut beside it.
+	var head := 0
+	while head < queue.size():
+		var k: int = queue[head]
+		head += 1
+		var ci: int = k % n
+		var cj: int = k / n
+		for dj in [-1, 0, 1]:
+			for di in [-1, 0, 1]:
+				if di == 0 and dj == 0:
+					continue
+				var ni: int = ci + di
+				var nj: int = cj + dj
+				if ni < 0 or nj < 0 or ni >= n or nj >= n:
+					continue
+				var m: int = nj * n + ni
+				if river[m] == 1 or beside[m] == 1 or h[m] <= 0.0:
+					continue
+				var step := 1.0 if (di == 0 or dj == 0) else 1.414
+				var cand := minf(cut[k] - BANK_SLOPE * step, maxf(lake_cap[m], 0.0))
+				if cand > cut[m] + 0.000001:
+					cut[m] = cand
+					queue.append(m)
+	# The channel for the water: each river cell's cut (zero elsewhere).
+	for k in total:
+		channel[k] = cut[k] if river[k] == 1 else 0.0
+	# River water: the depth of water in each river cell above its bed, at most MAX_WATER_DEPTH.
 	var water := PackedFloat32Array()
 	water.resize(total)
 	for k in total:
-		if channel[k] > 0.0 and lake[k] == 0.0:
+		if river[k] == 1:
 			var d := minf(channel[k] * WATER_FRACTION, MAX_WATER_DEPTH)
 			water[k] = d if d >= MIN_WATER else 0.0
-	return {"n": n, "depth": depth, "water": water, "channel": channel, "lake": lake, "catchment": catch}
+	# The water stays under the dry land beside it: a river cell's level can't stand above a neighbour's ground.
+	# (River neighbours are left to the gullies above; a dry river cell passes no limit on, or the whole river would dry.)
+	for k in total:
+		if river[k] == 0 or water[k] <= 0.0:
+			continue
+		var wi: int = k % n
+		var wj: int = k / n
+		for dj in [-1, 0, 1]:
+			for di in [-1, 0, 1]:
+				if di == 0 and dj == 0:
+					continue
+				var ni: int = wi + di
+				var nj: int = wj + dj
+				if ni < 0 or nj < 0 or ni >= n or nj >= n:
+					continue
+				var m: int = nj * n + ni
+				if lake[m] != 0.0 or river[m] == 1 or h[m] <= 0.0:
+					continue
+				var cap := h[m] + CLEARANCE - bed[k]
+				if cap < water[k]:
+					water[k] = cap if cap >= MIN_WATER else 0.0
+	return {"n": n, "depth": cut, "water": water, "channel": channel, "lake": lake, "catchment": catch}
 
 
 ## Priority-flood: settles every cell in order of the lowest height it can drain to. Outlets are the sea
@@ -228,39 +355,12 @@ class _Heap extends RefCounted:
 ## Bank slope: metres of depth lost per grid step away from the channel (a 4 m river has banks ~40 m wide).
 const BANK_SLOPE := 0.6
 const WATER_FRACTION := 0.35   ## the water surface sits this fraction of the channel depth above the bed
-const MAX_WATER_DEPTH := 0.45  ## the deepest a river runs: banks rise about this much per cell, so deeper water would spill onto them
+const MAX_WATER_DEPTH := 0.45  ## the deepest a river runs; the ground beside it is cut to hold that much
+const BED_FLOOR := 0.02         ## river beds and the ground cut beside them stay this far above the sea (WorldGen uses it too)
+const CLEARANCE := 0.05        ## how far under the dry ground beside a river its water must stay (the flood tolerance)
 const MIN_WATER := 0.02        ## shallower than this, there's no water (the bank is dry)
 const LAKE_MIN := 0.05         ## a pit that fills by more than this is a lake
 const LAKE_MAX := 1.0          ## deeper basins are not lakes: the river breaches and runs through them instead
-
-
-## Let the depth spread out from the channel, losing BANK_SLOPE per step. A breadth-first spread from
-## the river cells: each cell hands its depth to its neighbours minus the slope, and only cells that
-## actually improve are visited again. (Same result as repeated full sweeps, far less work.)
-static func _relax_banks(depth: PackedFloat32Array, n: int) -> PackedFloat32Array:
-	var steps := [[-1, -1, 1.414], [0, -1, 1.0], [1, -1, 1.414], [-1, 0, 1.0], [1, 0, 1.0], [-1, 1, 1.414], [0, 1, 1.0], [1, 1, 1.414]]
-	var queue := PackedInt32Array()
-	for k in n * n:
-		if depth[k] > 0.0:
-			queue.append(k)
-	var head := 0
-	while head < queue.size():
-		var k: int = queue[head]
-		head += 1
-		var i := k % n
-		var j := k / n
-		var dk: float = depth[k]
-		for st: Array in steps:
-			var ni: int = i + st[0]
-			var nj: int = j + st[1]
-			if ni < 0 or nj < 0 or ni >= n or nj >= n:
-				continue
-			var nk := nj * n + ni
-			var cand: float = dk - BANK_SLOPE * float(st[2])
-			if cand > depth[nk] + 0.000001:
-				depth[nk] = cand
-				queue.append(nk)
-	return depth
 
 
 ## The water surface at each grid point, as the water mesh is built: `bed` is the carved ground there and

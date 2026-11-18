@@ -207,12 +207,10 @@ func get_base_height(x: float, z: float) -> float:
 	# Rivers: cut where the drainage model says water runs (see Hydrology). Done last, on the ground the
 	# coast has already shaped, and never below just above the sea, so plains don't turn into lagoons.
 	if _hydro_ready and ground > 0.0:
-		# Low ground (plains by the sea) only gets the channel itself cut: a wide valley there would
-		# drop the banks to the water and flood the plain. Higher ground gets the full valley.
-		var valley := Hydrology.sample(hydro.depth, hydro.n, x, z)
-		var channel := Hydrology.sample(hydro.channel, hydro.n, x, z)
-		var cut := lerpf(channel, valley, smoothstep(2.0, 4.0, ground)) * clampf(ground / 2.0, 0.0, 1.0)
-		ground = maxf(ground - cut, minf(ground, Game.SEA_LEVEL + 0.3))
+		# The cut is the drainage model's (see Hydrology.compute): river beds, with the banks beside them held above
+		# the water. Never below just above the sea (Hydrology.BED_FLOOR), so plains don't turn into lagoons.
+		var cut := Hydrology.sample(hydro.depth, hydro.n, x, z)
+		ground = maxf(ground - cut, minf(ground, Game.SEA_LEVEL + Hydrology.BED_FLOOR))
 	return ground
 
 

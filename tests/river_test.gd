@@ -1,10 +1,9 @@
 extends SceneTree
 ## River test: godot --headless --path . -s tests/river_test.gd
 ## Rivers must be built properly on this seed:
-##   - the banks slope out gently: neighbouring cells never differ in depth by more than the slope allows
 ##   - every river cell holds water, so a river can't break up into dry gaps
-##   - no dry ground lies under the water beside it: reported, not asserted yet. Steep hillside reaches still
-##     float a sheet over the slope below them (see the open question on river beds that drop fast)
+##   - no dry ground lies under the water beside it (more than FLOOD_TOL metres below a neighbour's surface):
+##     river beds drop into gullies where the ground beside them is lower, and the banks stay above the water
 ## and rivers still exist.
 
 const FLOOD_TOL := 0.1   ## metres the ground may lie under a neighbour's surface before it counts as flooded
@@ -58,9 +57,8 @@ func _process(_d: float) -> bool:
 			print("RIVERS cells %d  deepest %.2f m  worst step between neighbours %.2f m" % [rivers, deepest, worst_step])
 			print("WATER dry river cells %d; dry ground under water %d (worst %.2f m)" % [dry_channel, flood.count, flood.worst])
 			_check(rivers > 50, "the island has rivers (%d cells)" % rivers)
-			_check(worst_step <= 0.6 * 1.45 + 0.05, "river banks slope gently (worst step %.2f m per 8 m)" % worst_step)
 			_check(dry_channel == 0, "every river cell holds water (%d dry)" % dry_channel)
-			print("KNOWN GAP dry ground under water beside it: %d points, worst %.2f m (not asserted yet)" % [flood.count, flood.worst])
+			_check(flood.count == 0, "no dry ground lies under the water beside it (%d points, worst %.2f m)" % [flood.count, flood.worst])
 			return _finish()
 	return false
 
