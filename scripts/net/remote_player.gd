@@ -15,6 +15,7 @@ var _head: Node3D
 var _item: MeshInstance3D
 var _label: Label3D
 var _held := ""
+var _torch: TorchGlow
 var _target_pos := Vector3.ZERO
 var _target_yaw := 0.0
 var _target_pitch := 0.0
@@ -131,10 +132,20 @@ func set_pose(pos: Vector3, yaw: float, pitch: float, held: String, swings: int,
 		var info := ItemDB.info(held) if held != "" else {}
 		_item.scale = Vector3.ONE * (0.18 if info.get("kind", "") == "placeable" else 1.35)
 		_item.rotation = Vector3(-0.3, 0.0, 0.25) if info.get("kind", "") == "tool" else Vector3.ZERO
+		_set_torch(info.get("tool", {}).get("type", "") == "torch")
 	if swings != _swings:
 		if swings > _swings:
 			_swing()
 		_swings = swings
+
+
+## Their torch burns and lights the place up for everyone, just like your own.
+func _set_torch(on: bool) -> void:
+	if on and not _torch:
+		_torch = TorchGlow.new()
+		_item.add_child(_torch)
+	if _torch:
+		_torch.visible = on
 
 
 func _swing() -> void:

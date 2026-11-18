@@ -18,9 +18,7 @@ var _sway := Vector2.ZERO
 var _busy := false
 var _held := ""
 var _held_type := ""
-var _torch_light: OmniLight3D
-var _torch_flame: MeshInstance3D
-var _t := 0.0
+var _torch: TorchGlow
 
 
 func _ready() -> void:
@@ -163,30 +161,8 @@ func update_motion(delta: float, bob_phase: float, bob_amount: float) -> void:
 
 ## A held torch lights the area around you and has a flickering flame at its tip.
 func _set_torch(on: bool) -> void:
-	if on and not _torch_light:
-		_torch_light = OmniLight3D.new()
-		_torch_light.light_color = Color(1.0, 0.65, 0.32)
-		_torch_light.omni_range = 14.0
-		_torch_light.omni_attenuation = 1.3
-		_torch_light.shadow_enabled = false
-		_item.add_child(_torch_light)
-		_torch_light.position = Vector3(0, 0.42, 0)
-		_torch_flame = MeshInstance3D.new()
-		_torch_flame.mesh = ItemModels.torch_flame()
-		_torch_flame.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
-		_torch_flame.position = Vector3(0, 0.33, 0)
-		_item.add_child(_torch_flame)
-	if _torch_light:
-		_torch_light.visible = on
-		_torch_flame.visible = on
-
-
-func _process(delta: float) -> void:
-	if not _torch_light or not _torch_light.visible:
-		return
-	_t += delta
-	var dark := 1.0 if Game.in_cave else 1.0 - Game.daylight()   # underground it's always night
-	var flicker := 0.85 + 0.1 * sin(_t * 13.0) + 0.06 * sin(_t * 29.0)
-	_torch_light.light_energy = flicker * lerpf(0.6, 1.8, dark)
-	_torch_flame.scale = Vector3(1.0, flicker * 1.15, 1.0)
-	_torch_flame.rotation.y = _t * 1.5
+	if on and not _torch:
+		_torch = TorchGlow.new()
+		_item.add_child(_torch)
+	if _torch:
+		_torch.visible = on
