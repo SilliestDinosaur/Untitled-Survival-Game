@@ -12,7 +12,16 @@ Day: explore and gather. Night: defend your base from shadow creatures that brea
 Space jump / swim up · **Left click** swing: chop, mine, break, hunt, eat ·
 **E** harvest by hand: berries, sticks, fiber, fruit, pick up, butcher, open caches ·
 **Q** drop (Ctrl+Q whole stack) · 1-8 / mouse wheel hotbar · Tab satchel · Esc pause ·
-F3 debug info · F9 debug item menu
+F3 debug info · F9 debug item menu (debug builds and the editor only)
+
+## Build it
+The repo has export presets for **Windows Desktop** and **Linux** (both x86_64, with the game packed into the
+executable), plus the icon and version (`application/config/version`, shown on the title screen).
+1. In Godot 4.5.1: Editor -> Manage Export Templates -> Download and Install (once per Godot version).
+2. Project -> Export -> pick a preset -> **Export Project**, and untick "Export With Debug" for a release build
+   (debug builds turn on the F9 item menu). Builds land in `export/windows/` or `export/linux/` (git-ignored).
+3. When you bump the version, change it in Project Settings -> Application -> Config -> Version, and the
+   Windows file/product version in the Windows preset's options.
 
 ## Saves
 Worlds are saved in `user://saves/` (on Windows: `%APPDATA%/Godot/app_userdata/Untitled Survival/saves`).

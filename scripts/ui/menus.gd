@@ -118,7 +118,7 @@ class TitleScreen extends Control:
 		UITheme.place(_viewing, Control.PRESET_BOTTOM_RIGHT, Vector2(-520, -54), Vector2(490, 30))
 		_viewing.horizontal_alignment = HORIZONTAL_ALIGNMENT_RIGHT
 		add_child(_viewing)
-		var version := UITheme.label("prototype v0.3", 14, UITheme.TEXT_DIM, 4)
+		var version := UITheme.label("Demo v%s" % ProjectSettings.get_setting("application/config/version", "0.0"), 14, UITheme.TEXT_DIM, 4)
 		UITheme.place(version, Control.PRESET_BOTTOM_LEFT, Vector2(76, -40))
 		add_child(version)
 		refresh()
