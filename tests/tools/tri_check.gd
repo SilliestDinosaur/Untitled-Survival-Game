@@ -43,6 +43,9 @@ func _process(_d: float) -> bool:
 
 
 func _run() -> void:
+	if OS.get_environment("FLORA") != "":
+		_run_flora()
+		return
 	var ids: Array = []
 	var only := OS.get_environment("ITEMS")
 	if only != "":
@@ -61,6 +64,28 @@ func _run() -> void:
 			id, report.tris, report.inverted, report.inverted_sliver, report.degenerate, report.nan, report.open, report.nonmanifold,
 			report.sliver, "ok" if bad == 0 else "BAD"])
 	print("RESULT: ", "PASS" if total_bad == 0 else "FAIL", " (%d problems)" % total_bad)
+	quit()
+
+
+## FLORA=1: every plant, tree and rock mesh (full, far twin and harvested look). Plants are open shells and leaf
+## cards on purpose, so only inverted, degenerate and non-finite triangles count against them. Bushes, willows and
+## other puffed canopies point their normals away from the crown's middle for soft shading, so the lumps' inward
+## faces show as "inverted" by design; trees with tiers or blobs should show none. Not part of the suite.
+func _run_flora() -> void:
+	var flora = root.get_node("Game").flora
+	var verbose := OS.get_environment("VERBOSE") != ""
+	var only := OS.get_environment("KEYS")
+	var total_bad := 0
+	for key: String in flora.mesh_keys():
+		if only != "" and not key in only.split(","):
+			continue
+		var report := _check(flora.mesh(key), verbose, key)
+		var bad: int = report.inverted + report.degenerate + report.nan
+		total_bad += bad
+		if bad > 0 or verbose:
+			print("%-22s tris %6d  inverted %4d (slivers %4d)  degenerate %3d  nan %3d  %s" % [
+				key, report.tris, report.inverted, report.inverted_sliver, report.degenerate, report.nan, "ok" if bad == 0 else "BAD"])
+	print("RESULT: ", "PASS" if total_bad == 0 else "FAIL", " (%d problems in plant meshes)" % total_bad)
 	quit()
 
 

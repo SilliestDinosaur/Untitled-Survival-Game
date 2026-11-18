@@ -76,7 +76,7 @@ func _build() -> void:
 			print("MISSING ", keys[i])
 			continue
 		var mi := MeshInstance3D.new()
-		mi.mesh = game.flora.mesh(keys[i)]
+		mi.mesh = game.flora.mesh(keys[i])
 		mi.position = Vector3(i * 4.5 - (keys.size() - 1) * 2.25, 0.0, -9.0)
 		gal.add_child(mi)
 	var cam := Camera3D.new()

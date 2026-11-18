@@ -59,13 +59,20 @@ static func fall_tree(parent: Node, mesh: Mesh, xf: Transform3D, away: Vector3, 
 	away.y = 0.0
 	away = away.normalized() if away.length() > 0.01 else Vector3.FORWARD
 	var axis := Vector3.UP.cross(away).normalized()
+	# It comes to rest along the ground it falls onto: further than flat down a slope, short of flat up one
+	# (the crown props it a little off the ground, hence a few degrees short of the slope itself).
+	var height := mesh.get_aabb().size.y * xf.basis.get_scale().y
+	var reach := maxf(height * 0.6, 1.0)
+	var land := xf.origin + away * reach
+	var rise := Game.world_gen.get_height(land.x, land.z) - Game.world_gen.get_height(xf.origin.x, xf.origin.z)
+	var rest := clampf(deg_to_rad(84.0) - atan2(rise, reach), deg_to_rad(40.0), deg_to_rad(130.0))
 	var tw := pivot.create_tween()
-	tw.tween_method(func(a: float) -> void: pivot.basis = Basis(axis, a), 0.0, deg_to_rad(84.0), 1.5) \
+	tw.tween_method(func(a: float) -> void: pivot.basis = Basis(axis, a), 0.0, rest, 1.5) \
 		.set_trans(Tween.TRANS_QUAD).set_ease(Tween.EASE_IN)
 	tw.tween_callback(func() -> void:
-		var height := mesh.get_aabb().size.y * xf.basis.get_scale().y
-		chips(parent, xf.origin + away * height * 0.6 + Vector3.UP * 0.3, color, 18, 0.14, 4.0)
-		Audio.play_3d(Audio.sfx.tree_fall, xf.origin + away * height * 0.5, 2.0))
+		var hit := Vector3(land.x, Game.world_gen.get_height(land.x, land.z) + 0.3, land.z)
+		chips(parent, hit, color, 18, 0.14, 4.0)
+		Audio.play_3d(Audio.sfx.tree_fall, hit, 2.0))
 	tw.tween_interval(1.6)
 	tw.tween_property(mi, "scale", Vector3(1, 0.001, 1), 0.7).set_trans(Tween.TRANS_SINE)
 	tw.tween_callback(pivot.queue_free)

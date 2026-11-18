@@ -158,6 +158,15 @@ static func _collision_data(origin: Vector3, gen: WorldGen, cache: Dictionary) -
 
 # --- Trees, rocks, bushes ---------------------------------------------------
 
+## The lowest ground under a trunk of radius r at (x, z), so its downhill side sits on the ground instead of floating.
+static func _ground_under(gen: WorldGen, x: float, z: float, r: float) -> float:
+	var lowest := gen.get_height(x, z)
+	for k in 6:
+		var a := TAU * k / 6.0
+		lowest = minf(lowest, gen.get_height(x + cos(a) * r, z + sin(a) * r))
+	return lowest
+
+
 static func _pick_biome(weights: Dictionary, roll: float) -> int:
 	var acc := 0.0
 	for b: int in weights:
@@ -219,7 +228,7 @@ static func _place_resources(coord: Vector2i, origin: Vector3, gen: WorldGen, fl
 		# Conifers climb the high ground only in the cold and forested biomes.
 		var high_conifer := h > 46.0 and biome in [Biome.TAIGA, Biome.TUNDRA, Biome.FOREST]
 		var kind := "fir" if high_conifer else _pick_weighted(FloraLibrary.BIOME_TREES[biome], a.r_kind)
-		add.call(kind, a.variant, Vector3(a.x, h - 0.15, a.z), a.yaw, Vector3.ONE * a.scl)
+		add.call(kind, a.variant, Vector3(a.x, _ground_under(gen, a.x, a.z, 0.6 * a.scl) - 0.12, a.z), a.yaw, Vector3.ONE * a.scl)
 
 	# Palms along warm coasts (just above the beach).
 	for i in PALM_ATTEMPTS:
@@ -242,7 +251,7 @@ static func _place_resources(coord: Vector2i, origin: Vector3, gen: WorldGen, fl
 		if not near_sea:
 			counter[0] += 1
 			continue
-		add.call("palm", a.variant, Vector3(a.x, h - 0.1, a.z), a.yaw, Vector3.ONE * a.scl)
+		add.call("palm", a.variant, Vector3(a.x, _ground_under(gen, a.x, a.z, 0.4 * a.scl) - 0.1, a.z), a.yaw, Vector3.ONE * a.scl)
 
 	for i in ROCK_ATTEMPTS:
 		var a := _attempt(rng, origin, size)
@@ -297,8 +306,12 @@ static func _place_resources(coord: Vector2i, origin: Vector3, gen: WorldGen, fl
 		if kind == "boulder":
 			scl = Vector3.ONE * (a.scl * 1.3)
 			sink = 0.5
-		# Logs lie along the slope's flat direction; everything else just turns.
+		var before := out.size()
 		add.call(kind, a.variant, Vector3(a.x, h - sink, a.z), a.yaw, scl)
+		# A log lies on the ground: tipped to the slope under it, so neither end digs in or floats.
+		if kind == "log" and out.size() > before:
+			var xf: Transform3D = out[-1].transform
+			out[-1].transform = Transform3D(Basis(Quaternion(Vector3.UP, nrm)) * xf.basis, xf.origin)
 	return out
 
 

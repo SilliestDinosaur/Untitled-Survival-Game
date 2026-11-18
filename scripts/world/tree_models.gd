@@ -228,8 +228,10 @@ static func round_tree(kit: MeshKit, rng: RandomNumberGenerator, bark: Color, le
 ## Conifer: tiers of ragged rings stacked up a trunk, each with a drooping skirt of needles.
 static func conifer(kit: MeshKit, rng: RandomNumberGenerator, bark: Color, leaf: Color, tiers: int,
 		height: float, radius: float) -> void:
-	trunk(kit, rng, Vector3.ZERO, height * 0.5, radius * 0.5, bark, Vector3.ZERO, 6, 0.12)
 	var base_y := height * rng.randf_range(0.16, 0.24)
+	# The trunk stops just inside the lowest tier. Running it up through the crown let it poke out through the tiers
+	# near their narrow tops, as bark-coloured triangles on the needles.
+	trunk(kit, rng, Vector3.ZERO, base_y + radius * 0.35, radius * 0.5, bark, Vector3.ZERO, 6, 0.12)
 	for t in tiers:
 		var f := float(t) / maxf(tiers - 1, 1)
 		var r := lerpf(radius, radius * 0.32, f) * rng.randf_range(0.92, 1.08)
@@ -293,7 +295,10 @@ static func umbrella(kit: MeshKit, rng: RandomNumberGenerator, bark: Color, leaf
 		var b: Vector3 = ring[(i + 1) % sides]
 		_tri(kit, crown, b, a, Vector3.UP, Vector3.UP, Vector3.UP, leaf_top, leaf_top, leaf_top)
 		_tri(kit, canopy, a, b, Vector3.DOWN, Vector3.DOWN, Vector3.DOWN, leaf_low, leaf_low, leaf_low)
-		leaf(kit, rng, (a + b) * 0.5, Vector3.DOWN, 0.5, leaf_low)
+		# A ragged fringe round the rim: cards leaning out and down, in the canopy's colour (flat dark ones pointing
+		# straight down read as black specks from above).
+		var rim := (a + b) * 0.5
+		leaf(kit, rng, rim, (rim - canopy).normalized().lerp(Vector3.DOWN, 0.55).normalized(), 0.5, leaf)
 	# Puffs of leaves on the crown.
 	for i in 6:
 		var a := rng.randf() * TAU
