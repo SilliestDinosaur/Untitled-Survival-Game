@@ -24,14 +24,29 @@ func _ready() -> void:
 	_flame_mat.blend_mode = BaseMaterial3D.BLEND_MODE_ADD
 	_flame_mat.cull_mode = BaseMaterial3D.CULL_DISABLED
 	_flame_mesh = _build_flame()
+	# The first world was built before this node existed, so its models are built here too.
+	_prewarm()
 	Game.structures_changed.connect(_sync)
 	Game.world_changed.connect(func() -> void:
 		StructureModels.clear_cache()
+		_prewarm()
 		for id: String in _nodes.keys():
 			_free_node(id)
 		_nodes.clear()
 		_sync())
 	_sync()
+
+
+## Build the model of every placeable now, while the world loads. The first placement of a kind otherwise stalled
+## the game for 150-900 ms while its model was built.
+func _prewarm() -> void:
+	var seen := {}
+	for id: String in ItemDB.all_ids():
+		var info: Dictionary = ItemDB.info(id)
+		var kind: String = info.get("station", "")
+		if info.get("kind", "") == "placeable" and kind != "" and not seen.has(kind):
+			seen[kind] = true
+			StructureModels.get_model(kind, _mat, _glow_mat)
 
 
 ## Flame tongues: three lofted teardrops, yellow core fading to red tips.
