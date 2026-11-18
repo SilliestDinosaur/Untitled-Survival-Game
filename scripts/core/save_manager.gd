@@ -42,8 +42,20 @@ static func list_saves() -> Array[Dictionary]:
 	return out
 
 
+## A world's save. If the file is missing or unreadable (a crash, a full disk), the copy kept from the save before
+## it is used, then a save that was written but never swapped in, so a bad write loses minutes, not the world.
 static func read(id: String) -> Dictionary:
-	var f := FileAccess.open(_path(id), FileAccess.READ)
+	for path: String in [_path(id), _path(id) + ".bak", _path(id) + ".tmp"]:
+		var data := _read_file(path)
+		if not data.is_empty():
+			return data
+	return {}
+
+
+static func _read_file(path: String) -> Dictionary:
+	if not FileAccess.file_exists(path):
+		return {}
+	var f := FileAccess.open(path, FileAccess.READ)
 	if not f:
 		return {}
 	var parsed: Variant = JSON.parse_string(f.get_as_text())
@@ -61,7 +73,17 @@ static func write(id: String, data: Dictionary) -> bool:
 		return false
 	f.store_string(JSON.stringify(data, "\t"))
 	f.close()
-	DirAccess.rename_absolute(tmp, _path(id))
+	var path := _path(id)
+	if FileAccess.file_exists(path):
+		DirAccess.copy_absolute(path, path + ".bak")   # the last good save, in case this one is ever unreadable
+	var err := DirAccess.rename_absolute(tmp, path)
+	if err != OK and FileAccess.file_exists(path):
+		# Some systems won't rename over an existing file: clear it (the copy above keeps it) and try again.
+		DirAccess.remove_absolute(path)
+		err = DirAccess.rename_absolute(tmp, path)
+	if err != OK:
+		push_error("Could not save world %s (error %d)" % [id, err])
+		return false
 	return true
 
 
@@ -81,7 +103,9 @@ static func create(seed_value: int, display_name: String) -> String:
 
 
 static func delete(id: String) -> void:
-	DirAccess.remove_absolute(_path(id))
+	for path: String in [_path(id), _path(id) + ".bak", _path(id) + ".tmp"]:
+		if FileAccess.file_exists(path):
+			DirAccess.remove_absolute(path)
 
 
 static func rename(id: String, new_name: String) -> void:

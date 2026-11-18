@@ -381,7 +381,7 @@ func _resume() -> void:
 
 
 func _unhandled_input(event: InputEvent) -> void:
-	if event.is_action_pressed("debug_items") and state == State.PLAYING:
+	if event.is_action_pressed("debug_items") and state == State.PLAYING and Settings.developer_mode():
 		_debug_items.visible = not _debug_items.visible
 		Input.mouse_mode = Input.MOUSE_MODE_VISIBLE if _debug_items.visible else Input.MOUSE_MODE_CAPTURED
 		get_viewport().set_input_as_handled()

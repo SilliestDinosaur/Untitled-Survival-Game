@@ -86,6 +86,11 @@ func _ready() -> void:
 	apply()
 
 
+## Developer tools (the F9 item menu) only run from the editor or a debug build, never in a released game.
+func developer_mode() -> bool:
+	return OS.is_debug_build()
+
+
 func view_radius() -> int:
 	return VIEW_DISTANCES.get(view_distance, 6)
 

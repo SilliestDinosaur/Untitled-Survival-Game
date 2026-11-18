@@ -427,6 +427,8 @@ class SettingsPanel extends Control:
 
 		var controls := _tab(tabs, "Controls", true)
 		for entry: Array in Settings.ACTIONS:
+			if entry[0] == "debug_items" and not Settings.developer_mode():
+				continue   # a developer tool: not listed in a released game
 			controls.add_child(UITheme.label(entry[1], 17))
 			var b := UITheme.button("", false, 200)
 			b.custom_minimum_size = Vector2(200, 40)

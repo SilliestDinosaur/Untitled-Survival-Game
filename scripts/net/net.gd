@@ -515,6 +515,9 @@ func run_action(pid: int, peer: int, action: String, a: Dictionary) -> Dictionar
 			inv.changed.emit()
 			return {"ok": true}
 		"debug_add":
+			# The F9 item menu is a developer tool: a released build's host refuses it, whoever asks.
+			if not Settings.developer_mode():
+				return {"got": 0}
 			return {"got": inv.add(String(a.item), int(a.count))}
 	return {"ok": false}
 
