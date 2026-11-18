@@ -121,7 +121,7 @@ static func _head_thickness(edge: PackedVector2Array, body: float, falloff: floa
 
 ## A handle from y = -0.1 (butt) to `length`: oval section, swelling knob at the butt, a gentle
 ## curve (`curve` > 0 bows it forward like an axe haft), wood grain, and per-tier grip work.
-static func _handle(k: MeshKit, length: float, tier: int, radius := 0.016, curve := 0.0) -> void:
+static func _handle(k: MeshKit, length: float, tier: int, radius := 0.016, curve := 0.0, square := false) -> void:
 	var rng := RandomNumberGenerator.new()
 	rng.seed = tier * 31 + int(length * 1000)
 	var path: Array = []
@@ -147,7 +147,13 @@ static func _handle(k: MeshKit, length: float, tier: int, radius := 0.016, curve
 		if t < 0.03:
 			c = wood.lightened(0.12)   # end grain at the butt
 		return c
-	k.loft(path, radii, 14, wood, col_fn, func(_t: float, _a: float) -> Vector2: return Vector2(1.0, 0.82), true, true, 0.0018 if tier == 1 else 0.0)
+	if square:
+		# A square section (corners at 45 degrees), so the shaft reads as a squared plank.
+		k.loft(path, radii, 8, wood, col_fn, func(_t: float, a: float) -> Vector2:
+			var sq := 1.0 / maxf(absf(cos(a)), absf(sin(a)))
+			return Vector2(sq, sq * 0.9), true, true, 0.0018 if tier == 1 else 0.0)
+	else:
+		k.loft(path, radii, 14, wood, col_fn, func(_t: float, _a: float) -> Vector2: return Vector2(1.0, 0.82), true, true, 0.0018 if tier == 1 else 0.0)
 	if tier == 1:
 		# Knots where twigs were trimmed off.
 		for i in 3:   # one knot per third of the haft, turned round the haft, so they never overlap
@@ -234,14 +240,15 @@ static func _hatchet(k: MeshKit, tier: int, col: Color) -> void:
 	var top := 0.34
 	var m := _metal(tier, col)
 	var hr := 0.016
-	_handle(k, top + 0.045, tier, hr, 0.012 if tier > 1 else 0.0)
+	_handle(k, top + 0.045, tier, hr * 1.25, 0.008 if tier > 1 else 0.0)
 	# An axe blade: a thick poll behind the eye, a convex face that thins to a honed bit.
 	# The eye (where the haft goes through) is the thick middle of the head.
 	# Squared poll, a straight top edge rising to the toe, and a convex bit sweeping down to the lower corner.
-	var outline := PackedVector2Array([Vector2(-0.09, 0.028), Vector2(-0.098, 0.006), Vector2(-0.098, -0.014), Vector2(-0.088, -0.03),
-		Vector2(-0.04, -0.032), Vector2(0.0, -0.034), Vector2(0.05, -0.044), Vector2(0.1, -0.06), Vector2(0.14, -0.068),
-		Vector2(0.172, -0.042), Vector2(0.182, -0.004), Vector2(0.17, 0.034), Vector2(0.136, 0.054),
-		Vector2(0.08, 0.044), Vector2(0.0, 0.036), Vector2(-0.05, 0.036)])
+	# A chunky block of a head: a squared poll behind the eye, a flat top, and a blade that flares out and down
+	# to a straight-edged bit (the Muck look: blocky, not curved).
+	var outline := PackedVector2Array([Vector2(-0.085, 0.040), Vector2(-0.100, 0.030), Vector2(-0.100, -0.030),
+		Vector2(-0.060, -0.040), Vector2(0.020, -0.046), Vector2(0.110, -0.062), Vector2(0.158, -0.050),
+		Vector2(0.168, 0.010), Vector2(0.140, 0.052), Vector2(0.050, 0.046), Vector2(-0.030, 0.046)])
 	var size := 1.0 + 0.04 * tier
 	for i in outline.size():
 		outline[i] *= size
@@ -250,7 +257,7 @@ static func _hatchet(k: MeshKit, tier: int, col: Color) -> void:
 	var ridge := PackedVector2Array(outline)
 	ridge.append(outline[0])
 	var xf := Transform3D(FORWARD_PLANE, Vector3(0, top, 0))
-	k.sculpt(outline, xf, _head_thickness(ridge, 0.022 + 0.002 * tier, 0.014, 0.034, 0.022, 0.001),
+	k.sculpt(outline, xf, _head_thickness(ridge, 0.027 + 0.002 * tier, 0.014, 0.034, 0.022, 0.001),
 		_head_color(tier, m, ridge, 0.014), 3, 0.005)
 	# The haft's end: a wedge driven into the top of it, standing proud of the head.
 	var wedge := BoxMesh.new()
@@ -273,10 +280,12 @@ static func _pickaxe(k: MeshKit, tier: int, col: Color) -> void:
 	var top := 0.35
 	var m := _metal(tier, col)
 	var hr := 0.017
-	_handle(k, top + 0.04, tier, hr)
+	_handle(k, top + 0.04, tier, hr * 1.2, 0.0, true)
 	if tier == 1:
 		# A long flint point lashed across the top of the handle.
 		var outline := _knap(PackedVector2Array([Vector2(-0.045, 0.0), Vector2(-0.02, -0.04), Vector2(0.06, -0.038), Vector2(0.17, 0.0), Vector2(0.06, 0.04), Vector2(-0.02, 0.04)]), 41, 0.004)
+		for i in outline.size():   # broad, like the metal heads
+			outline[i] = Vector2(outline[i].x, outline[i].y * 1.8)
 		var ridge := PackedVector2Array(outline)
 		ridge.append(outline[0])
 		k.sculpt(outline, Transform3D(FORWARD_PLANE, Vector3(0, top, 0)), _head_thickness(ridge, 0.03, 0.02, 0.0, 0.0, 0.003), _head_color(1, m, ridge, 0.02), 3, 0.006)
@@ -293,14 +302,14 @@ static func _pickaxe(k: MeshKit, tier: int, col: Color) -> void:
 	if tier == 3:
 		bar[0] = Vector2(-back, -0.02)
 		bar.append(Vector2(-back, -0.055))
-	# A wider blade: the head stands taller across the handle than the first cut's did.
+	# A broad, curved head: it stands tall across the handle, like the Muck pick.
 	for i in bar.size():
-		bar[i] = Vector2(bar[i].x, bar[i].y * 1.7)
+		bar[i] = Vector2(bar[i].x, bar[i].y * 2.6)
 	var ridge := PackedVector2Array(bar)
 	ridge.append(bar[0])
 	if tier == 4:
 		k.flat_shading = true
-	k.sculpt(bar, Transform3D(FORWARD_PLANE, Vector3(0, top, 0)), _head_thickness(ridge, 0.016 + 0.002 * tier, 0.012, 0.03, 0.02, 0.001),
+	k.sculpt(bar, Transform3D(FORWARD_PLANE, Vector3(0, top, 0)), _head_thickness(ridge, 0.024 + 0.002 * tier, 0.012, 0.03, 0.02, 0.001),
 		_head_color(tier, m, ridge, 0.012), 3, 0.005)
 	k.flat_shading = false
 	# The eye: a metal sleeve where the haft goes through the head, and a cord binding above it.
