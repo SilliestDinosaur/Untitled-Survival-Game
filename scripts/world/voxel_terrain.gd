@@ -200,12 +200,13 @@ static func build(gen: WorldGen, origin: Vector3, size: float, step: float, segs
 				normals.append(nrm)
 				colors.append(col.srgb_to_linear())
 
-	# Faces: every grid edge that crosses the surface makes a quad from the four cells around it.
-	# An edge belongs to the chunk whose sample grid it starts in (i and k inside 1..res).
+	# Faces: every grid edge that crosses the surface makes a quad from the four cells around it. Faces are made a
+	# cell past each edge of the chunk, and then clipped to the chunk's square (see _clip_to_chunk), so the surface
+	# reaches the chunk border exactly where the neighbour's does.
 	var indices := PackedInt32Array()
 	var faces := PackedVector3Array()
-	for k in range(PAD, PAD + res):
-		for i in range(PAD, PAD + res):
+	for k in range(PAD - 1, PAD + res + 1):
+		for i in range(PAD - 1, PAD + res + 1):
 			for j in ny - 1:
 				var s0 := d[(k * ny + j) * nx + i] > 0.0
 				# x edge: (i,j,k) -> (i+1,j,k); cells around it differ in y and z.
@@ -223,7 +224,73 @@ static func build(gen: WorldGen, origin: Vector3, size: float, step: float, segs
 					_quad(indices, faces, verts, normals, cell_vert, [
 						k * ncy * ncx + (j - 1) * ncx + (i - 1), k * ncy * ncx + (j - 1) * ncx + i,
 						k * ncy * ncx + j * ncx + i, k * ncy * ncx + j * ncx + (i - 1)])
-	return {"verts": verts, "normals": normals, "colors": colors, "indices": indices, "faces": faces}
+	return _clip_to_chunk(verts, normals, colors, indices, size)
+
+
+## Keeps only the part of the surface inside the chunk's square (x and z from 0 to size). Each chunk makes faces a
+## little past its edges and keeps its own side of them, so neighbours meet exactly along the border: no strip of
+## ground is left out, and nothing is drawn twice.
+static func _clip_to_chunk(verts: PackedVector3Array, normals: PackedVector3Array, colors: PackedColorArray,
+		indices: PackedInt32Array, size: float) -> Dictionary:
+	var out_v := PackedVector3Array()
+	var out_n := PackedVector3Array()
+	var out_c := PackedColorArray()
+	var out_i := PackedInt32Array()
+	var faces := PackedVector3Array()
+	for t in range(0, indices.size(), 3):
+		var tri: Array = []
+		var inside := true
+		for c in 3:
+			var vi: int = indices[t + c]
+			var p: Vector3 = verts[vi]
+			if p.x < 0.0 or p.x > size or p.z < 0.0 or p.z > size:
+				inside = false
+			tri.append([p, normals[vi], colors[vi]])
+		var poly: Array = tri if inside else _clip_polygon(tri, size)
+		for q in range(1, poly.size() - 1):
+			for corner: Array in [poly[0], poly[q], poly[q + 1]]:
+				var p: Vector3 = corner[0]
+				out_i.append(out_v.size())
+				out_v.append(p)
+				out_n.append(corner[1])
+				out_c.append(corner[2])
+				faces.append(p)
+	return {"verts": out_v, "normals": out_n, "colors": out_c, "indices": out_i, "faces": faces}
+
+
+## Sutherland-Hodgman against the four sides of the square; each point is [position, normal, colour].
+static func _clip_polygon(poly: Array, size: float) -> Array:
+	for plane in 4:
+		var out: Array = []
+		for i in poly.size():
+			var a: Array = poly[i]
+			var b: Array = poly[(i + 1) % poly.size()]
+			var da := _side(a[0], plane, size)
+			var db := _side(b[0], plane, size)
+			if da >= 0.0:
+				out.append(a)
+			if (da >= 0.0) != (db >= 0.0):
+				var t := da / (da - db)
+				var pa: Vector3 = a[0]
+				var na: Vector3 = a[1]
+				var ca: Color = a[2]
+				out.append([pa.lerp(b[0], t), na.lerp(b[1], t).normalized(), ca.lerp(b[2], t)])
+		poly = out
+		if poly.size() < 3:
+			return []
+	return poly
+
+
+## How far inside side `plane` a point is (0 = left, 1 = right, 2 = near, 3 = far); negative is outside.
+static func _side(p: Vector3, plane: int, size: float) -> float:
+	match plane:
+		0:
+			return p.x
+		1:
+			return size - p.x
+		2:
+			return p.z
+	return size - p.z
 
 
 ## Rows (from, to) of a sample column where a cell can cross the surface: one below its first air sample
