@@ -31,7 +31,7 @@ func _process(_d: float) -> bool:
 				_main.create_world("Stairs Test", 4242)
 			if _main.state == _main.State.PLAYING:
 				var spot := _find_clear_cell()
-				var inv: Inventory = _game.inventory_of(1)
+				var inv = _game.inventory_of(1)
 				inv.add("brick_floor", 1, true)
 				inv.add("stone_stairs", 1, true)
 				var fsnap: Dictionary = _GA.snap_piece("brick_floor", spot)
@@ -81,7 +81,7 @@ func _find_clear_cell() -> Vector3:
 	return spot
 
 
-func _slot_of(inv: Inventory, id: String) -> int:
+func _slot_of(inv, id: String) -> int:
 	for i in inv.slots.size():
 		if inv.slots[i].get("id", "") == id:
 			return i

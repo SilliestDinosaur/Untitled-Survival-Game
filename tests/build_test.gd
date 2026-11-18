@@ -54,7 +54,7 @@ func _process(_d: float) -> bool:
 			_check(absf(snap.pos.y - snappedf(_game.world_gen.get_height(_spot.x, _spot.z), 0.5)) < 0.01, "a lone foundation sits at the ground height rounded to half a metre (%.2f)" % snap.pos.y)
 			var problem: String = _GA.placement_problem(snap.pos, "foundation", 0.0)
 			_check(problem == "", "foundation is allowed here (%s)" % problem)
-			var inv: Inventory = _game.inventory_of(1)
+			var inv = _game.inventory_of(1)
 			var slot := _slot_of(inv, "foundation")
 			var placed: Dictionary = _GA.place_structure(1, slot, snap.pos, 0.0)
 			_check(placed.ok, "foundation placed")
@@ -145,7 +145,7 @@ func _process(_d: float) -> bool:
 	return false
 
 
-func _slot_of(inv: Inventory, id: String) -> int:
+func _slot_of(inv, id: String) -> int:
 	for i in inv.slots.size():
 		if inv.slots[i].get("id", "") == id:
 			return i
