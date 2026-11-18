@@ -141,7 +141,7 @@ const VIS_RANGE := {"tree": 0.0, "bush": 150.0, "rock": 260.0, "clutter": 110.0,
 ## Collider height offsets per shape.
 const SHAPE_LIFT := {"tree": 2.0, "rock": 0.25, "bush": 0.6, "log": 0.35, "stump": 0.35, "small": 0.2}
 
-var meshes := {}         # "pine_0" -> ArrayMesh, "pine_0_lod" -> simpler ArrayMesh
+var meshes := {}         # built so far: "pine_0" -> ArrayMesh, "pine_0_lod" -> simpler ArrayMesh (see mesh())
 var variants := {}       # "pine" -> ["pine_0", "pine_1", ...]
 var species_names := {}  # "pine" -> "Ember Spire"
 var shapes := {}         # shape name -> Shape3D
@@ -152,6 +152,8 @@ var rock_material: ShaderMaterial
 var terrain_material: ShaderMaterial
 
 var _pal: WorldPalette
+var _specs := {}          # mesh key -> {kind, index, seed, bare, detail}: what mesh() builds
+var _base_detail := 1.0
 var _bare := false   ## building the "already harvested" look
 
 ## Kinds that look different after being hand-harvested (the fruiting tree is added per world).
@@ -164,7 +166,9 @@ func _init(seed_value: int, pal: WorldPalette) -> void:
 	_build_shapes()
 	var rng := RandomNumberGenerator.new()
 	rng.seed = seed_value * 31 + 5
-	var base_detail := MeshKit.detail
+	_base_detail = MeshKit.detail
+	# Only the specs are made here; each mesh is built the first time something asks for it (see mesh()), so a
+	# world doesn't pay for every flora mesh up front. The seeds are drawn in the same order as always.
 	for kind: String in KINDS:
 		var root: String = kind.trim_prefix("autumn_").trim_prefix("dead_")
 		species_names[kind] = NameGen.species_name(rng, root)
@@ -172,18 +176,37 @@ func _init(seed_value: int, pal: WorldPalette) -> void:
 		for i in KINDS[kind].variants:
 			var key := "%s_%d" % [kind, i]
 			var variant_seed := rng.randi()
-			meshes[key] = _build_mesh(kind, i, variant_seed)
+			_specs[key] = {"kind": kind, "index": i, "seed": variant_seed, "bare": false, "detail": _base_detail}
 			# Harvested look (same shape, same seed): bare bushes, fruitless trees, cut reeds.
 			if kind in BARE_KINDS or kind == ItemDB.fruit_tree:
-				_bare = true
-				meshes[key + "_bare"] = _build_mesh(kind, i, variant_seed)
-				_bare = false
+				_specs[key + "_bare"] = {"kind": kind, "index": i, "seed": variant_seed, "bare": true, "detail": _base_detail}
 			# Far-away twin: same shape (same seed), far fewer polygons.
 			if KINDS[kind].category == "tree":
-				MeshKit.detail = base_detail * 0.45
-				meshes[key + "_lod"] = _build_mesh(kind, i, variant_seed)
-				MeshKit.detail = base_detail
+				_specs[key + "_lod"] = {"kind": kind, "index": i, "seed": variant_seed, "bare": false, "detail": _base_detail * 0.45}
 			variants[kind].append(key)
+
+
+## The mesh for a key ("pine_0", "pine_0_bare", "pine_0_lod"), built the first time it's asked for.
+func mesh(key: String) -> ArrayMesh:
+	if not meshes.has(key):
+		var spec: Dictionary = _specs[key]
+		var kept_detail := MeshKit.detail
+		var kept_bare := _bare
+		MeshKit.detail = spec.detail
+		_bare = spec.bare
+		meshes[key] = _build_mesh(spec.kind, spec.index, spec.seed)
+		MeshKit.detail = kept_detail
+		_bare = kept_bare
+	return meshes[key]
+
+
+## Whether a mesh key exists (it may not be built yet).
+func has_mesh(key: String) -> bool:
+	return _specs.has(key)
+
+
+func mesh_keys() -> Array:
+	return _specs.keys()
 
 
 static func category_of(kind: String) -> String:

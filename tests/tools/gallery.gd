@@ -41,7 +41,7 @@ func _process(_d: float) -> bool:
 func _build() -> void:
 	var game = root.get_node("Game")
 	if OS.get_environment("KEYS_ONLY") != "":
-		var names: Array = game.flora.meshes.keys()
+		var names: Array = game.flora.mesh_keys()
 		names.sort()
 		print("FLORA KEYS ", names)
 		quit()
@@ -72,11 +72,11 @@ func _build() -> void:
 		gal.add_child(mi)
 	var keys := OS.get_environment("KEYS").split(",") if OS.get_environment("KEYS") != "" else PackedStringArray(["willow_0", "palm_0", "ore_t2_0", "ore_t3_0", "gem_t4_0"])
 	for i in keys.size():
-		if not game.flora.meshes.has(keys[i]):
+		if not game.flora.has_mesh(keys[i]):
 			print("MISSING ", keys[i])
 			continue
 		var mi := MeshInstance3D.new()
-		mi.mesh = game.flora.meshes[keys[i]]
+		mi.mesh = game.flora.mesh(keys[i)]
 		mi.position = Vector3(i * 4.5 - (keys.size() - 1) * 2.25, 0.0, -9.0)
 		gal.add_child(mi)
 	var cam := Camera3D.new()

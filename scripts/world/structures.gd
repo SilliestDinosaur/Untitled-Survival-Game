@@ -28,7 +28,7 @@ func _ready() -> void:
 	Game.world_changed.connect(func() -> void:
 		StructureModels.clear_cache()
 		for id: String in _nodes.keys():
-			_nodes[id].queue_free()
+			_free_node(id)
 		_nodes.clear()
 		_sync())
 	_sync()
@@ -55,13 +55,18 @@ func _build_flame() -> ArrayMesh:
 func _sync() -> void:
 	for id: String in _nodes.keys():
 		if not Game.structures.has(id):
-			_nodes[id].queue_free()
-			_nodes.erase(id)
+			_free_node(id)
 	for id: String in Game.structures:
-		if not _nodes.has(id):
+		if not _nodes.has(id) or not is_instance_valid(_nodes[id]):
 			_nodes[id] = _make(Game.structures[id])
 		else:
 			_apply_door(_nodes[id], Game.structures[id])
+
+
+func _free_node(id: String) -> void:
+	if is_instance_valid(_nodes[id]):
+		_nodes[id].queue_free()
+	_nodes.erase(id)
 
 
 func _make(st: Dictionary) -> Node3D:
@@ -109,12 +114,13 @@ func _make(st: Dictionary) -> Node3D:
 		cs.position.y = shape.height * 0.5
 		body.add_child(cs)
 	root.add_child(body)
-	if model.door != null:
+	if model.get("door") != null:
+		var door_mesh: Mesh = model.door
 		# The door panel swings on a pivot at its hinge; its collision follows the same swing.
 		var pivot := Node3D.new()
 		pivot.position = Vector3(-StructureModels.DOOR_W, 0.0, 0.0)
 		var door_mi := MeshInstance3D.new()
-		door_mi.mesh = model.door
+		door_mi.mesh = door_mesh
 		pivot.add_child(door_mi)
 		root.add_child(pivot)
 		root.set_meta("pivot", pivot)
@@ -186,6 +192,8 @@ func _process(_delta: float) -> void:
 	var night := 1.0 - Game.daylight()
 	for id: String in _nodes:
 		var n: Node3D = _nodes[id]
+		if not is_instance_valid(n) or not n.has_meta("phase"):
+			continue
 		var ph: float = n.get_meta("phase")
 		var flicker := 0.8 + 0.12 * sin(t * 11.0 + ph) + 0.08 * sin(t * 23.0 + ph * 2.0)
 		var light := n.get_node_or_null("Light") as OmniLight3D

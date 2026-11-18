@@ -42,7 +42,7 @@ func apply(c: Vector2i, t: int, data: Dictionary, flora: FloraLibrary) -> void:
 	# Plants that were hand-harvested recently show their bare look.
 	for k in resources.size():
 		var r := resources[k]
-		if flora.meshes.has(String(r.key) + "_bare") and Game.is_harvested(r.id) and r.has("mm_index"):
+		if flora.has_mesh(String(r.key) + "_bare") and Game.is_harvested(r.id) and r.has("mm_index"):
 			set_bare(k, true)
 
 
@@ -106,7 +106,7 @@ func _build_multimeshes(buffers: Dictionary, flora: FloraLibrary) -> void:
 		var mm := MultiMesh.new()
 		mm.transform_format = MultiMesh.TRANSFORM_3D
 		mm.use_colors = true
-		mm.mesh = flora.meshes[key]
+		mm.mesh = flora.mesh(key)
 		mm.instance_count = buf.size() / 16
 		mm.buffer = buf
 		var mmi := MultiMeshInstance3D.new()
@@ -204,13 +204,13 @@ func remove_resource(index: int) -> void:
 func set_bare(index: int, on: bool) -> void:
 	var r := resources[index]
 	var key := String(r.key) + "_bare"
-	if on == _bare.has(index) or not Game.flora.meshes.has(key) or r.get("removed", false):
+	if on == _bare.has(index) or not Game.flora.has_mesh(key) or r.get("removed", false):
 		return
 	var xf: Transform3D = r.transform
 	xf.origin -= position
 	if on:
 		var mi := MeshInstance3D.new()
-		mi.mesh = Game.flora.meshes[key]
+		mi.mesh = Game.flora.mesh(key)
 		mi.transform = xf
 		add_child(mi)
 		_bare[index] = mi
@@ -275,5 +275,5 @@ func _set_instance(index: int, xf: Transform3D) -> void:
 ## Point every MultiMesh at freshly generated meshes (after the model detail setting changes).
 func swap_meshes(flora: FloraLibrary) -> void:
 	for key: String in _mmis:
-		if flora.meshes.has(key):
-			_mmis[key].multimesh.mesh = flora.meshes[key]
+		if flora.has_mesh(key):
+			_mmis[key].multimesh.mesh = flora.mesh(key)

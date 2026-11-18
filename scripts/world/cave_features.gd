@@ -49,10 +49,10 @@ func _build_glowcaps(glow: Array, rng: RandomNumberGenerator) -> void:
 	var k := 0
 	for g: Vector3 in glow:
 		var key: String = kinds[rng.randi() % kinds.size()]
-		if not Game.flora.meshes.has(key):
+		if not Game.flora.has_mesh(key):
 			continue
 		var mi := MeshInstance3D.new()
-		mi.mesh = Game.flora.meshes[key]
+		mi.mesh = Game.flora.mesh(key)
 		mi.position = g
 		mi.rotation.y = rng.randf() * TAU
 		mi.scale = Vector3.ONE * rng.randf_range(0.8, 1.3)
