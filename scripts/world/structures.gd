@@ -98,15 +98,16 @@ func _make(st: Dictionary) -> Node3D:
 	var cs := CollisionShape3D.new()
 	if GameActions.is_building(st.kind):
 		var box := BoxShape3D.new()
-		if st.kind == "foundation":
+		if st.kind in GameActions.FLOOR_KINDS:
 			box.size = Vector3(3.0, 0.5, 3.0)
-		elif st.kind == "roof":
+		elif st.kind in GameActions.COVER_KINDS:
 			box.size = Vector3(3.0, 0.3, 3.0)
 		else:
 			box.size = Vector3(3.0, 3.0, 0.3)
 		cs.shape = box
-		cs.position.y = 0.0 if st.kind in ["foundation", "roof"] else 1.5
-		if st.kind == "doorway":   # two posts and a lintel: walkable through the opening
+		var flat: bool = st.kind in GameActions.FLOOR_KINDS or st.kind in GameActions.COVER_KINDS
+		cs.position.y = 0.0 if flat else 1.5
+		if st.kind in ["doorway", "wood_doorway"]:   # two posts and a lintel: walkable through the opening
 			var parts := [[Vector3(-1.1, 1.5, 0), Vector3(0.8, 3.0, 0.3)], [Vector3(1.1, 1.5, 0), Vector3(0.8, 3.0, 0.3)], [Vector3(0, 2.65, 0), Vector3(1.4, 0.7, 0.3)]]
 			for pt: Array in parts:
 				var extra := CollisionShape3D.new()

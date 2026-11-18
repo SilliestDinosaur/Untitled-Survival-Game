@@ -131,7 +131,7 @@ func _draw() -> void:
 	# Bases: foundations and the like, where you built them.
 	for id: String in Game.structures:
 		var st: Dictionary = Game.structures[id]
-		if st.kind != "foundation":
+		if not st.kind in GameActions.FLOOR_KINDS:
 			continue
 		var pos: Array = st.pos
 		var at := _to_map(Vector3(pos[0], 0, pos[2]), origin, side)

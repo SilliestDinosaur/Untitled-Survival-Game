@@ -474,7 +474,7 @@ func run_action(pid: int, peer: int, action: String, a: Dictionary) -> Dictionar
 			if placed.get("ok", false):
 				var kind: String = placed.get("kind", "")
 				var cells: Array = []
-				if kind == "foundation":
+				if kind in GameActions.FLOOR_KINDS:
 					# The slab sits at the height the host worked out (shared with its neighbours),
 					# and the ground under it is levelled to that height.
 					cells = TerrainEdit.level_ground(placed.pos, 1.5, 1.5, 0.0, placed.pos.y)

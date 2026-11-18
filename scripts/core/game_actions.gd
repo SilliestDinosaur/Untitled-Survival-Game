@@ -222,8 +222,12 @@ const WALL_LIFT := 0.25      ## walls stand on the top of a level's slab
 const WALL_H := 3.0
 const ROOF_T := 0.3
 const MAX_LEVEL := 3
-const BUILD_KINDS := ["foundation", "wall", "wood_wall", "doorway", "roof"]
-const WALL_KINDS := ["wall", "wood_wall", "doorway"]
+## Kinds, by what they do. A floor (foundation or plank floor) is the slab a level stands on; walls
+## stand on a floor's edges; a cover (roof or plank ceiling) closes a cell's top.
+const FLOOR_KINDS := ["foundation", "wood_floor"]
+const WALL_KINDS := ["wall", "wood_wall", "window_wall", "doorway", "wood_doorway"]
+const COVER_KINDS := ["roof", "ceiling"]
+const BUILD_KINDS := ["foundation", "wood_floor", "wall", "wood_wall", "window_wall", "doorway", "wood_doorway", "roof", "ceiling"]
 
 
 static func is_building(kind: String) -> bool:
@@ -243,7 +247,7 @@ static func foundations_in(cell: Vector2i) -> Array:
 	var out := []
 	for id: String in Game.structures:
 		var st: Dictionary = Game.structures[id]
-		if st.kind == "foundation" and cell_of(_pos(st)) == cell:
+		if st.kind in FLOOR_KINDS and cell_of(_pos(st)) == cell:
 			out.append(st)
 	out.sort_custom(func(a: Dictionary, b: Dictionary) -> bool: return int(a.level) < int(b.level))
 	return out
@@ -257,10 +261,11 @@ static func foundation_at(cell: Vector2i, level := 0) -> Dictionary:
 	return {}
 
 
-static func roof_in(cell: Vector2i, level: int) -> Dictionary:
+## The roof or ceiling covering a cell's level, or {}.
+static func cover_in(cell: Vector2i, level: int) -> Dictionary:
 	for id: String in Game.structures:
 		var st: Dictionary = Game.structures[id]
-		if st.kind == "roof" and int(st.get("level", 0)) == level and cell_of(_pos(st)) == cell:
+		if st.kind in COVER_KINDS and int(st.get("level", 0)) == level and cell_of(_pos(st)) == cell:
 			return st
 	return {}
 
@@ -297,7 +302,7 @@ static func level_of(kind: String, y: float, base: float) -> int:
 	var lift := 0.0
 	if kind in WALL_KINDS:
 		lift = WALL_LIFT
-	elif kind == "roof":
+	elif kind in COVER_KINDS:
 		lift = WALL_LIFT + WALL_H + ROOF_T * 0.5
 	return roundi((y - base - lift) / STACK_H)
 
@@ -330,7 +335,7 @@ static func ground_slab_y(cell: Vector2i) -> float:
 static func snap_piece(kind: String, aim: Vector3, prefer_yaw := -1.0) -> Dictionary:
 	var cell := cell_of(aim)
 	var c := _cell_center(cell)
-	if kind == "foundation":
+	if kind in FLOOR_KINDS:
 		var stack := foundations_in(cell)
 		var level := 0
 		var y := ground_slab_y(cell)
@@ -338,7 +343,7 @@ static func snap_piece(kind: String, aim: Vector3, prefer_yaw := -1.0) -> Dictio
 			level = int(stack[-1].level) + 1
 			y = _pos(stack[-1]).y + STACK_H
 		return {"pos": Vector3(c.x, y, c.z), "yaw": 0.0, "level": level}
-	if kind == "roof":
+	if kind in COVER_KINDS:
 		var base := base_y(cell)
 		var level := clampi(floori((aim.y - base) / STACK_H), 0, MAX_LEVEL)
 		var y := base + level * STACK_H + WALL_LIFT + WALL_H + ROOF_T * 0.5
@@ -379,14 +384,14 @@ static func placement_problem(pos: Vector3, kind := "", yaw := 0.0) -> String:
 	if pos.y < Game.SEA_LEVEL + 0.15:
 		return "Can't build in water"
 	if is_building(kind):
-		if kind == "foundation":
+		if kind in FLOOR_KINDS:
 			var sn := snap_piece(kind, pos)
 			pos = sn.pos
 			var cell_f := cell_of(pos)
 			var lvl_f: int = sn.level
 			if lvl_f > MAX_LEVEL:
 				return "Too high to build"
-			if lvl_f > 0 and not roof_in(cell_f, lvl_f - 1).is_empty():
+			if lvl_f > 0 and not cover_in(cell_f, lvl_f - 1).is_empty():
 				return "A roof covers this spot"
 			if lvl_f == 0 and Game.world_gen.get_normal(pos.x, pos.z).y < 0.6:
 				return "Too steep here (the ground would need too much levelling)"
@@ -398,13 +403,15 @@ static func placement_problem(pos: Vector3, kind := "", yaw := 0.0) -> String:
 			return "A tree is in the way. Chop it down first."
 		var base := wall_base(pos, yaw) if kind in WALL_KINDS else base_y(cell)
 		var level := level_of(kind, pos.y, base)
-		if kind == "roof":
+		if kind in COVER_KINDS:
 			if foundation_at(cell, level).is_empty():
 				return "A roof needs a foundation under it"
-			if not roof_in(cell, level).is_empty():
+			if not cover_in(cell, level).is_empty():
 				return "There's already a roof here"
-			if walls_around(cell, level) < 2:
+			if kind == "roof" and walls_around(cell, level) < 2:
 				return "A roof needs at least two walls under it"
+			if kind == "ceiling" and walls_around(cell, level) < 1:
+				return "A ceiling needs at least one wall under it"
 			return ""
 		# Walls and doorways
 		var sides := wall_sides(pos, yaw)
@@ -438,7 +445,7 @@ static func place_structure(player_id: int, slot: int, pos: Vector3, yaw: float)
 	if problem != "":
 		return {"ok": false, "reason": problem}
 	var level := 0
-	if kind == "foundation":
+	if kind in FLOOR_KINDS:
 		# placement_problem has snapped pos to the shared slab height; take that snap as the truth.
 		var sn := snap_piece(kind, pos)
 		pos = sn.pos
@@ -456,19 +463,19 @@ static func place_structure(player_id: int, slot: int, pos: Vector3, yaw: float)
 
 ## Why a building piece can't be taken down yet ("" if it can).
 static func removal_problem(st: Dictionary) -> String:
-	if st.kind == "foundation":
+	if st.kind in FLOOR_KINDS:
 		var cell := cell_of(_pos(st))
 		var lvl := int(st.level)
-		if not foundation_at(cell, lvl + 1).is_empty() or not roof_in(cell, lvl).is_empty() or not roof_in(cell, lvl + 1).is_empty():
+		if not foundation_at(cell, lvl + 1).is_empty() or not cover_in(cell, lvl).is_empty() or not cover_in(cell, lvl + 1).is_empty():
 			return "Take down what's on top of it first"
 		if walls_around(cell, lvl) > 0:
 			return "Take down the walls standing on it first"
 	elif st.kind in WALL_KINDS:
-		# A roof needs two walls under it; don't let it fall.
+		# A roof needs two walls under it, a ceiling one; don't let the cover fall.
 		var lvl := int(st.get("level", 0))
 		for s: Vector2i in wall_sides(_pos(st), float(st.get("yaw", 0.0))):
-			var roof := roof_in(s, lvl)
-			if not roof.is_empty() and walls_around(s, lvl) - 1 < 2:
+			var cover := cover_in(s, lvl)
+			if not cover.is_empty() and walls_around(s, lvl) - 1 < (2 if cover.kind == "roof" else 1):
 				return "The roof above it needs this wall"
 	return ""
 

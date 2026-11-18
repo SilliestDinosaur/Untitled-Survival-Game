@@ -111,9 +111,11 @@ static func _head_color(tier: int, m: Dictionary, edge: PackedVector2Array, band
 ## around the handle (x within eye_r of 0) so the head visibly wraps it.
 static func _head_thickness(edge: PackedVector2Array, body: float, falloff: float, eye: float, eye_r: float, edge_min := 0.0012) -> Callable:
 	return func(p: Vector2) -> float:
-		var t := lerpf(edge_min, body, smoothstep(0.0, falloff, MeshKit.dist_to_polyline(p, edge)))
+		var along_edge := smoothstep(0.0, falloff, MeshKit.dist_to_polyline(p, edge))
+		var t := lerpf(edge_min, body, along_edge)
 		if eye > 0.0:
-			t = maxf(t, eye * (1.0 - smoothstep(eye_r, eye_r + 0.016, absf(p.x))))
+			# The eye's bulge fades out toward the edge too, or it would stand up as a cliff where the haft meets the rim.
+			t = maxf(t, eye * (1.0 - smoothstep(eye_r, eye_r + 0.016, absf(p.x))) * along_edge)
 		return t
 
 
@@ -148,32 +150,16 @@ static func _handle(k: MeshKit, length: float, tier: int, radius := 0.016, curve
 	k.loft(path, radii, 14, wood, col_fn, func(_t: float, _a: float) -> Vector2: return Vector2(1.0, 0.82), true, true, 0.0018 if tier == 1 else 0.0)
 	if tier == 1:
 		# Knots where twigs were trimmed off.
-		for i in 3:
-			var t := rng.randf_range(0.25, 0.75)
+		for i in 3:   # one knot per third of the haft, turned round the haft, so they never overlap
+			var t := lerpf(0.25, 0.75, (i + rng.randf_range(0.2, 0.8)) / 3.0)
 			var at: Vector3 = path[int(t * steps)]
-			var a := rng.randf() * TAU
+			var a := (i + rng.randf_range(0.0, 0.8)) * TAU / 3.0
 			var d := Vector3(cos(a), 0.2, sin(a)).normalized()
-			k.loft([at, at + d * radius * 1.35], [radius * 0.55, radius * 0.4], 6, BARK.darkened(0.15), Callable(), Callable(), false, true)
+			k.loft([at, at + d * radius * 1.35], [radius * 0.55, radius * 0.4], 6, BARK.darkened(0.15), Callable(), Callable(), true, true)
 		return
-	# Grip: a leather thong wound around the lower handle, with a metal or gold end band.
-	var wrap := LEATHER if tier < 5 else Color(0.3, 0.17, 0.4)
-	if tier == 4:
-		wrap = DARK_WOOD.darkened(0.3)
-	var helix: Array = []
-	var hr: Array = []
+	# Plain haft; metal ferrules at the grip ends.
 	var y0 := -0.075
 	var y1 := 0.09
-	var turns := (y1 - y0) / 0.0105
-	var count := int(turns * 10)
-	for i in count + 1:
-		var t := float(i) / count
-		var a := t * turns * TAU
-		var y := lerpf(y0, y1, t)
-		var base: Vector3 = path[int(clampf((y + 0.1) / (length + 0.1), 0.0, 1.0) * steps)]
-		var r: float = radius * 1.3 * 1.04   # the haft is thicker than the radius (see above)
-		helix.append(Vector3(base.x + cos(a) * r, y, base.z + sin(a) * r * 0.82))
-		hr.append(0.0062)
-	k.loft(helix, hr, 6, wrap, func(_t: float, a: float) -> Color: return wrap.darkened(0.2) if sin(a * 2.0) > 0.6 else wrap, Callable(), true, true)
 	var band: Color = _metal(tier, Color.WHITE).fitting if tier != 2 else Color(0.5, 0.42, 0.34)
 	for y in [y1 + 0.004, y0 - 0.006]:
 		var base: Vector3 = path[int(clampf((y + 0.1) / (length + 0.1), 0.0, 1.0) * steps)]
@@ -182,39 +168,6 @@ static func _handle(k: MeshKit, length: float, tier: int, radius := 0.016, curve
 	if tier >= 3:   # pommel cap
 		var pc: Color = GOLD if tier == 4 else (DUSK_GLOW if tier == 5 else Color(0.5, 0.49, 0.52))
 		k.loft([Vector3(0, -0.122, 0), Vector3(0, -0.112, 0), Vector3(0, -0.098, 0)], [0.008, radius * 1.45, radius * 1.3], 16, pc)
-
-
-## Cord lashing: a few tight wraps around the handle above and below the head, and an X of
-## cord over the head itself. `half` = half the head's thickness at the handle.
-static func _lashing(k: MeshKit, y: float, half_h: float, radius: float, half: float) -> void:
-	for band in [y - half_h - 0.012, y + half_h + 0.004]:
-		for i in 4:
-			var yy: float = band + i * 0.0042
-			var ring: Array = []
-			var rr: Array = []
-			for j in 15:
-				var a := TAU * j / 14.0
-				ring.append(Vector3(cos(a) * (radius + 0.002), yy + sin(a * 2.0) * 0.0012, sin(a) * (radius + 0.002)))
-				rr.append(0.0028)
-			k.loft(ring, rr, 5, CORD.darkened(0.04 * (i % 2)), Callable(), Callable(), false, false)
-	for side in [-1.0, 1.0]:
-		var x: float = side * (half + 0.002)
-		for d in [-1.0, 1.0]:
-			k.loft([Vector3(x, y - half_h - 0.008, d * 0.016), Vector3(x * 1.08, y, 0.0), Vector3(x, y + half_h + 0.008, -d * 0.016)],
-				[0.0028, 0.003, 0.0028], 5, CORD.lightened(0.05))
-
-
-## A few turns of cord around the handle (torch head).
-static func _binding(k: MeshKit, y: float, _tier: int, radius := 0.02, height := 0.04) -> void:
-	for i in 5:
-		var yy := y - height * 0.5 + height * i / 4.0
-		var ring: Array = []
-		var rr: Array = []
-		for j in 15:
-			var a := TAU * j / 14.0
-			ring.append(Vector3(cos(a) * radius, yy + sin(a * 2.0) * 0.0012, sin(a) * radius))
-			rr.append(0.0032)
-		k.loft(ring, rr, 5, CORD.darkened(0.05 * (i % 2)), Callable(), Callable(), false, false)
 
 
 ## A metal ring around the handle (collars on forged heads).
@@ -244,6 +197,12 @@ static func _arc(center: Vector2, radius: float, from_deg: float, to_deg: float,
 static func _head_colors(tier: int, col: Color) -> Array:
 	var m := _metal(tier, col)
 	return [m.base, m.edge]
+
+
+## Flint heads are set into the haft with a lump of resin at the joint, not wrapped.
+static func _resin_joint(k: MeshKit, y: float, radius: float) -> void:
+	var resin := Color(0.66, 0.42, 0.18)
+	k.add_primitive(MeshKit.sphere(radius * 2.1, 10, 7), Transform3D(Basis.from_scale(Vector3(1.0, 0.9, 1.0)), Vector3(0, y, 0)), resin, 0.0, 0.03)
 
 
 # --- Hatchets ---------------------------------------------------------------------------
@@ -278,7 +237,7 @@ static func _hatchet(k: MeshKit, tier: int, col: Color) -> void:
 	k.add_primitive(wedge, Transform3D(Basis(), Vector3(0, top + 0.046, 0)), WOOD.darkened(0.15) if tier == 1 else m.fitting, 0.0, 0.04)
 	if tier == 1:
 		# Rawhide lashing crossing the eye, the way a knapped head was bound on.
-		_lashing(k, top, 0.03, hr, 0.02)
+		_resin_joint(k, top, hr)
 	else:
 		# A metal socket around the eye, with a ring band where it meets the head.
 		var fit: Color = m.fitting if tier != 2 else m.base.darkened(0.2)
@@ -300,7 +259,7 @@ static func _pickaxe(k: MeshKit, tier: int, col: Color) -> void:
 		var ridge := PackedVector2Array(outline)
 		ridge.append(outline[0])
 		k.sculpt(outline, Transform3D(FORWARD_PLANE, Vector3(0, top, 0)), _head_thickness(ridge, 0.03, 0.02, 0.0, 0.0, 0.003), _head_color(1, m, ridge, 0.02), 3, 0.006)
-		_lashing(k, top, 0.02, hr, 0.02)
+		_resin_joint(k, top, hr)
 		return
 	# The head: a bar in the swing plane that curves down to a point at each end, thinned to a crisp
 	# edge. Tier 3's back end is a square chisel instead of a point.
@@ -369,13 +328,12 @@ static func _spear(k: MeshKit, tier: int, col: Color) -> void:
 	k.flat_shading = false
 	if tier == 1:
 		# Rawhide binding just below the knapped point.
-		_lashing(k, head_y - 0.012, 0.01, hr, 0.012)
+		_resin_joint(k, head_y - 0.01, hr)
 		return
 	# Socket: a tapered metal sleeve over the shaft, with rings, and a cord binding below it.
 	var sock: Color = m.fitting if tier != 2 else m.base.darkened(0.12)
 	k.loft([Vector3(0, top - 0.06, 0), Vector3(0, top - 0.02, 0), Vector3(0, head_y + 0.004, 0)], [hr * 1.32, hr * 1.18, hr * 0.85], 14, sock,
 		func(t: float, _a: float) -> Color: return sock.lightened(0.18) if fposmod(t * 4.0, 1.0) < 0.14 else sock)
-	_binding(k, top - 0.075, 2, hr * 1.5, 0.02)
 
 
 # --- Knives -----------------------------------------------------------------------------
@@ -434,25 +392,17 @@ static func _knife(k: MeshKit, tier: int, col: Color) -> void:
 ## A branch with a resin-soaked fiber wrap at the top (the flame is a separate glowing mesh).
 static func _torch(k: MeshKit) -> void:
 	_handle(k, 0.3, 1, 0.017)
-	# The rag head: fiber wound round the top of the stick, fullest near the middle and charred at the tip.
+	# The rag head: a bundle of cloth soaked in pitch, bulging in the middle and charred at the tip.
 	var path := []
 	var radii := []
 	for i in 12:
 		var t := i / 11.0
 		path.append(Vector3(0, 0.2 + t * 0.14, 0))
 		radii.append(0.019 + sin(t * PI) * 0.013 + (0.002 if t > 0.8 else 0.0))
-	var wrap := Color(0.62, 0.5, 0.3)
-	var wrap_col := func(t: float, a: float) -> Color:
-		var c := wrap.lerp(Color(0.18, 0.12, 0.08), smoothstep(0.7, 1.0, t))   # charred top
-		return c.darkened(0.14) if fposmod(a * 1.6 + t * 12.0, 1.0) < 0.22 else c   # spiral strands
-	k.loft(path, radii, 14, wrap, wrap_col, Callable(), true, true, 0.002)
-	_binding(k, 0.2, 1, 0.02, 0.03)
-	# Pitch soaked into the rag: a few drips running down the wrap.
-	var resin := Color(0.72, 0.46, 0.16)
-	for i in 3:
-		var a := TAU * (i + 0.3) / 3.0
-		var at := Vector3(cos(a) * 0.02, 0.2 + 0.03 * i, sin(a) * 0.02)
-		k.add_primitive(MeshKit.sphere(0.0045, 8, 5), Transform3D(Basis.from_scale(Vector3(1, 1.8, 1)), at), resin, 0.0, 0.03)
+	var rag := Color(0.6, 0.48, 0.3)
+	var char := Color(0.18, 0.12, 0.08)
+	var rag_col := func(t: float, _a: float) -> Color: return rag.lerp(char, smoothstep(0.7, 1.0, t))
+	k.loft(path, radii, 14, rag, rag_col, Callable(), true, true, 0.0)
 
 
 static var _flame: ArrayMesh
@@ -562,7 +512,7 @@ static func _material_item(k: MeshKit, id: String, info: Dictionary) -> void:
 					var a := TAU * s2 / 24.0
 					ring.append(at + Vector3(cos(a) * r, i * 0.011, sin(a) * r))
 					rr.append(0.0075)
-				k.loft(ring, rr, 8, CORD.darkened(i * 0.04), func(_t: float, a: float) -> Color: return CORD.darkened(0.12) if fposmod(a / TAU * 3.0, 1.0) < 0.3 else CORD, Callable(), false, false)
+				k.loft(ring, rr, 8, CORD.darkened(i * 0.04), func(_t: float, a: float) -> Color: return CORD.darkened(0.12) if fposmod(a / TAU * 3.0, 1.0) < 0.3 else CORD, Callable(), false, false, 0.0, true)
 			k.loft([at + Vector3(0.04, 0.035, 0), at + Vector3(0.07, 0.02, 0.03), at + Vector3(0.09, 0.0, 0.02)], [0.0075, 0.0075, 0.006], 8, CORD)
 		"plank":
 			var face := Basis(Vector3.RIGHT, -PI * 0.5)
@@ -602,8 +552,9 @@ static func _material_item(k: MeshKit, id: String, info: Dictionary) -> void:
 				var t := s2 / 8.0
 				path.append(at + Vector3(0, t * 0.04, 0))
 				radii.append(0.028 + sin(t * PI * 0.5) * 0.03)
-			k.loft(path, radii, 22, WOOD, func(t: float, _a: float) -> Color: return WOOD.darkened(0.1) if t < 0.2 else WOOD, Callable(), true, false)
-			k.add_primitive(MeshKit.cylinder(0.05, 0.05, 0.004, 22), Transform3D(Basis(), at + Vector3(0, 0.035, 0)), Color(0.82, 0.46, 0.24), 0.0, 0.04)
+			# The bowl is closed across the top: that surface is the stew, coloured as it fills the mouth.
+			var stew_col := Color(0.82, 0.46, 0.24)
+			k.loft(path, radii, 22, WOOD, func(t: float, _a: float) -> Color: return stew_col if t > 0.97 else (WOOD.darkened(0.1) if t < 0.2 else WOOD), Callable(), true, true)
 			var rng := RandomNumberGenerator.new()
 			rng.seed = 3
 			for i in 6:
@@ -681,7 +632,7 @@ static func _material_item(k: MeshKit, id: String, info: Dictionary) -> void:
 ## A chunk of ore: grey rock with nuggets of the metal studding its faces.
 static func _ore(k: MeshKit, at: Vector3, col: Color) -> void:
 	k.flat_shading = true
-	k.add_primitive(MeshKit.sphere(0.042, 9, 6), Transform3D(Basis.from_scale(Vector3(1.2, 0.85, 1.0)), at), Game.palette.rock, 0.22, 0.05)
+	k.add_primitive(MeshKit.sphere(0.042, 9, 6), Transform3D(Basis.from_scale(Vector3(1.2, 0.85, 1.0)), at), Game.palette.rock, 0.008, 0.05)
 	k.flat_shading = false
 	var rng := RandomNumberGenerator.new()
 	rng.seed = 5
@@ -691,12 +642,12 @@ static func _ore(k: MeshKit, at: Vector3, col: Color) -> void:
 		d.y = absf(d.y) * 0.6 + d.y * 0.4   # spread over the sides, not just the top
 		var p := at + d.normalized() * Vector3(0.05, 0.036, 0.046)   # on the rock's surface, half sunk in
 		k.add_primitive(MeshKit.sphere(r, 7, 5), Transform3D(Basis.from_scale(Vector3.ONE * rng.randf_range(0.8, 1.15)), p),
-			col.lightened(rng.randf_range(-0.06, 0.14)), 0.2, 0.04)
+			col.lightened(rng.randf_range(-0.06, 0.14)), 0.0, 0.04)
 
 
 ## An uncut crystal cluster: a rock base with faceted crystals standing out of it.
 static func _crystals(k: MeshKit, at: Vector3, col: Color) -> void:
-	k.add_primitive(MeshKit.sphere(0.03, 8, 5), Transform3D(Basis.from_scale(Vector3(1.3, 0.7, 1.1)), at + Vector3(0, -0.004, 0)), Game.palette.rock, 0.2, 0.05)
+	k.add_primitive(MeshKit.sphere(0.03, 8, 5), Transform3D(Basis.from_scale(Vector3(1.3, 0.7, 1.1)), at + Vector3(0, -0.004, 0)), Game.palette.rock, 0.003, 0.05)
 	k.flat_shading = true
 	var rng := RandomNumberGenerator.new()
 	rng.seed = 13
@@ -706,14 +657,14 @@ static func _crystals(k: MeshKit, at: Vector3, col: Color) -> void:
 		var base := at + Vector3(cos(a) * 0.018, 0.0, sin(a) * 0.018)
 		var length := rng.randf_range(0.05, 0.08) if i % 2 == 0 else rng.randf_range(0.065, 0.1)
 		var shade := col.lightened(rng.randf_range(-0.1, 0.12))
-		k.loft([base, base + lean * length * 0.6, base + lean * length], [0.0145, 0.0125, 0.0008], 6, shade, Callable(), Callable(), false, true)
+		k.loft([base, base + lean * length * 0.6, base + lean * length], [0.0145, 0.0125, 0.0008], 6, shade, Callable(), Callable(), true, true)
 	k.flat_shading = false
 
 
 ## Shadow essence: a dark core with rings of light round it.
 static func _essence(k: MeshKit, at: Vector3) -> void:
 	var c := at + Vector3(0, 0.02, 0)
-	k.add_primitive(MeshKit.sphere(0.024, 10, 7), Transform3D(Basis(), c), DUSK, 0.08, 0.05)
+	k.add_primitive(MeshKit.sphere(0.024, 10, 7), Transform3D(Basis(), c), DUSK, 0.002, 0.05)
 	for i in 3:
 		var tilt := Basis(Vector3.RIGHT, PI * i / 3.0) * Basis(Vector3.UP, PI * 0.25 * i)
 		var ring: Array = []
@@ -722,7 +673,7 @@ static func _essence(k: MeshKit, at: Vector3) -> void:
 			var a := TAU * s / 13.0
 			ring.append(c + tilt * Vector3(cos(a) * 0.036, 0.0, sin(a) * 0.036))
 			rr.append(0.0022)
-		k.loft(ring, rr, 4, DUSK_GLOW, Callable(), Callable(), false, false)
+		k.loft(ring, rr, 4, DUSK_GLOW, Callable(), Callable(), false, false, 0.0, true)
 
 
 ## A flake of flint: a knapped sliver, flat, with a pale glassy edge.
@@ -737,7 +688,7 @@ static func _flake(k: MeshKit, at: Vector3) -> void:
 ## A rough stone: a lump with a broken face.
 static func _stone_lump(k: MeshKit, at: Vector3) -> void:
 	k.flat_shading = true
-	k.add_primitive(MeshKit.sphere(0.04, 8, 5), Transform3D(Basis.from_scale(Vector3(1.2, 0.85, 1.0)), at), Game.palette.rock, 0.3, 0.05)
+	k.add_primitive(MeshKit.sphere(0.04, 8, 5), Transform3D(Basis.from_scale(Vector3(1.2, 0.85, 1.0)), at), Game.palette.rock, 0.005, 0.05)
 	k.add_primitive(MeshKit.sphere(0.018, 6, 4), Transform3D(Basis.from_scale(Vector3(1.0, 0.45, 1.0)), at + Vector3(0.02, 0.022, 0.018)),
 		Game.palette.rock.lightened(0.25), 0.0, 0.03)
 	k.flat_shading = false
@@ -746,7 +697,7 @@ static func _stone_lump(k: MeshKit, at: Vector3) -> void:
 ## Resin: a lump of amber sap with a drip running down one side.
 static func _resin(k: MeshKit, at: Vector3) -> void:
 	var amber := Color(0.86, 0.56, 0.2)
-	k.add_primitive(MeshKit.sphere(0.034, 10, 7), Transform3D(Basis.from_scale(Vector3(1.15, 0.8, 1.0)), at), amber, 0.12, 0.03)
+	k.add_primitive(MeshKit.sphere(0.034, 10, 7), Transform3D(Basis.from_scale(Vector3(1.15, 0.8, 1.0)), at), amber, 0.0, 0.03)
 	k.loft([at + Vector3(0.025, -0.012, 0.012), at + Vector3(0.03, -0.034, 0.016)], [0.008, 0.004], 8, amber.darkened(0.08))
 
 
@@ -759,7 +710,7 @@ static func _hide(k: MeshKit, at: Vector3) -> void:
 	for p in outline:
 		var w := at + Vector3(p.x, 0.0, -p.y)
 		var lean := Vector3(p.x, 0.0, -p.y).normalized() * 0.004 + Vector3(0, 0.004, 0)
-		k.loft([w, w + lean], [0.0012, 0.0004], 4, hide.darkened(0.2), Callable(), Callable(), false, false)
+		k.loft([w, w + lean], [0.0012, 0.0004], 4, hide.darkened(0.2), Callable(), Callable(), true, true)
 
 
 ## A bone: a long shaft with a double knob at each end.
@@ -785,14 +736,14 @@ static func _fiber(k: MeshKit, at: Vector3) -> void:
 			var t := s / 8.0
 			path.append(at + Vector3(-0.055 + t * 0.11, sin(t * PI) * 0.004 + off * 0.6, off + sin(t * TAU) * 0.003))
 			radii.append(0.0018)
-		k.loft(path, radii, 4, green.lightened(rng.randf_range(-0.1, 0.12)), Callable(), Callable(), false, false)
+		k.loft(path, radii, 4, green.lightened(rng.randf_range(-0.1, 0.12)), Callable(), Callable(), true, true)
 	var tie: Array = []
 	var tr: Array = []
 	for j in 13:
 		var a := TAU * j / 12.0
 		tie.append(at + Vector3(0.0, cos(a) * 0.011, sin(a) * 0.011))
 		tr.append(0.0025)
-	k.loft(tie, tr, 5, CORD.darkened(0.05), Callable(), Callable(), false, false)
+	k.loft(tie, tr, 5, CORD.darkened(0.05), Callable(), Callable(), false, false, 0.0, true)
 
 
 ## Cactus flesh: a green pad, with spines pricking out of its face.
@@ -806,14 +757,14 @@ static func _cactus_pad(k: MeshKit, at: Vector3) -> void:
 		var r := 0.012 if i % 2 == 0 else 0.022
 		var p := at + Vector3(cos(a) * r, 0.014, sin(a) * r)
 		var lean := Vector3(cos(a) * 0.5, 1.0, sin(a) * 0.5).normalized()
-		k.loft([p, p + lean * 0.016], [0.0021, 0.0003], 4, Color(0.95, 0.92, 0.75), Callable(), Callable(), false, true)
+		k.loft([p, p + lean * 0.016], [0.0021, 0.0005], 4, Color(0.95, 0.92, 0.75), Callable(), Callable(), true, true)
 
 
 ## A dressed stone brick: a squared block with a chisel groove across the top.
 static func _brick(k: MeshKit, at: Vector3, col: Color) -> void:
 	var outline := PackedVector2Array([Vector2(-0.05, -0.028), Vector2(0.05, -0.028), Vector2(0.05, 0.028), Vector2(-0.05, 0.028)])
 	k.extrude(outline, Transform3D(Basis(Vector3.RIGHT, -PI * 0.5), at), 0.03, 0.006, col, col.darkened(0.2), 0.35)
-	k.loft([at + Vector3(-0.03, 0.016, 0.0), at + Vector3(0.03, 0.016, 0.0)], [0.002, 0.002], 4, col.darkened(0.3), Callable(), Callable(), false, false)
+	k.loft([at + Vector3(-0.03, 0.016, 0.0), at + Vector3(0.03, 0.016, 0.0)], [0.002, 0.002], 4, col.darkened(0.3), Callable(), Callable(), true, true)
 
 
 ## Logs and sticks. A log is a barked piece with its cut face and rings at one end; sticks are thin and knotted.
@@ -826,11 +777,8 @@ static func _logs(k: MeshKit, at: Vector3, is_log: bool) -> void:
 			var t := i / 6.0
 			path.append(at + Vector3(-0.07 + t * 0.14, 0.0, 0.0))
 			radii.append(0.024 * (1.0 - 0.05 * t))
-		k.loft(path, radii, 12, BARK, bark_fn, Callable(), true, false)
-		var face := at + Vector3(0.07, 0.0, 0.0)
-		k.loft([face, face + Vector3(0.002, 0.0, 0.0)], [0.0228, 0.0228], 12, Color(0.84, 0.7, 0.5), Callable(), Callable(), false, true)
-		k.loft([face + Vector3(0.003, 0.0, 0.0), face + Vector3(0.004, 0.0, 0.0)], [0.013, 0.013], 10, Color(0.7, 0.54, 0.36), Callable(), Callable(), false, true)
-		k.loft([face + Vector3(0.005, 0.0, 0.0), face + Vector3(0.006, 0.0, 0.0)], [0.005, 0.005], 8, Color(0.5, 0.36, 0.22), Callable(), Callable(), false, true)
+		var end_fn := func(t: float, a: float) -> Color: return Color(0.84, 0.7, 0.5) if t > 0.99 else bark_fn.call(t, a)
+		k.loft(path, radii, 12, BARK, end_fn, Callable(), true, true)
 		return
 	var rng := RandomNumberGenerator.new()
 	rng.seed = 6

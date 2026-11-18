@@ -612,7 +612,7 @@ func _overlaps_player(pos: Vector3, kind: String, yaw: float) -> bool:
 	var half := Vector2(GameActions.CELL * 0.5, GameActions.CELL * 0.5)
 	if kind in GameActions.WALL_KINDS:
 		half = Vector2(GameActions.CELL * 0.5, 0.15) if absf(yaw) < 0.01 else Vector2(0.15, GameActions.CELL * 0.5)
-	elif kind == "roof":
+	elif kind in GameActions.COVER_KINDS:
 		half = Vector2(GameActions.CELL * 0.5, GameActions.CELL * 0.5)
 	var lo := pos.y - 0.2
 	var hi := pos.y + 3.2

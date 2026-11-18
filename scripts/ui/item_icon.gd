@@ -115,6 +115,22 @@ func _draw() -> void:
 		"doorway":
 			draw_rect(Rect2(c + Vector2(-s * 0.3, -s * 0.3), Vector2(s * 0.6, s * 0.6)), Color(0.7, 0.5, 0.38))
 			draw_rect(Rect2(c + Vector2(-s * 0.13, -s * 0.12), Vector2(s * 0.26, s * 0.42)), Color(0.2, 0.14, 0.1))
+		"wood_floor":
+			for i in 4:
+				draw_rect(Rect2(c + Vector2(-s * 0.36, -s * 0.34 + i * s * 0.18), Vector2(s * 0.72, s * 0.14)), Color(0.62, 0.46, 0.3).lightened(i * 0.03))
+			draw_rect(Rect2(c + Vector2(-s * 0.36, s * 0.32), Vector2(s * 0.72, s * 0.06)), Color(0.36, 0.25, 0.17))
+		"window_wall":
+			draw_rect(Rect2(c + Vector2(-s * 0.36, -s * 0.34), Vector2(s * 0.72, s * 0.68)), Color(0.7, 0.5, 0.38))
+			draw_rect(Rect2(c + Vector2(-s * 0.2, -s * 0.16), Vector2(s * 0.4, s * 0.32)), Color(0.72, 0.84, 0.88))
+			draw_line(c + Vector2(0, -s * 0.16), c + Vector2(0, s * 0.16), Color(0.36, 0.26, 0.18), 1.5)
+		"wood_doorway":
+			for i in 5:
+				draw_rect(Rect2(c + Vector2(-s * 0.34 + i * s * 0.135, -s * 0.34), Vector2(s * 0.11, s * 0.68)), Color(0.62, 0.46, 0.3).lightened(i * 0.02))
+			draw_rect(Rect2(c + Vector2(-s * 0.13, -s * 0.12), Vector2(s * 0.26, s * 0.46)), Color(0.2, 0.14, 0.1))
+		"ceiling":
+			for i in 4:
+				draw_rect(Rect2(c + Vector2(-s * 0.4, -s * 0.3 + i * s * 0.16), Vector2(s * 0.8, s * 0.1)), Color(0.66, 0.5, 0.34).lightened(i * 0.03))
+			draw_rect(Rect2(c + Vector2(-s * 0.4, -s * 0.05), Vector2(s * 0.8, s * 0.07)), Color(0.36, 0.25, 0.17))
 		"roof":
 			for i in 3:
 				draw_colored_polygon(PackedVector2Array([c + Vector2(-s * 0.36, -s * 0.12 + i * s * 0.2), c + Vector2(s * 0.36, -s * 0.12 + i * s * 0.2), c + Vector2(s * 0.28, s * 0.06 + i * s * 0.2), c + Vector2(-s * 0.28, s * 0.06 + i * s * 0.2)]), Color(0.62, 0.34, 0.26).lightened(i * 0.06))

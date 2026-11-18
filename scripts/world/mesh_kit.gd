@@ -74,14 +74,20 @@ func add_primitive(prim: PrimitiveMesh, xf: Transform3D, color: Color, lumpy := 
 			var j := _noise.get_noise_3dv(p * 1.7) * shade_jitter
 			c = Color(c.r + j, c.g + j, c.b + j)
 		col[i] = c.srgb_to_linear()
+	# A mirrored transform turns every triangle inside out; swapping two corners puts it back.
+	var mirrored := xf.basis.determinant() < 0.0
 	for t in range(0, idx.size(), 3):
 		var a := idx[t]
 		var b := idx[t + 1]
 		var c := idx[t + 2]
+		if mirrored:
+			var tmp := b
+			b = c
+			c = tmp
+		var fn := (moved[c] - moved[a]).cross(moved[b] - moved[a])
+		if fn.length_squared() < 1e-20:   # no area at all (sphere poles): nothing to draw
+			continue
 		if flat_shading:
-			var fn := (moved[c] - moved[a]).cross(moved[b] - moved[a])
-			if fn.length_squared() < 1e-12:
-				continue
 			fn = fn.normalized()
 			verts.append_array([moved[a], moved[b], moved[c]])
 			normals.append_array([fn, fn, fn])
@@ -97,7 +103,7 @@ func add_primitive(prim: PrimitiveMesh, xf: Transform3D, color: Color, lumpy := 
 func _emit(a: Vector3, b: Vector3, c: Vector3, na: Vector3, nb: Vector3, nc: Vector3,
 		ca: Color, cb: Color, cc: Color, outward: Vector3) -> void:
 	var fn := (c - a).cross(b - a)
-	if fn.length_squared() < 1e-14:
+	if fn.length_squared() < 1e-20:   # only true zero-area triangles; millimetre tips must survive
 		return
 	if fn.dot(outward) < 0.0:
 		var tv := b
@@ -124,11 +130,14 @@ func _emit(a: Vector3, b: Vector3, c: Vector3, na: Vector3, nb: Vector3, nc: Vec
 ## shape_fn: optional Callable(t: float, angle: float) -> Vector2 cross-section scale (ovals, flats).
 ## color_fn: optional Callable(t: float, angle: float) -> Color (wraps, bands, bark ridges).
 ## bumps:    noise displacement of the surface (gnarled wood, bark).
+## closed:   the path is a loop (a ring or coil): the tube joins itself, with no caps.
 func loft(path: Array, radii: Array, sides := 8, color := Color.WHITE, color_fn := Callable(),
-		shape_fn := Callable(), cap_start := true, cap_end := true, bumps := 0.0) -> void:
+		shape_fn := Callable(), cap_start := true, cap_end := true, bumps := 0.0, closed := false) -> void:
 	var n := path.size()
 	if n < 2:
 		return
+	if closed and (path[n - 1] as Vector3).distance_to(path[0]) < 1e-6:
+		n -= 1   # the path already comes back to its start: the tube joins itself there
 	var rings: Array = []
 	var ring_n: Array = []
 	var ring_c: Array = []
@@ -136,8 +145,8 @@ func loft(path: Array, radii: Array, sides := 8, color := Color.WHITE, color_fn 
 	var normal := tangent.cross(Vector3.FORWARD if absf(tangent.dot(Vector3.FORWARD)) < 0.9 else Vector3.RIGHT).normalized()
 	for i in n:
 		var p: Vector3 = path[i]
-		var prev: Vector3 = path[maxi(i - 1, 0)]
-		var next: Vector3 = path[mini(i + 1, n - 1)]
+		var prev: Vector3 = path[(i - 1 + n) % n] if closed else path[maxi(i - 1, 0)]
+		var next: Vector3 = path[(i + 1) % n] if closed else path[mini(i + 1, n - 1)]
 		var t_new := (next - prev).normalized()
 		# Parallel transport keeps the ring from twisting along curves.
 		normal = (normal - t_new * normal.dot(t_new)).normalized()
@@ -163,16 +172,20 @@ func loft(path: Array, radii: Array, sides := 8, color := Color.WHITE, color_fn 
 		rings.append(ring)
 		ring_n.append(rn)
 		ring_c.append(rc)
-	for i in n - 1:
+	var segments := n if closed else n - 1
+	for i in segments:
+		var i2 := (i + 1) % n
 		for j in sides:
 			var j2 := (j + 1) % sides
 			var a: Vector3 = rings[i][j]
 			var b: Vector3 = rings[i][j2]
-			var c: Vector3 = rings[i + 1][j2]
-			var d: Vector3 = rings[i + 1][j]
-			var out := ((a + b + c + d) * 0.25 - ((path[i] as Vector3) + (path[i + 1] as Vector3)) * 0.5)
-			_emit(a, b, c, ring_n[i][j], ring_n[i][j2], ring_n[i + 1][j2], ring_c[i][j], ring_c[i][j2], ring_c[i + 1][j2], out)
-			_emit(a, c, d, ring_n[i][j], ring_n[i + 1][j2], ring_n[i + 1][j], ring_c[i][j], ring_c[i + 1][j2], ring_c[i + 1][j], out)
+			var c: Vector3 = rings[i2][j2]
+			var d: Vector3 = rings[i2][j]
+			var out := ((a + b + c + d) * 0.25 - ((path[i] as Vector3) + (path[i2] as Vector3)) * 0.5)
+			_emit(a, b, c, ring_n[i][j], ring_n[i][j2], ring_n[i2][j2], ring_c[i][j], ring_c[i][j2], ring_c[i2][j2], out)
+			_emit(a, c, d, ring_n[i][j], ring_n[i2][j2], ring_n[i2][j], ring_c[i][j], ring_c[i2][j2], ring_c[i2][j], out)
+	if closed:
+		return
 	for cap in [[cap_start, 0, -1.0], [cap_end, n - 1, 1.0]]:
 		if not cap[0]:
 			continue
@@ -192,15 +205,36 @@ func extrude(outline: PackedVector2Array, xf: Transform3D, thickness: float, bev
 	var count := outline.size()
 	if count < 3:
 		return
-	var centroid := Vector2.ZERO
-	for p in outline:
-		centroid += p
-	centroid /= count
+	var cw := Geometry2D.is_polygon_clockwise(outline)
+	# Outward normal of each outline edge, from the outline's own orientation (right for counter-clockwise).
+	var seg_out: Array[Vector2] = []
+	for i in count:
+		var e := outline[(i + 1) % count] - outline[i]
+		var en := Vector2(e.y, -e.x).normalized()
+		seg_out.append(-en if cw else en)
+	# The bevelled face: each vertex moved inward along the bisector of its two edges (a mitred
+	# inset), so the face keeps one point per outline vertex and concave notches stay clean. Where
+	# the inset folds over itself (a narrow waist), the bevel is halved until the face covers its area.
 	var inner := PackedVector2Array()
-	for p in outline:
-		var to_c := centroid - p
-		inner.append(p + to_c.normalized() * minf(bevel, to_c.length() * 0.7))
-	var tris := Geometry2D.triangulate_polygon(inner)
+	var tris := PackedInt32Array()
+	var bev := bevel
+	for attempt in 6:
+		inner = PackedVector2Array()
+		for i in count:
+			var n_prev := seg_out[(i - 1 + count) % count]
+			var n_next := seg_out[i]
+			var bis := (n_prev + n_next)
+			var inward := -bis.normalized() if bis.length_squared() > 1e-10 else -n_next
+			var cos_half := maxf(absf(inward.dot(-n_next)), 0.35)
+			inner.append(outline[i] + inward * minf(bev / cos_half, bev * 3.0))
+		tris = Geometry2D.triangulate_polygon(inner)
+		if _covers(inner, tris):
+			break
+		bev *= 0.5
+	if not _covers(inner, tris):
+		inner = outline
+		tris = Geometry2D.triangulate_polygon(outline)
+		bev = 0.0
 	var half := thickness * 0.5
 	var edge := half * edge_thin
 	var zx := xf.basis.z.normalized()
@@ -218,59 +252,132 @@ func extrude(outline: PackedVector2Array, xf: Transform3D, thickness: float, bev
 			var ib: Vector3 = to3.call(inner[i2], fz)
 			var oa: Vector3 = to3.call(outline[i], edge * side)
 			var ob: Vector3 = to3.call(outline[i2], edge * side)
-			var mid2 := (outline[i] + outline[i2]) * 0.5 - centroid
-			var out: Vector3 = xf.basis * Vector3(mid2.x, mid2.y, 0.0).normalized() + zx * float(side) * 0.6
-			_emit(ia, ib, ob, out, out, out, color, color, edge_color, out)
-			_emit(ia, ob, oa, out, out, out, color, edge_color, edge_color, out)
+			var out: Vector3 = xf.basis * Vector3(seg_out[i].x, seg_out[i].y, 0.0) + zx * float(side) * 0.6
+			var out_n := out.normalized()
+			_emit(ia, ib, ob, out_n, out_n, out_n, color, color, edge_color, out_n)
+			_emit(ia, ob, oa, out_n, out_n, out_n, color, edge_color, edge_color, out_n)
 	for i in count:   # the thin edge band
 		var i2 := (i + 1) % count
 		var a: Vector3 = to3.call(outline[i], edge)
 		var b: Vector3 = to3.call(outline[i2], edge)
 		var c: Vector3 = to3.call(outline[i2], -edge)
 		var d: Vector3 = to3.call(outline[i], -edge)
-		var mid2 := (outline[i] + outline[i2]) * 0.5 - centroid
-		var out := xf.basis * Vector3(mid2.x, mid2.y, 0.0).normalized()
+		var out := (xf.basis * Vector3(seg_out[i].x, seg_out[i].y, 0.0)).normalized()
 		_emit(a, b, c, out, out, out, edge_color, edge_color, edge_color, out)
 		_emit(a, c, d, out, out, out, edge_color, edge_color, edge_color, out)
 
 
+## True when the triangles tile the polygon: their areas add up to the polygon's own area.
+static func _covers(poly: PackedVector2Array, tris: PackedInt32Array) -> bool:
+	if tris.is_empty() or poly.size() < 3:
+		return false
+	var area := 0.0
+	for i in poly.size():
+		var a := poly[i]
+		var b := poly[(i + 1) % poly.size()]
+		area += a.x * b.y - b.x * a.y
+	var tri_area := 0.0
+	for t in range(0, tris.size(), 3):
+		var p := poly[tris[t]]
+		var q := poly[tris[t + 1]]
+		var r := poly[tris[t + 2]]
+		tri_area += absf((q - p).cross(r - p)) * 0.5
+	return absf(tri_area - absf(area) * 0.5) <= absf(area) * 0.5 * 0.005
+
+
 ## A solid cut from a 2D outline (x, y in the plane of `xf`) whose thickness varies across it:
 ## thick_fn(p: Vector2) -> full thickness there. Blades can be thick at the spine and come to a
-## real edge; axe heads swell around the handle. The faces are subdivided `levels` times so the
-## surface curves smoothly, with smooth normals. col_fn(p: Vector2, thickness: float) -> Color.
-func sculpt(outline: PackedVector2Array, xf: Transform3D, thick_fn: Callable, col_fn: Callable, levels := 2, max_seg := 0.008) -> void:
+## real edge; axe heads swell around the handle. The faces are triangulated over the outline plus a
+## lattice of interior points (spacing max_seg), so the triangles are evenly shaped and the surface
+## shades smoothly. col_fn(p: Vector2, thickness: float) -> Color. (`_levels` is unused, kept for callers.)
+func sculpt(outline: PackedVector2Array, xf: Transform3D, thick_fn: Callable, col_fn: Callable, _levels := 2, max_seg := 0.008) -> void:
 	var ring := _resample(outline, max_seg)
 	var n := ring.size()
 	if n < 3:
 		return
-	var tri := Geometry2D.triangulate_polygon(ring)
-	if tri.is_empty():
-		return
-	var pts: Array[Vector2] = []
+	# Points: the outline, plus a lattice of points inside it (kept off the edge). Triangles made from
+	# the outline alone come out long and skinny; with interior points they are evenly shaped.
+	var h := max_seg
+	var pts := PackedVector2Array(ring)
+	var closed := PackedVector2Array(ring)
+	closed.append(ring[0])
+	var lo := ring[0]
+	var hi := ring[0]
 	for p in ring:
-		pts.append(p)
+		lo = lo.min(p)
+		hi = hi.max(p)
+	var gap := h * 1.0   # interior points stay a full step in, so the outline's own points form the rim
+	var y := lo.y + h * 0.5
+	while y < hi.y:
+		var x := lo.x + h * 0.5
+		while x < hi.x:
+			var g := Vector2(x, y)
+			if Geometry2D.is_point_in_polygon(g, ring) and dist_to_polyline(g, closed) > gap:
+				pts.append(g)
+			x += h
+		y += h
+	var del := Geometry2D.triangulate_delaunay(pts)
+	# Keep the triangles whose middle lies inside the outline, each one counter-clockwise.
 	var faces: Array = []
-	for i in range(0, tri.size(), 3):
-		faces.append([tri[i], tri[i + 1], tri[i + 2]])
-	var cache := {}
-	var mid := func(a: int, b: int) -> int:
-		var key := Vector2i(mini(a, b), maxi(a, b))
-		if cache.has(key):
-			return cache[key]
-		pts.append((pts[a] + pts[b]) * 0.5)
-		cache[key] = pts.size() - 1
-		return pts.size() - 1
-	for l in levels:
-		var next: Array = []
-		for f: Array in faces:
-			var ab: int = mid.call(f[0], f[1])
-			var bc: int = mid.call(f[1], f[2])
-			var ca: int = mid.call(f[2], f[0])
-			next.append([f[0], ab, ca])
-			next.append([ab, f[1], bc])
-			next.append([ca, bc, f[2]])
-			next.append([ab, bc, ca])
-		faces = next
+	var has := {}
+	for t in range(0, del.size(), 3):
+		var i: int = del[t]
+		var j: int = del[t + 1]
+		var k: int = del[t + 2]
+		var centre := (pts[i] + pts[j] + pts[k]) / 3.0
+		if not Geometry2D.is_point_in_polygon(centre, ring):
+			continue
+		var area := (pts[j] - pts[i]).cross(pts[k] - pts[i])
+		if absf(area) < 1e-12:
+			continue
+		if area < 0.0:
+			var tmp := j
+			j = k
+			k = tmp
+		faces.append([i, j, k])
+		has[Vector2i(i, j)] = true
+		has[Vector2i(j, k)] = true
+		has[Vector2i(k, i)] = true
+	if faces.is_empty():
+		return
+	# The boundary of the faces: directed edges whose reverse is not a face edge. Walking them gives
+	# the loops the rim is built on, so the rim and the faces always share their edge points.
+	var out_b := {}
+	var b_edges: Array = []
+	for f: Array in faces:
+		for e in 3:
+			var u: int = f[e]
+			var v: int = f[(e + 1) % 3]
+			if not has.has(Vector2i(v, u)):
+				if not out_b.has(u):
+					out_b[u] = []
+				out_b[u].append(v)
+				b_edges.append(Vector2i(u, v))
+	# Walk the boundary into closed loops. Every boundary edge is used exactly once, so a point where
+	# two boundary runs touch is simply passed through in turn.
+	var used := {}
+	var loops: Array = []
+	for e0: Vector2i in b_edges:
+		if used.has(e0):
+			continue
+		var loop: Array = []
+		var e := e0
+		var guard := 0
+		while guard < 100000:
+			guard += 1
+			used[e] = true
+			loop.append(e.x)
+			var nxt := Vector2i(-1, -1)
+			for cand: int in out_b.get(e.y, []):
+				if not used.has(Vector2i(e.y, cand)):
+					nxt = Vector2i(e.y, cand)
+					break
+			if nxt.x == -1:
+				break
+			e = nxt
+		if loop.size() >= 3:
+			loops.append(loop)
+	# Thickness and colour at every point, from the same function for faces and rim.
 	var th := PackedFloat32Array()
 	var cols: Array[Color] = []
 	for p in pts:
@@ -296,26 +403,40 @@ func sculpt(outline: PackedVector2Array, xf: Transform3D, thick_fn: Callable, co
 			var b: int = f[1]
 			var c: int = f[2]
 			_emit(pos[a], pos[b], pos[c], nrm[a].normalized(), nrm[b].normalized(), nrm[c].normalized(), cols[a], cols[b], cols[c], out_dir)
-	# The rim: walls between the two faces, as thick as the shape is at its edge.
-	var cw := Geometry2D.is_polygon_clockwise(ring)
-	var edge_n: Array[Vector2] = []
-	for i in n:
-		var e := ring[(i + 1) % n] - ring[i]
-		var en := Vector2(e.y, -e.x).normalized()
-		edge_n.append(-en if cw else en)
-	for i in n:
-		var j := (i + 1) % n
-		var vn_i := (edge_n[i] + edge_n[(i - 1 + n) % n]).normalized()
-		var vn_j := (edge_n[j] + edge_n[i]).normalized()
-		var a := xf * Vector3(ring[i].x, ring[i].y, th[i] * 0.5)
-		var b := xf * Vector3(ring[j].x, ring[j].y, th[j] * 0.5)
-		var c := xf * Vector3(ring[j].x, ring[j].y, -th[j] * 0.5)
-		var d := xf * Vector3(ring[i].x, ring[i].y, -th[i] * 0.5)
-		var ni := (xf.basis * Vector3(vn_i.x, vn_i.y, 0.0)).normalized()
-		var nj := (xf.basis * Vector3(vn_j.x, vn_j.y, 0.0)).normalized()
-		var out := xf.basis * Vector3(edge_n[i].x, edge_n[i].y, 0.0)
-		_emit(a, b, c, ni, nj, nj, cols[i], cols[j], cols[j], out)
-		_emit(a, c, d, ni, nj, ni, cols[i], cols[j], cols[i], out)
+	# The rim: a wall along each boundary loop. The loops run counter-clockwise, so the outward
+	# direction of an edge is to its right.
+	for loop: Array in loops:
+		var m := loop.size()
+		var edge_out: Array[Vector2] = []
+		for k in m:
+			var e: Vector2 = pts[loop[(k + 1) % m]] - pts[loop[k]]
+			edge_out.append(Vector2(e.y, -e.x).normalized())
+		# Rim normals: a point where the outline turns gently shares a smoothed normal with its
+		# neighbours; a sharp corner keeps each wall's own normal, so no wall faces inward.
+		var smooth: Array[bool] = []
+		var vnorm: Array[Vector3] = []
+		for k in m:
+			var before: Vector2 = edge_out[(k - 1 + m) % m]
+			var after: Vector2 = edge_out[k]
+			var ok := before.dot(after) > 0.2
+			smooth.append(ok)
+			var v2 := (before + after).normalized() if ok else after
+			vnorm.append((xf.basis * Vector3(v2.x, v2.y, 0.0)).normalized())
+		for k in m:
+			var u: int = loop[k]
+			var v: int = loop[(k + 1) % m]
+			var pu := pts[u]
+			var pv := pts[v]
+			var out := xf.basis * Vector3(edge_out[k].x, edge_out[k].y, 0.0)
+			var a := xf * Vector3(pu.x, pu.y, th[u] * 0.5)
+			var b := xf * Vector3(pv.x, pv.y, th[v] * 0.5)
+			var c := xf * Vector3(pv.x, pv.y, -th[v] * 0.5)
+			var d := xf * Vector3(pu.x, pu.y, -th[u] * 0.5)
+			var own := (xf.basis * Vector3(edge_out[k].x, edge_out[k].y, 0.0)).normalized()
+			var na: Vector3 = vnorm[k] if smooth[k] else own
+			var nb: Vector3 = vnorm[(k + 1) % m] if smooth[(k + 1) % m] else own
+			_emit(a, b, c, na, nb, nb, cols[u], cols[v], cols[v], out)
+			_emit(a, c, d, na, nb, na, cols[u], cols[v], cols[u], out)
 
 
 static func _resample(o: PackedVector2Array, max_seg: float) -> PackedVector2Array:

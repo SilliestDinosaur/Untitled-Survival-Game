@@ -89,18 +89,15 @@ static func _build_piece(kind: String) -> MeshKit:
 						return block.darkened(0.1) if fposmod(p.x * 5.0 + p.y * 3.0, 1.0) < 0.04 else block
 					k.sculpt(outline, xf, func(_p: Vector2) -> float: return 0.44 + rng.randf_range(-0.01, 0.01), face, 1, 0.04)
 		"wall", "doorway":
-			# A mortar core and individual bricks in running bond (a doorway leaves the opening clear).
+			# One mortar core (the opening notched out of the bottom for a doorway), then individual bricks
+			# in running bond over it.
 			var door_w := 0.7
 			var door_h := 2.3
-			var cores := [[Vector2(-h, 0.0), Vector2(h, 0.0), Vector2(h, 3.0), Vector2(-h, 3.0)]]
+			var core := PackedVector2Array([Vector2(-h, 0.0), Vector2(h, 0.0), Vector2(h, 3.0), Vector2(-h, 3.0)])
 			if kind == "doorway":
-				cores = [
-					[Vector2(-h, 0.0), Vector2(-door_w, 0.0), Vector2(-door_w, 3.0), Vector2(-h, 3.0)],
-					[Vector2(door_w, 0.0), Vector2(h, 0.0), Vector2(h, 3.0), Vector2(door_w, 3.0)],
-					[Vector2(-door_w, door_h), Vector2(door_w, door_h), Vector2(door_w, 3.0), Vector2(-door_w, 3.0)],
-				]
-			for core: Array in cores:
-				k.sculpt(PackedVector2Array(core), Transform3D(), func(_p: Vector2) -> float: return 0.2, func(_p: Vector2, _t: float) -> Color: return mortar, 0, 0.05)
+				core = PackedVector2Array([Vector2(-h, 0.0), Vector2(-door_w, 0.0), Vector2(-door_w, door_h), Vector2(door_w, door_h),
+					Vector2(door_w, 0.0), Vector2(h, 0.0), Vector2(h, 3.0), Vector2(-h, 3.0)])
+			k.sculpt(core, Transform3D(), func(_p: Vector2) -> float: return 0.2, func(_p: Vector2, _t: float) -> Color: return mortar, 0, 0.05)
 			var bw := 0.5
 			var bh := 0.25
 			for row in 12:
@@ -140,6 +137,98 @@ static func _build_piece(kind: String) -> MeshKit:
 				var grain := func(p: Vector2, _t: float) -> Color:
 					return board.darkened(0.08) if fposmod(p.y * 6.0 + sin(p.x * 30.0), 1.0) < 0.08 else board
 				k.sculpt(outline, Transform3D(Basis(), Vector3(bx, 1.5 + h_off, 0.0)), func(_p: Vector2) -> float: return 0.08, grain, 1, 0.02)
+		"wood_floor":
+			# Planks laid across three beams on a dark sill; the top is level with a stone foundation's top.
+			for z in [-1.0, 0.0, 1.0]:
+				_board(k, Vector3(3.0, 0.26, 0.2), Transform3D(Basis(), Vector3(0, -0.07, z)), WOOD_DARK)
+			var plank_w := GameActions.CELL / 12.0
+			for i in 12:
+				var z := -h + plank_w * (i + 0.5)
+				_board(k, Vector3(GameActions.CELL, plank_w - 0.03, 0.14), Transform3D(Basis(Vector3.RIGHT, -PI * 0.5), Vector3(0, 0.27, z)),
+					WOOD.lightened(rng.randf_range(-0.05, 0.06)), rng.randf_range(-0.005, 0.005))
+		"window_wall":
+			# Brick wall with a glazed window in the middle: the mortar core is four overlapping pieces
+			# around the opening, the bricks run round it, and a timber frame holds the pane.
+			var win_x := 0.55
+			var win_lo := 1.0
+			var win_hi := 2.0
+			var cores := [
+				[Vector2(-h, 0.0), Vector2(h, 0.0), Vector2(h, win_lo + 0.02), Vector2(-h, win_lo + 0.02)],
+				[Vector2(-h, win_hi - 0.02), Vector2(h, win_hi - 0.02), Vector2(h, 3.0), Vector2(-h, 3.0)],
+				[Vector2(-h, win_lo - 0.02), Vector2(-win_x, win_lo - 0.02), Vector2(-win_x, win_hi + 0.02), Vector2(-h, win_hi + 0.02)],
+				[Vector2(win_x, win_lo - 0.02), Vector2(h, win_lo - 0.02), Vector2(h, win_hi + 0.02), Vector2(win_x, win_hi + 0.02)],
+			]
+			for core: Array in cores:
+				k.sculpt(PackedVector2Array(core), Transform3D(), func(_p: Vector2) -> float: return 0.2, func(_p: Vector2, _t: float) -> Color: return mortar, 0, 0.05)
+			var bw := 0.5
+			var bh := 0.25
+			for row in 12:
+				var y0 := row * bh
+				var offset := bw * 0.5 if row % 2 == 1 else 0.0
+				var x := -h - offset
+				while x < h:
+					var x0 := maxf(x + 0.015, -h)
+					var x1 := minf(x + bw - 0.015, h)
+					x += bw
+					if x1 - x0 < 0.15:
+						continue
+					var cx := (x0 + x1) * 0.5
+					if absf(cx) < win_x + bw * 0.5 and y0 < win_hi and y0 + bh > win_lo:
+						continue   # the window's opening
+					var hx := (x1 - x0) * 0.5
+					var outline := _rounded_rect(hx, bh * 0.5 - 0.015, 0.025, 2)
+					var b := brick.lightened(rng.randf_range(-0.07, 0.05))
+					var face := func(p: Vector2, _t: float) -> Color:
+						return b.darkened(0.12) if p.y < -bh * 0.5 + 0.045 or p.y > bh * 0.5 - 0.045 else b
+					var xf := Transform3D(Basis(), Vector3(cx, y0 + bh * 0.5, 0.07))
+					k.sculpt(outline, xf, func(_p: Vector2) -> float: return 0.22, face, 1, 0.03)
+			# The pane, set back in the opening, and its timber frame.
+			_board(k, Vector3(win_x * 2.0 + 0.04, win_hi - win_lo + 0.04, 0.03), Transform3D(Basis(), Vector3(0, (win_lo + win_hi) * 0.5, 0.06)),
+				Color(0.7, 0.82, 0.86))
+			_board(k, Vector3(win_x * 2.0 + 0.3, 0.12, 0.16), Transform3D(Basis(), Vector3(0, win_lo - 0.02, 0.1)), WOOD_DARK)
+			_board(k, Vector3(win_x * 2.0 + 0.3, 0.12, 0.16), Transform3D(Basis(), Vector3(0, win_hi + 0.02, 0.1)), WOOD_DARK)
+			_board(k, Vector3(0.1, win_hi - win_lo, 0.16), Transform3D(Basis(), Vector3(-win_x - 0.03, (win_lo + win_hi) * 0.5, 0.1)), WOOD_DARK)
+			_board(k, Vector3(0.1, win_hi - win_lo, 0.16), Transform3D(Basis(), Vector3(win_x + 0.03, (win_lo + win_hi) * 0.5, 0.1)), WOOD_DARK)
+			_board(k, Vector3(0.06, win_hi - win_lo, 0.04), Transform3D(Basis(), Vector3(0, (win_lo + win_hi) * 0.5, 0.1)), WOOD_DARK)
+		"wood_doorway":
+			# A plank wall with the doorway cut through its lower boards; the boards above the opening
+			# run on to the top rail, and a timber frame stands either side.
+			var door_w := 0.7
+			var door_h := 2.3
+			var rail_lo := 0.1
+			var rail_hi := 2.9
+			for side in [-1.0, 1.0]:
+				var mid: float = side * (door_w + 0.1 + (h - door_w - 0.1) * 0.5)
+				_box_rail(k, Vector3(h - door_w - 0.1, 0.2, 0.26), Vector3(mid, rail_lo, 0.0))
+			_box_rail(k, Vector3(3.0, 0.2, 0.26), Vector3(0, rail_hi, 0.0))
+			for i in 15:
+				var bx := -1.4 + i * 0.2
+				var h_off := rng.randf_range(-0.01, 0.01)
+				var board := WOOD.lightened(rng.randf_range(-0.05, 0.06))
+				var grain := func(p: Vector2, _t: float) -> Color:
+					return board.darkened(0.08) if fposmod(p.y * 6.0 + sin(p.x * 30.0), 1.0) < 0.08 else board
+				if absf(bx) < door_w + 0.05:   # under the lintel only
+					var top_len := (rail_hi - door_h) * 0.5
+					var outline := _rounded_rect(0.092, top_len, 0.02, 1)
+					k.sculpt(outline, Transform3D(Basis(), Vector3(bx, door_h + top_len + h_off, 0.0)), func(_p: Vector2) -> float: return 0.08, grain, 1, 0.02)
+				else:
+					var outline := _rounded_rect(0.092, (rail_hi - rail_lo) * 0.5, 0.02, 1)
+					k.sculpt(outline, Transform3D(Basis(), Vector3(bx, (rail_hi + rail_lo) * 0.5 + h_off, 0.0)), func(_p: Vector2) -> float: return 0.08, grain, 1, 0.02)
+			for side in [-1.0, 1.0]:
+				k.add_primitive(_box(Vector3(0.12, door_h, 0.26)), Transform3D(Basis(), Vector3(side * door_w, door_h * 0.5, 0.0)), WOOD_DARK, 0.0, 0.03)
+			k.add_primitive(_box(Vector3(door_w * 2.0 + 0.24, 0.12, 0.26)), Transform3D(Basis(), Vector3(0.0, door_h, 0.0)), WOOD_DARK, 0.0, 0.03)
+		"ceiling":
+			# A flat deck at roof height: planks across three joists, with a beam rim, like the roof's frame.
+			for z in [-1.0, 0.0, 1.0]:
+				_board(k, Vector3(3.0, 0.14, 0.16), Transform3D(Basis(), Vector3(0, -0.04, z)), WOOD_DARK)
+			var deck_w := GameActions.CELL / 12.0
+			for i in 12:
+				var z := -h + deck_w * (i + 0.5)
+				_board(k, Vector3(GameActions.CELL, deck_w - 0.03, 0.1), Transform3D(Basis(Vector3.RIGHT, -PI * 0.5), Vector3(0, 0.06, z)),
+					WOOD.lightened(rng.randf_range(-0.05, 0.06)), rng.randf_range(-0.005, 0.005))
+			for side in [-1.0, 1.0]:
+				k.add_primitive(_box(Vector3(3.0, 0.16, 0.14)), Transform3D(Basis(), Vector3(0, -0.02, side * h)), WOOD_DARK, 0.0, 0.03)
+				k.add_primitive(_box(Vector3(0.14, 0.16, 3.0)), Transform3D(Basis(), Vector3(side * h, -0.02, 0)), WOOD_DARK, 0.0, 0.03)
 		"roof":
 			# Overlapping clay tiles in staggered rows over a 3 m square, with a timber edge.
 			var clay := Color(0.62, 0.34, 0.26)
@@ -157,6 +246,11 @@ static func _build_piece(kind: String) -> MeshKit:
 				k.add_primitive(_box(Vector3(3.0, 0.16, 0.14)), Transform3D(Basis(), Vector3(0, -0.02, side * h)), WOOD_DARK, 0.0, 0.03)
 				k.add_primitive(_box(Vector3(0.14, 0.16, 3.0)), Transform3D(Basis(), Vector3(side * h, -0.02, 0)), WOOD_DARK, 0.0, 0.03)
 	return k
+
+
+## A horizontal rail (a plank-coloured box) centred at `at`.
+static func _box_rail(k: MeshKit, size: Vector3, at: Vector3) -> void:
+	k.add_primitive(_box(size), Transform3D(Basis(), at), WOOD_DARK, 0.0, 0.03)
 
 
 ## A rounded rectangle outline (half sizes hx, hy; corner radius r; segments per corner).
@@ -253,7 +347,7 @@ static func _workbench(k: MeshKit) -> void:
 			var a := TAU * s / 16.0
 			ring.append(Vector3(-0.45 + cos(a) * r, y + 0.015 + i * 0.012, 0.15 + sin(a) * r))
 			rr.append(0.014)
-		k.loft(ring, rr, 6, ROPE.darkened(i * 0.06), Callable(), Callable(), false, false)
+		k.loft(ring, rr, 6, ROPE.darkened(i * 0.06), Callable(), Callable(), false, false, 0.0, true)
 	# A vise block on the front edge.
 	_board(k, Vector3(0.16, 0.14, 0.1), Transform3D(Basis(), Vector3(-0.55, top_y + 0.05, 0.5)), WOOD_DARK)
 	k.loft([Vector3(-0.55, top_y + 0.05, 0.5), Vector3(-0.55, top_y + 0.05, 0.68)], [0.012, 0.012], 8, IRON)
@@ -286,7 +380,7 @@ static func _forge(k: MeshKit, g: MeshKit, stone: Color) -> void:
 	var chimney_col := func(t: float, a: float) -> Color:
 		var band := fposmod(t * 9.0 + sin(a * 3.0) * 0.2, 1.0) < 0.14
 		return mortar.darkened(0.15) if band or t > 0.93 else mortar.lightened(0.08 * sin(a * 5.0 + t * 11.0))
-	k.loft(path, radii, 14, mortar.lightened(0.05), chimney_col, Callable(), false, true, 0.02)
+	k.loft(path, radii, 14, mortar.lightened(0.05), chimney_col, Callable(), true, true, 0.02)
 	# Mouth: dark recess with glowing coals.
 	k.add_primitive(MeshKit.sphere(0.3, 14, 8), Transform3D(Basis.from_scale(Vector3(1.0, 0.8, 0.6)), Vector3(0, 0.55, -0.48)), Color(0.16, 0.08, 0.05), 0.0, 0.02)
 	for i in 9:
