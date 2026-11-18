@@ -200,6 +200,13 @@ func mesh(key: String) -> ArrayMesh:
 	return meshes[key]
 
 
+## Build every mesh now, while the world loads. A single flora mesh can take ~100 ms, so building them on first
+## use stalled play; loading is the one moment a stall is expected.
+func prebuild() -> void:
+	for key: String in _specs:
+		mesh(key)
+
+
 ## Whether a mesh key exists (it may not be built yet).
 func has_mesh(key: String) -> bool:
 	return _specs.has(key)

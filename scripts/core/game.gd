@@ -161,6 +161,7 @@ func _build_assets() -> void:
 	MeshKit.detail = Settings.mesh_detail()
 	ItemDB.build(world_seed, palette)   # first: plants and ore use item colors
 	flora = FloraLibrary.new(world_seed, palette)
+	flora.prebuild()   # while loading, so no flora mesh is built in the middle of play
 	fauna = FaunaLibrary.new(world_seed, palette)
 	MeshKit.detail = 1.0
 
