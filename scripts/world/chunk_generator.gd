@@ -339,8 +339,11 @@ static func _resource_buffers(resources: Array[Dictionary], origin: Vector3, tie
 			continue
 		if tier == 1 and cat == "clutter" and r.kind != "boulder" and r.kind != "log":
 			continue
-		# Trees a little way off (tier 1) use their low-poly twins too: they are most of the triangles in view.
-		var key: String = r.key + ("_lod" if tier == 2 or (tier == 1 and cat == "tree") else "")
+		# Trees beyond the nearest ring draw their species' first low-poly twin: they are most of the triangles in
+		# view, and at that range one shape per species is plenty (each extra shape is another draw call per chunk).
+		var key: String = r.key
+		if cat == "tree" and tier >= 1:
+			key = "%s_0_lod" % r.kind
 		var t: Transform3D = r.transform
 		t.origin -= origin
 		var shade := 0.92 + fposmod(t.origin.x * 3.17 + t.origin.z * 1.31, 0.16)

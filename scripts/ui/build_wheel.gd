@@ -55,12 +55,14 @@ func _build_preview() -> void:
 	var env := WorldEnvironment.new()
 	env.environment = Environment.new()
 	env.environment.ambient_light_source = Environment.AMBIENT_SOURCE_COLOR
-	env.environment.ambient_light_color = Color(0.75, 0.72, 0.68)
-	env.environment.ambient_light_energy = 0.7
+	env.environment.ambient_light_color = Color(0.62, 0.66, 0.74)   # a cool sky fill, so the sunlit side reads warmer
+	env.environment.ambient_light_energy = 0.4
+	env.environment.tonemap_mode = Environment.TONE_MAPPER_FILMIC
 	_viewport.add_child(env)
 	var sun := DirectionalLight3D.new()
-	sun.rotation = Vector3(-0.8, 0.6, 0.0)
-	sun.light_energy = 1.2
+	sun.rotation = Vector3(-0.7, 0.5, 0.0)
+	sun.light_color = Color(1.0, 0.94, 0.84)
+	sun.light_energy = 1.0
 	_viewport.add_child(sun)
 	var cam := Camera3D.new()
 	cam.position = Vector3(0.0, 3.4, 6.2)

@@ -661,7 +661,7 @@ func held_build_kind() -> String:
 
 func _update_placement() -> void:
 	var kind_now := held_build_kind()
-	if kind_now == "" or not active:
+	if kind_now == "" or not active or wheel_open:
 		placement = {}
 		if _ghost:
 			_ghost.visible = false

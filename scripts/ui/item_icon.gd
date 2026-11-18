@@ -23,6 +23,10 @@ func _draw() -> void:
 	var c := size * 0.5
 	var pal: WorldPalette = Game.palette
 	var col: Color = info.get("color", Color(0.8, 0.8, 0.8))
+	# Building pieces draw from their shape and material (the piece table), so all 24 match whatever their items say.
+	if GameActions.is_building(item):
+		_piece(GameActions.PIECES[item], c, s)
+		return
 	match String(info.get("icon", "")):
 		"logs":
 			for i in 2:

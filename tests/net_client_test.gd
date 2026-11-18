@@ -6,6 +6,7 @@ var _game: Node
 var _net: Node
 var _player: Node
 var _phase := "join"
+var _phase_ms := 0
 var _frames := 0
 var _fails: Array[String] = []
 var _target := {}
@@ -34,7 +35,7 @@ func _process(_delta: float) -> bool:
 				_check(_player.inventory.count("rock") == 1, "starts with a rock from the host")
 				_check(_net.avatars.has(1), "host's avatar exists")
 				_next("give")
-			elif _frames > 60 * 120:
+			elif _waited() > 120.0:
 				_check(false, "never finished joining")
 				return _finish()
 		"give":
@@ -51,8 +52,8 @@ func _process(_delta: float) -> bool:
 				_net.request("craft", {"recipe": rope_id, "pos": _player.global_position}, func(res: Dictionary) -> void:
 					_check(res.get("ok", false), "crafted a campfire through the host"))
 				_next("place")
-			elif _frames > 600:
-				_check(false, "host never sent the items")
+			elif _waited() > 30.0:
+				_check(false, "host never sent the items (%d of 5 replies, %d fiber)" % [_replies, _player.inventory.count("fiber")])
 				return _finish()
 		"place":
 			if _player.inventory.count("campfire") == 1:
@@ -69,14 +70,14 @@ func _process(_delta: float) -> bool:
 						_net.request("place", {"slot": slot, "pos": at, "yaw": 0.0})
 						break
 				_next("placed")
-			elif _frames > 600:
+			elif _waited() > 30.0:
 				_check(false, "campfire never arrived")
 				return _finish()
 		"placed":
 			if _game.structures.size() > _structures_before:
 				_check(true, "placed campfire shows up for the guest")
 				_next("tree")
-			elif _frames > 600:
+			elif _waited() > 30.0:
 				_check(false, "campfire never placed")
 				return _finish()
 		"tree":
@@ -110,7 +111,7 @@ func _process(_delta: float) -> bool:
 			if _target.get("removed", false) and _game.removed_resources.has(_target.id):
 				_check(_player.inventory.count("wood") > _wood, "chopped a tree through the host (wood %d -> %d)" % [_wood, _player.inventory.count("wood")])
 				_next("animals")
-			elif _frames > 1200:
+			elif _waited() > 45.0:
 				_check(false, "tree never fell (hp %s)" % str(_target.get("hp")))
 				return _finish()
 		"animals":
@@ -118,7 +119,7 @@ func _process(_delta: float) -> bool:
 			if n > 0:
 				_check(true, "host's animals appear for the guest: %d" % n)
 				_next("report")
-			elif _frames > 60 * 30:
+			elif _waited() > 45.0:
 				_check(false, "no animals arrived from the host")
 				_next("report")
 		"report":
@@ -133,6 +134,12 @@ func _process(_delta: float) -> bool:
 func _next(p: String) -> void:
 	_phase = p
 	_frames = 0
+	_phase_ms = Time.get_ticks_msec()
+
+
+## Seconds spent in this phase. Waits are timed in seconds, not frames: a busy host makes frames come fast or slow.
+func _waited() -> float:
+	return (Time.get_ticks_msec() - _phase_ms) / 1000.0
 
 
 func _check(ok: bool, what: String) -> void:

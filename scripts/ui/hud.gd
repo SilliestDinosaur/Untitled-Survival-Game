@@ -283,6 +283,7 @@ func _process(delta: float) -> void:
 	_biome.modulate = _biome.modulate.lerp(Color.WHITE, 1.0 - exp(-1.5 * delta))
 
 	_wheel.player = player
+	_banner.visible = not _wheel.visible   # the island's name card would sit on top of the wheel
 	# Crosshair target.
 	var look: Dictionary = player.looking_at
 	_target_name.text = look.get("name", "")

@@ -3,7 +3,7 @@ extends Node3D
 ## Pure view of shared data: when the data changes (here or, later, from the host), it re-syncs.
 
 ## How long a dropped item lies (its longest side, in metres), by tool type; other kinds below.
-const TOOL_LENGTH := {"hatchet": 0.5, "pickaxe": 0.5, "spear": 0.7, "knife": 0.3, "torch": 0.4, "rock": 0.15}
+const TOOL_LENGTH := {"hatchet": 0.5, "pickaxe": 0.5, "hammer": 0.5, "spear": 0.7, "knife": 0.3, "torch": 0.4, "rock": 0.15, "plan": 0.35}
 const PLACEABLE_LENGTH := 0.3
 const ITEM_LENGTH := 0.2
 const REST_HEIGHT := 0.02   ## the bottom of a dropped item sits this far above the ground
