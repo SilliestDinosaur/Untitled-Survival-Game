@@ -159,6 +159,7 @@ func new_world(seed_value: int) -> void:
 
 func _build_assets() -> void:
 	MeshKit.detail = Settings.mesh_detail()
+	MeshKit.leaves = Settings.leaf_detail
 	ItemDB.build(world_seed, palette)   # first: plants and ore use item colors
 	flora = FloraLibrary.new(world_seed, palette)
 	flora.prebuild()   # while loading, so no flora mesh is built in the middle of play
@@ -167,12 +168,15 @@ func _build_assets() -> void:
 
 
 var _last_detail := ""
+var _last_leaves := true
 
 func _on_settings_changed() -> void:
 	if _last_detail == "":
 		_last_detail = Settings.model_detail
-	if Settings.model_detail != _last_detail and palette:
+	# Model detail and leaf cards are baked into the flora meshes, so changing either rebuilds them.
+	if (Settings.model_detail != _last_detail or Settings.leaf_detail != _last_leaves) and palette:
 		_last_detail = Settings.model_detail
+		_last_leaves = Settings.leaf_detail
 		_build_assets()
 		assets_rebuilt.emit()
 

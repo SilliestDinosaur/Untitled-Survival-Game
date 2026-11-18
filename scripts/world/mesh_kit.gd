@@ -15,6 +15,8 @@ var canopy_shading := true
 
 ## Global polygon multiplier (the "Model detail" setting). Set while building assets.
 static var detail := 1.0
+## Whether trees get their small leaf cards and needle cards (the "Leaf details" setting).
+static var leaves := true
 var _noise: FastNoiseLite
 
 

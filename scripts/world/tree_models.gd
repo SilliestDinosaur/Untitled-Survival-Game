@@ -135,6 +135,8 @@ static func blob(kit: MeshKit, rng: RandomNumberGenerator, center: Vector3, radi
 
 ## A leaf card: a pointed quad, double-sided so it reads from above and below.
 static func leaf(kit: MeshKit, rng: RandomNumberGenerator, at: Vector3, n: Vector3, size: float, color: Color) -> void:
+	if not MeshKit.leaves:
+		return
 	var helper := Vector3.UP if absf(n.y) < 0.9 else Vector3.RIGHT
 	var t := n.cross(helper).normalized().rotated(n, rng.randf() * TAU)
 	var s := n.cross(t).normalized()

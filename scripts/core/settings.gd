@@ -58,6 +58,7 @@ var glow := true
 var vsync := false
 var fps_cap := 0
 var grass := "Medium"
+var leaf_detail := true          ## small leaf and needle cards on trees
 var master_volume := 0.8
 var music_volume := 0.6
 var sfx_volume := 1.0
@@ -116,6 +117,7 @@ func load_settings() -> void:
 	vsync = cfg.get_value("video", "vsync", vsync)
 	fps_cap = cfg.get_value("video", "fps_cap", fps_cap)
 	grass = cfg.get_value("video", "grass", grass)
+	leaf_detail = cfg.get_value("video", "leaf_detail", leaf_detail)
 	master_volume = cfg.get_value("audio", "master_volume", master_volume)
 	music_volume = cfg.get_value("audio", "music_volume", music_volume)
 	sfx_volume = cfg.get_value("audio", "sfx_volume", sfx_volume)
@@ -134,7 +136,7 @@ func save_settings() -> void:
 	cfg.set_value("video", "quality", quality)
 	cfg.set_value("video", "model_detail", model_detail)
 	cfg.set_value("video", "show_fps", show_fps)
-	for k: String in ["shadow_quality", "anti_aliasing", "render_scale", "ambient_occlusion", "glow", "vsync", "fps_cap", "grass"]:
+	for k: String in ["shadow_quality", "anti_aliasing", "render_scale", "ambient_occlusion", "glow", "vsync", "fps_cap", "grass", "leaf_detail"]:
 		cfg.set_value("video", k, get(k))
 	cfg.set_value("audio", "master_volume", master_volume)
 	cfg.set_value("audio", "music_volume", music_volume)
