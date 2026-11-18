@@ -192,7 +192,7 @@ func _new_world_loaded() -> void:
 	_map.reset_for_world()
 
 
-## Chests, glowing fungus and bats in the caves of this island (the caves themselves are ground).
+## Chests and glowing fungus in the caves of this island (the caves themselves are ground).
 func _build_cave_features() -> void:
 	if _cave_features:
 		remove_child(_cave_features)   # out of the tree now, so the new one can take its name

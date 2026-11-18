@@ -5,7 +5,7 @@ extends RefCounted
 ## entrances are joined by long corridors. The plan is made from the BASE terrain (before any building)
 ## so every machine plans the same caves. VoxelTerrain subtracts the planned voids from the ground.
 ##
-## A plan is a Dictionary: {entrances, roots, nodes, rooms, chests, glow, bats, segs, buckets}.
+## A plan is a Dictionary: {entrances, roots, nodes, rooms, chests, glow, segs, buckets}.
 ## segs are [a: Vector3, b: Vector3, ra: float, rb: float] tunnel pieces; buckets map a 16 m grid
 ## cell to the segs that reach it, for quick lookups. A plan is read-only once made, so worker
 ## threads can use it safely.
@@ -94,7 +94,7 @@ static func plan(gen: WorldGen) -> Dictionary:
 				dir.y = clampf(dir.y + rng.randf_range(-0.12, 0.12) - 0.05, -0.5, 0.3)
 				dir = dir.normalized()
 				var length := rng.randf_range(3.2, 5.0)
-				# Mostly tunnels, now and then a chamber (bigger, and a point for chests and bats).
+				# Mostly tunnels, now and then a chamber (bigger, and a point for chests).
 				var is_room := rng.randf() < 0.1
 				var nr := clampf(rad + rng.randf_range(-0.5, 0.5), 1.2, 3.6)
 				if is_room:
@@ -137,18 +137,13 @@ static func plan(gen: WorldGen) -> Dictionary:
 				edges.append([i, j])
 				loops += 1
 				break
-	# Chests in some chambers, glowing fungus on the floors, bats up in the chambers.
+	# Chests in some chambers, glowing fungus on the floors.
 	var chests: Array = []
 	var glow: Array = []
-	var bats: Array = []
 	for r: int in rooms:
 		var n: Dictionary = nodes[r]
 		if chests.size() < 6 and rng.randf() < 0.45:
 			chests.append(n.p + Vector3(float(n.r) * 0.4, -float(n.r) + 1.0, 0.0))
-		if bats.size() < 16:
-			for k in 2:
-				var ang := rng.randf() * TAU
-				bats.append(n.p + Vector3(cos(ang) * 2.5, float(n.r) * 0.4, sin(ang) * 2.5))
 	for i in nodes.size():
 		if glow.size() >= 90:
 			break
@@ -179,7 +174,7 @@ static func plan(gen: WorldGen) -> Dictionary:
 					buckets[key] = []
 				buckets[key].append(si)
 	return {"entrances": spots, "roots": roots, "nodes": nodes, "rooms": rooms, "chests": chests,
-		"glow": glow, "bats": bats, "segs": segs, "buckets": buckets}
+		"glow": glow, "segs": segs, "buckets": buckets}
 
 
 static func _base_grad(gen: WorldGen, x: float, z: float) -> Vector2:

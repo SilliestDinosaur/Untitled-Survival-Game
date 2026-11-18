@@ -157,6 +157,8 @@ var _base_detail := 1.0
 var _bare := false   ## building the "already harvested" look
 
 ## Kinds that look different after being hand-harvested (the fruiting tree is added per world).
+## Trees are built at this share of the model detail setting, whatever it is: they are the costliest flora to draw.
+const TREE_DETAIL := 0.5
 const BARE_KINDS := ["berry", "reeds", "agave", "glowcap", "giant_mushroom"]
 
 
@@ -176,13 +178,14 @@ func _init(seed_value: int, pal: WorldPalette) -> void:
 		for i in KINDS[kind].variants:
 			var key := "%s_%d" % [kind, i]
 			var variant_seed := rng.randi()
-			_specs[key] = {"kind": kind, "index": i, "seed": variant_seed, "bare": false, "detail": _base_detail}
+			var detail := _base_detail * (TREE_DETAIL if KINDS[kind].category == "tree" else 1.0)
+			_specs[key] = {"kind": kind, "index": i, "seed": variant_seed, "bare": false, "detail": detail}
 			# Harvested look (same shape, same seed): bare bushes, fruitless trees, cut reeds.
 			if kind in BARE_KINDS or kind == ItemDB.fruit_tree:
-				_specs[key + "_bare"] = {"kind": kind, "index": i, "seed": variant_seed, "bare": true, "detail": _base_detail}
+				_specs[key + "_bare"] = {"kind": kind, "index": i, "seed": variant_seed, "bare": true, "detail": detail}
 			# Far-away twin: same shape (same seed), far fewer polygons.
 			if KINDS[kind].category == "tree":
-				_specs[key + "_lod"] = {"kind": kind, "index": i, "seed": variant_seed, "bare": false, "detail": _base_detail * 0.45}
+				_specs[key + "_lod"] = {"kind": kind, "index": i, "seed": variant_seed, "bare": false, "detail": _base_detail * TREE_DETAIL * 0.6}
 			variants[kind].append(key)
 
 
