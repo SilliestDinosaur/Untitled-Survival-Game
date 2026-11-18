@@ -41,8 +41,6 @@ var _coast := FastNoiseLite.new()      # bays and headlands along the coast
 var _temperature := FastNoiseLite.new()
 var _moisture := FastNoiseLite.new()
 var _forest := FastNoiseLite.new()     # clumping of trees inside a biome
-var _river := FastNoiseLite.new()      # rivers follow this noise's zero line (meandering via warp)
-var _river_gate := FastNoiseLite.new() # breaks the zero lines into separate rivers and creeks
 var _lake := FastNoiseLite.new()       # lake basins in the lowlands
 
 
@@ -97,37 +95,20 @@ func _init(seed_value: int, pal: WorldPalette) -> void:
 	_moisture.fractal_octaves = 3
 
 	_forest.seed = seed_value + 5
-	_hydro_ready = false
 	_forest.frequency = 0.012
 	_forest.fractal_octaves = 2
 
-	_river.seed = seed_value + 7
-	_river.noise_type = FastNoiseLite.TYPE_SIMPLEX_SMOOTH
-	_river.frequency = rng.randf_range(0.0013, 0.0019)
-	_river.fractal_octaves = 1
-	_river.domain_warp_enabled = true
-	_river.domain_warp_type = FastNoiseLite.DOMAIN_WARP_SIMPLEX
-	_river.domain_warp_amplitude = 40.0
-	_river.domain_warp_frequency = 0.006
-	_river_gate.seed = seed_value + 8
-	_river_gate.frequency = 0.0012
-	_river_gate.fractal_octaves = 1
 	_lake.seed = seed_value + 9
 	_lake.noise_type = FastNoiseLite.TYPE_SIMPLEX_SMOOTH
 	_lake.frequency = rng.randf_range(0.0035, 0.005)
 	_lake.fractal_octaves = 2
 	lake_amount = rng.randf_range(0.0, 1.0)
 
-	hydro = Hydrology.compute(self)
-	_hydro_ready = true
 	caves = Caves.plan(self)   # planned from the base ground, so it's the same on every machine
 
 
 ## Terrain height in meters at world position (x, z). Sea level is 0.
-## Drainage: river depths and water levels on a coarse grid (see Hydrology). Built once per world.
-var hydro := {}
 var caves: Dictionary = {}   ## the cave plan (see Caves.plan)
-var _hydro_ready := false
 
 ## Metres added to the procedural ground by digging / piling / flattening. Keys are whole-metre
 ## cells (Vector2i). Copy-on-write: edits are replaced by a new dictionary, so worker threads that
@@ -204,15 +185,6 @@ func get_base_height(x: float, z: float) -> float:
 	var offshore := smoothstep(0.5, 0.95, coast_raw)
 	var seabed := lerpf(-2.5, -24.0, offshore) + bumps * 0.6 * offshore
 	var ground := lerpf(seabed, land, mask)
-	# Rivers: cut where the drainage model says water runs (see Hydrology). Done last, on the ground the
-	# coast has already shaped, and never below just above the sea, so plains don't turn into lagoons.
-	if _hydro_ready and ground > 0.0:
-		# Low ground (plains by the sea) only gets the channel itself cut: a wide valley there would
-		# drop the banks to the water and flood the plain. Higher ground gets the full valley.
-		var valley := Hydrology.sample(hydro.depth, hydro.n, x, z)
-		var channel := Hydrology.sample(hydro.channel, hydro.n, x, z)
-		var cut := lerpf(channel, valley, smoothstep(2.0, 4.0, ground)) * clampf(ground / 2.0, 0.0, 1.0)
-		ground = maxf(ground - cut, minf(ground, Game.SEA_LEVEL + 0.3))
 	return ground
 
 
@@ -223,7 +195,7 @@ func badlands_amount(x: float, z: float) -> float:
 	return 1.0 - smoothstep(0.08, 0.2, c.distance_to(CLIMATE_BIOMES[Biome.BADLANDS]))
 
 
-## Rivers and lakes: channels and basins cut below sea level so the sea plane fills them.
+## Lakes: basins cut below sea level so the sea plane fills them.
 ## They only form in the lowlands; in hills and mountains they taper out (springs, gorges' ends).
 func _carve_water(x: float, z: float, land: float, range_t: float, mask: float, bumps: float) -> float:
 	var lowland := (1.0 - range_t) * (1.0 - smoothstep(6.0, 12.0, land)) * smoothstep(0.25, 0.5, mask)

@@ -27,7 +27,7 @@ Each seed produces its own:
 - **Biomes**: Meadow, Forest, Autumn Grove, Savanna, Taiga, Marsh, Desert, Jungle, Tundra,
   Badlands (striped mesas), Fungal Grove (rare: giant mushrooms and glowcaps) + Beach, Highlands, Snowfields
 - **Mountains**: warped ridged ranges with foothills, alpine meadows and snow caps
-- **Water**: the sea, plus meandering rivers and lowland lakes carved into the terrain (how
+- **Water**: the sea, plus lowland lakes carved into the terrain (how
   lake-rich a world is varies). Painted water shader: clear shallows that show the ground,
   banded depth colours, sky reflections, shore foam lines and glints.
 - **Music**: each world has its own key, scales, motifs and chord progressions (see below)

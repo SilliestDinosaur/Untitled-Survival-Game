@@ -29,10 +29,7 @@ func _process(_d: float) -> bool:
 			var pal = _game.palette
 			var t := Time.get_ticks_usec()
 			var gen = load("res://scripts/world/world_gen.gd").new(629946553, pal)
-			print("WorldGen.new (incl. hydrology + cave plan): ", _ms(t))
-			t = Time.get_ticks_usec()
-			var h = load("res://scripts/world/hydrology.gd").compute(gen)
-			print("  Hydrology.compute alone: ", _ms(t))
+			print("WorldGen.new (incl. cave plan): ", _ms(t))
 			t = Time.get_ticks_usec()
 			var plan = load("res://scripts/world/caves.gd").plan(gen)
 			print("  Caves.plan alone: ", _ms(t))
