@@ -479,7 +479,7 @@ func run_action(pid: int, peer: int, action: String, a: Dictionary) -> Dictionar
 					# and the ground under it is levelled to that height.
 					cells = TerrainEdit.level_ground(placed.pos, 1.5, 1.5, 0.0, placed.pos.y)
 				else:
-					var rect := Vector2(1.5, 0.25) if kind in GameActions.WALL_KINDS else Vector2(1.5, 1.5)
+					var rect := Vector2(1.5, 0.25) if kind in GameActions.EDGE_KINDS else Vector2(1.5, 1.5)
 					cells = TerrainEdit.clear_rect(placed.pos, rect.x, rect.y, float(placed.get("yaw", 0.0)), placed.pos.y)
 				if not cells.is_empty():
 					TerrainEdit.commit(cells)
@@ -488,6 +488,8 @@ func run_action(pid: int, peer: int, action: String, a: Dictionary) -> Dictionar
 			return placed
 		"hit_structure":
 			return GameActions.hit_structure(pid, String(a.structure))
+		"toggle_door":
+			return GameActions.toggle_door(pid, String(a.structure))
 		"consume":
 			return GameActions.consume(pid)
 		"hit_animal":

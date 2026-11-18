@@ -222,16 +222,57 @@ const WALL_LIFT := 0.25      ## walls stand on the top of a level's slab
 const WALL_H := 3.0
 const ROOF_T := 0.3
 const MAX_LEVEL := 3
-## Kinds, by what they do. A floor (foundation or plank floor) is the slab a level stands on; walls
-## stand on a floor's edges; a cover (roof or plank ceiling) closes a cell's top.
-const FLOOR_KINDS := ["foundation", "wood_floor"]
-const WALL_KINDS := ["wall", "wood_wall", "window_wall", "doorway", "wood_doorway"]
-const COVER_KINDS := ["roof", "ceiling"]
-const BUILD_KINDS := ["foundation", "wood_floor", "wall", "wood_wall", "window_wall", "doorway", "wood_doorway", "roof", "ceiling"]
+const FLOOR_TOP := 0.34      ## a floor's walking surface, above its origin
+const STAIR_STEPS := 12      ## a staircase climbs one storey (STACK_H) in this many steps
+
+## Building pieces: each kind is a shape in a material. The shape decides how it's placed (floors
+## and covers by cell, everything else on a floor's edge, stairs in a cell) and how it's built.
+const PIECES := {
+	"foundation": {"shape": "floor", "mat": "stone"},
+	"wood_floor": {"shape": "floor", "mat": "wood"},
+	"brick_floor": {"shape": "floor", "mat": "brick"},
+	"wall": {"shape": "wall", "mat": "brick"},
+	"wood_wall": {"shape": "wall", "mat": "wood"},
+	"stone_wall": {"shape": "wall", "mat": "stone"},
+	"brick_half": {"shape": "half", "mat": "brick"},
+	"wood_half": {"shape": "half", "mat": "wood"},
+	"stone_half": {"shape": "half", "mat": "stone"},
+	"window_wall": {"shape": "window", "mat": "brick"},
+	"wood_window": {"shape": "window", "mat": "wood"},
+	"stone_window": {"shape": "window", "mat": "stone"},
+	"doorway": {"shape": "doorway", "mat": "brick"},
+	"wood_doorway": {"shape": "doorway", "mat": "wood"},
+	"stone_doorway": {"shape": "doorway", "mat": "stone"},
+	"brick_door": {"shape": "door", "mat": "brick"},
+	"wood_door": {"shape": "door", "mat": "wood"},
+	"stone_door": {"shape": "door", "mat": "stone"},
+	"brick_stairs": {"shape": "stairs", "mat": "brick"},
+	"wood_stairs": {"shape": "stairs", "mat": "wood"},
+	"stone_stairs": {"shape": "stairs", "mat": "stone"},
+	"roof": {"shape": "roof", "mat": "brick"},
+	"wood_roof": {"shape": "roof", "mat": "wood"},
+	"stone_roof": {"shape": "roof", "mat": "stone"},
+}
+const FLOOR_KINDS := ["foundation", "wood_floor", "brick_floor"]
+## Full-height walls, windows, doorways and doors. Roofs need two of these under them.
+const WALL_KINDS := ["wall", "wood_wall", "stone_wall", "window_wall", "wood_window", "stone_window",
+	"doorway", "wood_doorway", "stone_doorway", "brick_door", "wood_door", "stone_door"]
+const HALF_KINDS := ["brick_half", "wood_half", "stone_half"]
+## Everything that stands on a floor's edge.
+const EDGE_KINDS := ["wall", "wood_wall", "stone_wall", "window_wall", "wood_window", "stone_window",
+	"doorway", "wood_doorway", "stone_doorway", "brick_door", "wood_door", "stone_door",
+	"brick_half", "wood_half", "stone_half"]
+const DOOR_KINDS := ["brick_door", "wood_door", "stone_door"]
+const STAIR_KINDS := ["brick_stairs", "wood_stairs", "stone_stairs"]
+const COVER_KINDS := ["roof", "wood_roof", "stone_roof"]
 
 
 static func is_building(kind: String) -> bool:
-	return kind in BUILD_KINDS
+	return PIECES.has(kind)
+
+
+static func shape_of(kind: String) -> String:
+	return String(PIECES.get(kind, {}).get("shape", ""))
 
 
 static func cell_of(p: Vector3) -> Vector2i:
@@ -242,7 +283,7 @@ static func _cell_center(cell: Vector2i) -> Vector3:
 	return Vector3(cell.x * CELL + CELL * 0.5, 0.0, cell.y * CELL + CELL * 0.5)
 
 
-## Every building piece in one cell (foundations, roofs and walls on its edges are matched by level).
+## Every floor in one cell, lowest first.
 static func foundations_in(cell: Vector2i) -> Array:
 	var out := []
 	for id: String in Game.structures:
@@ -253,7 +294,7 @@ static func foundations_in(cell: Vector2i) -> Array:
 	return out
 
 
-## The foundation of one level in a cell, or {}.
+## The floor of one level in a cell, or {}.
 static func foundation_at(cell: Vector2i, level := 0) -> Dictionary:
 	for f: Dictionary in foundations_in(cell):
 		if int(f.level) == level:
@@ -261,7 +302,7 @@ static func foundation_at(cell: Vector2i, level := 0) -> Dictionary:
 	return {}
 
 
-## The roof or ceiling covering a cell's level, or {}.
+## The roof covering a cell's level, or {}.
 static func cover_in(cell: Vector2i, level: int) -> Dictionary:
 	for id: String in Game.structures:
 		var st: Dictionary = Game.structures[id]
@@ -291,7 +332,7 @@ static func wall_sides(pos: Vector3, yaw: float) -> Array:
 	return [cell_of(Vector3(pos.x - 0.5, 0, pos.z)), cell_of(Vector3(pos.x + 0.5, 0, pos.z))]
 
 
-## The base height a wall on an edge stands from: the bordering cell that has a foundation.
+## The base height a piece on an edge stands from: the bordering cell that has a floor.
 static func wall_base(pos: Vector3, yaw: float) -> float:
 	var sides := wall_sides(pos, yaw)
 	return base_y(sides[0]) if not foundations_in(sides[0]).is_empty() else base_y(sides[1])
@@ -300,16 +341,16 @@ static func wall_base(pos: Vector3, yaw: float) -> float:
 ## Which level a height belongs to, measured from the cell's base.
 static func level_of(kind: String, y: float, base: float) -> int:
 	var lift := 0.0
-	if kind in WALL_KINDS:
+	if kind in EDGE_KINDS:
 		lift = WALL_LIFT
 	elif kind in COVER_KINDS:
 		lift = WALL_LIFT + WALL_H + ROOF_T * 0.5
 	return roundi((y - base - lift) / STACK_H)
 
 
-## The height a new ground-level foundation in `cell` sits at. Every foundation touching this one
-## (edge or corner) shares its height, so a base lines up flush; a lone foundation takes the ground
-## height rounded to half a metre. The ground under the slab is levelled to this height.
+## The height a new ground-level floor in `cell` sits at. Every floor touching this one (edge or
+## corner) shares its height, so a base lines up flush; a lone floor takes the ground height rounded
+## to half a metre. The ground under the slab is levelled to this height.
 static func ground_slab_y(cell: Vector2i) -> float:
 	var best: Dictionary = {}
 	var best_d := 99
@@ -328,11 +369,12 @@ static func ground_slab_y(cell: Vector2i) -> float:
 	return snappedf(Game.world_gen.get_height(c.x, c.z), 0.5)
 
 
-## Where a building piece goes when the player aims at `aim` (a world point, from the ray
-## when it hits something, or the ground). Returns {pos, yaw, level}.
-## `prefer_yaw` (walls): the edge the preview was already on. Near a cell corner both edges are
+## Where a building piece goes when the player aims at `aim` (a world point, from the ray when it hits
+## something, or the ground). Returns {pos, yaw, level}.
+## `prefer_yaw` (edge pieces): the edge the preview was already on. Near a cell corner both edges are
 ## about equally close, and keeping the current one stops the ghost flickering between them.
-static func snap_piece(kind: String, aim: Vector3, prefer_yaw := -1.0) -> Dictionary:
+## `facing` (stairs): the way the player faces; the steps climb away from them, snapped to a quarter turn.
+static func snap_piece(kind: String, aim: Vector3, prefer_yaw := -1.0, facing := 0.0) -> Dictionary:
 	var cell := cell_of(aim)
 	var c := _cell_center(cell)
 	if kind in FLOOR_KINDS:
@@ -348,7 +390,16 @@ static func snap_piece(kind: String, aim: Vector3, prefer_yaw := -1.0) -> Dictio
 		var level := clampi(floori((aim.y - base) / STACK_H), 0, MAX_LEVEL)
 		var y := base + level * STACK_H + WALL_LIFT + WALL_H + ROOF_T * 0.5
 		return {"pos": Vector3(c.x, y, c.z), "yaw": 0.0, "level": level}
-	# Walls and doorways: the nearest cell edge, at the level the aim is on.
+	if kind in STAIR_KINDS:
+		# The floor it climbs from: the highest one under the aim (-1 if the cell has none).
+		var level := -1
+		var y := aim.y
+		for f: Dictionary in foundations_in(cell):
+			if _pos(f).y <= aim.y + 0.5:
+				level = int(f.level)
+				y = _pos(f).y
+		return {"pos": Vector3(c.x, y, c.z), "yaw": snappedf(facing, PI * 0.5), "level": level}
+	# Edge pieces: the nearest cell edge, at the level the aim is on.
 	var dx := aim.x - c.x
 	var dz := aim.z - c.z
 	var pos: Vector3
@@ -367,7 +418,7 @@ static func snap_piece(kind: String, aim: Vector3, prefer_yaw := -1.0) -> Dictio
 	return {"pos": pos, "yaw": yaw, "level": level}
 
 
-## Walls (and doorways) standing on a level along one cell's edges.
+## Full-height walls (and doors) standing on a level along one cell's edges. Roofs need two of them.
 static func walls_around(cell: Vector2i, level: int) -> int:
 	var n := 0
 	for id: String in Game.structures:
@@ -398,22 +449,24 @@ static func placement_problem(pos: Vector3, kind := "", yaw := 0.0) -> String:
 			if TerrainEdit.tree_near(pos, 3.0) != null:
 				return "A tree is in the way. Chop it down first."
 			return ""
+		if kind in STAIR_KINDS:
+			return _stairs_problem(pos, kind, yaw)
 		var cell := cell_of(pos)
 		if TerrainEdit.tree_near(pos, 2.0) != null:
 			return "A tree is in the way. Chop it down first."
-		var base := wall_base(pos, yaw) if kind in WALL_KINDS else base_y(cell)
+		var base := wall_base(pos, yaw) if kind in EDGE_KINDS else base_y(cell)
 		var level := level_of(kind, pos.y, base)
 		if kind in COVER_KINDS:
 			if foundation_at(cell, level).is_empty():
 				return "A roof needs a foundation under it"
 			if not cover_in(cell, level).is_empty():
 				return "There's already a roof here"
-			if kind == "roof" and walls_around(cell, level) < 2:
+			if not _stairs_at(cell, level).is_empty():
+				return "Stairs go up through this spot"
+			if walls_around(cell, level) < 2:
 				return "A roof needs at least two walls under it"
-			if kind == "ceiling" and walls_around(cell, level) < 1:
-				return "A ceiling needs at least one wall under it"
 			return ""
-		# Walls and doorways
+		# Edge pieces: walls, half walls, windows, doorways and doors.
 		var sides := wall_sides(pos, yaw)
 		var supported := false
 		for s: Vector2i in sides:
@@ -423,7 +476,7 @@ static func placement_problem(pos: Vector3, kind := "", yaw := 0.0) -> String:
 			return "Walls need a foundation along that edge"
 		for id: String in Game.structures:
 			var o: Dictionary = Game.structures[id]
-			if o.kind in WALL_KINDS and _pos(o).distance_to(pos) < 0.5:
+			if o.kind in EDGE_KINDS and _pos(o).distance_to(pos) < 0.5:
 				return "There's already a wall here"
 		return ""
 	if Game.world_gen.get_normal(pos.x, pos.z).y < 0.8:
@@ -431,6 +484,38 @@ static func placement_problem(pos: Vector3, kind := "", yaw := 0.0) -> String:
 	for id: String in Game.structures:
 		if _pos(Game.structures[id]).distance_to(pos) < 1.8:
 			return "Too close to another structure"
+	return ""
+
+
+## The staircase starting from a cell's level, or {}.
+static func _stairs_at(cell: Vector2i, level: int) -> Dictionary:
+	for id: String in Game.structures:
+		var st: Dictionary = Game.structures[id]
+		if st.kind in STAIR_KINDS and int(st.get("level", 0)) == level and cell_of(_pos(st)) == cell:
+			return st
+	return {}
+
+
+## A staircase needs a floor to climb from, and nothing overhead in its cell: no floor, roof or
+## another staircase at the level it climbs to.
+static func _stairs_problem(pos: Vector3, kind: String, yaw: float) -> String:
+	var sn := snap_piece(kind, pos, -1.0, yaw)
+	var cell := cell_of(sn.pos)
+	var level: int = sn.level
+	if level < 0:
+		return "Stairs need a floor to climb from"
+	if level + 1 > MAX_LEVEL:
+		return "Too high to build"
+	if not foundation_at(cell, level + 1).is_empty():
+		return "A floor above blocks the stairs"
+	if not cover_in(cell, level).is_empty():
+		return "A roof covers the stairs"
+	for id: String in Game.structures:
+		var o: Dictionary = Game.structures[id]
+		if o.kind in STAIR_KINDS and cell_of(_pos(o)) == cell and int(o.get("level", 0)) == level:
+			return "There's already a staircase here"
+	if TerrainEdit.tree_near(sn.pos, 2.0) != null:
+		return "A tree is in the way. Chop it down first."
 	return ""
 
 
@@ -451,14 +536,34 @@ static func place_structure(player_id: int, slot: int, pos: Vector3, yaw: float)
 		pos = sn.pos
 		level = int(sn.level)
 		yaw = 0.0
+	elif kind in STAIR_KINDS:
+		var sn_s := snap_piece(kind, pos, -1.0, yaw)
+		pos = sn_s.pos
+		yaw = sn_s.yaw
+		level = int(sn_s.level)
 	elif is_building(kind):
-		level = level_of(kind, pos.y, wall_base(pos, yaw) if kind in WALL_KINDS else base_y(cell_of(pos)))
+		level = level_of(kind, pos.y, wall_base(pos, yaw) if kind in EDGE_KINDS else base_y(cell_of(pos)))
 	inv.take_from_slot(slot, 1)
 	var id := Game.new_entity_id("s")
 	var hp := 8 if is_building(kind) else 3
-	Game.structures[id] = {"id": id, "kind": kind, "pos": [pos.x, pos.y, pos.z], "yaw": yaw, "hp": hp, "level": level}
+	var st := {"id": id, "kind": kind, "pos": [pos.x, pos.y, pos.z], "yaw": yaw, "hp": hp, "level": level}
+	if kind in DOOR_KINDS:
+		st["open"] = false
+	Game.structures[id] = st
 	Game.structures_changed.emit()
 	return {"ok": true, "id": id, "kind": kind, "level": level, "pos": pos, "yaw": yaw}
+
+
+## Swing a door open or shut. Anyone can use a door.
+static func toggle_door(_player_id: int, structure_id: String) -> Dictionary:
+	if not Game.structures.has(structure_id):
+		return {"ok": false}
+	var st: Dictionary = Game.structures[structure_id]
+	if not st.kind in DOOR_KINDS:
+		return {"ok": false}
+	st["open"] = not bool(st.get("open", false))
+	Game.structures_changed.emit()
+	return {"ok": true, "open": st.open}
 
 
 ## Why a building piece can't be taken down yet ("" if it can).
@@ -468,16 +573,28 @@ static func removal_problem(st: Dictionary) -> String:
 		var lvl := int(st.level)
 		if not foundation_at(cell, lvl + 1).is_empty() or not cover_in(cell, lvl).is_empty() or not cover_in(cell, lvl + 1).is_empty():
 			return "Take down what's on top of it first"
-		if walls_around(cell, lvl) > 0:
+		if walls_around(cell, lvl) > 0 or _edges_on_floor(cell, lvl) > 0:
 			return "Take down the walls standing on it first"
 	elif st.kind in WALL_KINDS:
-		# A roof needs two walls under it, a ceiling one; don't let the cover fall.
+		# A roof needs two walls under it; don't let it fall.
 		var lvl := int(st.get("level", 0))
 		for s: Vector2i in wall_sides(_pos(st), float(st.get("yaw", 0.0))):
 			var cover := cover_in(s, lvl)
-			if not cover.is_empty() and walls_around(s, lvl) - 1 < (2 if cover.kind == "roof" else 1):
+			if not cover.is_empty() and walls_around(s, lvl) - 1 < 2:
 				return "The roof above it needs this wall"
 	return ""
+
+
+## Edge pieces (walls, half walls, windows, doors) standing on a floor's cell at one level.
+static func _edges_on_floor(cell: Vector2i, level: int) -> int:
+	var n := 0
+	for id: String in Game.structures:
+		var st: Dictionary = Game.structures[id]
+		if st.kind in EDGE_KINDS and int(st.get("level", 0)) == level:
+			for s: Vector2i in wall_sides(_pos(st), float(st.get("yaw", 0.0))):
+				if s == cell:
+					n += 1
+	return n
 
 
 ## Knock a structure down a bit; after a few hits it's packed back up into an item.

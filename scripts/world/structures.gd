@@ -60,6 +60,8 @@ func _sync() -> void:
 	for id: String in Game.structures:
 		if not _nodes.has(id):
 			_nodes[id] = _make(Game.structures[id])
+		else:
+			_apply_door(_nodes[id], Game.structures[id])
 
 
 func _make(st: Dictionary) -> Node3D:
@@ -95,39 +97,88 @@ func _make(st: Dictionary) -> Node3D:
 	body.collision_layer = TerrainChunk.LAYER_SOLID | TerrainChunk.LAYER_INTERACT
 	body.collision_mask = 0
 	body.set_meta("structure", st.id)
-	var cs := CollisionShape3D.new()
+	var panel: CollisionShape3D = null
 	if GameActions.is_building(st.kind):
-		var box := BoxShape3D.new()
-		if st.kind in GameActions.FLOOR_KINDS:
-			box.size = Vector3(3.0, 0.5, 3.0)
-		elif st.kind in GameActions.COVER_KINDS:
-			box.size = Vector3(3.0, 0.3, 3.0)
-		else:
-			box.size = Vector3(3.0, 3.0, 0.3)
-		cs.shape = box
-		var flat: bool = st.kind in GameActions.FLOOR_KINDS or st.kind in GameActions.COVER_KINDS
-		cs.position.y = 0.0 if flat else 1.5
-		if st.kind in ["doorway", "wood_doorway"]:   # two posts and a lintel: walkable through the opening
-			var parts := [[Vector3(-1.1, 1.5, 0), Vector3(0.8, 3.0, 0.3)], [Vector3(1.1, 1.5, 0), Vector3(0.8, 3.0, 0.3)], [Vector3(0, 2.65, 0), Vector3(1.4, 0.7, 0.3)]]
-			for pt: Array in parts:
-				var extra := CollisionShape3D.new()
-				var eb := BoxShape3D.new()
-				eb.size = pt[1]
-				extra.shape = eb
-				extra.position = pt[0]
-				body.add_child(extra)
-			box.size = Vector3(0.01, 0.01, 0.01)
+		panel = _add_piece_colliders(body, st.kind)
 	else:
+		var cs := CollisionShape3D.new()
 		var shape := CylinderShape3D.new()
 		shape.radius = model.radius
 		shape.height = 0.9 if st.kind != "forge" else 2.0
 		cs.shape = shape
 		cs.position.y = shape.height * 0.5
-	body.add_child(cs)
+		body.add_child(cs)
 	root.add_child(body)
+	if model.door != null:
+		# The door panel swings on a pivot at its hinge; its collision follows the same swing.
+		var pivot := Node3D.new()
+		pivot.position = Vector3(-StructureModels.DOOR_W, 0.0, 0.0)
+		var door_mi := MeshInstance3D.new()
+		door_mi.mesh = model.door
+		pivot.add_child(door_mi)
+		root.add_child(pivot)
+		root.set_meta("pivot", pivot)
+		root.set_meta("panel", panel)
+		_apply_door(root, st)
 	root.set_meta("phase", randf() * TAU)
 	add_child(root)
 	return root
+
+
+## Collision for a building piece: floors and roofs are slabs, half walls stand a metre high, stairs
+## are their treads, doorways and doors leave the opening clear, everything else is a solid wall.
+## Returns the door panel's shape (for doors), so it can follow the door's swing.
+func _add_piece_colliders(body: StaticBody3D, kind: String) -> CollisionShape3D:
+	var shape := GameActions.shape_of(kind)
+	var h := GameActions.CELL * 0.5
+	var panel: CollisionShape3D = null
+	match shape:
+		"floor":
+			_box_collider(body, Vector3(GameActions.CELL, 0.5, GameActions.CELL), Vector3.ZERO)
+		"roof":
+			_box_collider(body, Vector3(GameActions.CELL, 0.3, GameActions.CELL), Vector3.ZERO)
+		"half":
+			_box_collider(body, Vector3(GameActions.CELL, 1.0, 0.3), Vector3(0, 0.5, 0))
+		"stairs":
+			var rise := GameActions.STACK_H / GameActions.STAIR_STEPS
+			var run := GameActions.CELL / GameActions.STAIR_STEPS
+			for i in GameActions.STAIR_STEPS:
+				var top := GameActions.FLOOR_TOP + (i + 1) * rise
+				var zc := h - (i + 0.5) * run
+				_box_collider(body, Vector3(GameActions.CELL - 0.04, top, run + 0.02), Vector3(0, top * 0.5, zc))
+		"doorway", "door":
+			# Two posts and a lintel: walkable through the opening.
+			_box_collider(body, Vector3(0.8, 3.0, 0.3), Vector3(-1.1, 1.5, 0))
+			_box_collider(body, Vector3(0.8, 3.0, 0.3), Vector3(1.1, 1.5, 0))
+			_box_collider(body, Vector3(1.4, 0.7, 0.3), Vector3(0, 2.65, 0))
+			if shape == "door":
+				panel = _box_collider(body, Vector3(StructureModels.DOOR_W * 2.0 - 0.04, StructureModels.DOOR_H - 0.06, 0.08), Vector3.ZERO)
+		_:
+			_box_collider(body, Vector3(GameActions.CELL, GameActions.WALL_H, 0.3), Vector3(0, 1.5, 0))
+	return panel
+
+
+func _box_collider(body: StaticBody3D, size: Vector3, at: Vector3) -> CollisionShape3D:
+	var cs := CollisionShape3D.new()
+	var box := BoxShape3D.new()
+	box.size = size
+	cs.shape = box
+	cs.position = at
+	body.add_child(cs)
+	return cs
+
+
+## Swing a door's panel to match its open state (the panel's collision follows it).
+func _apply_door(root: Node3D, st: Dictionary) -> void:
+	if not root.has_meta("pivot"):
+		return
+	var pivot: Node3D = root.get_meta("pivot")
+	var panel: CollisionShape3D = root.get_meta("panel")
+	var ang := -PI * 0.5 if bool(st.get("open", false)) else 0.0
+	pivot.rotation.y = ang
+	var hinge := Vector3(-StructureModels.DOOR_W, 0.0, 0.0)
+	var centre := Vector3(StructureModels.DOOR_W - 0.02, StructureModels.DOOR_H * 0.5 - 0.03, 0.0)
+	panel.transform = Transform3D(Basis(Vector3.UP, ang), hinge + Basis(Vector3.UP, ang) * centre)
 
 
 func _process(_delta: float) -> void:

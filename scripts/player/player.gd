@@ -11,6 +11,7 @@ signal cave_chest(index: int)    ## Interact with a cave's supply chest
 
 const REACH := 3.2
 const PICKUP_SCENE_LAYER := 2
+const STEP_UP := 0.36   ## the highest ledge (a stair tread, a log) the body walks up without jumping
 
 @export var walk_speed := 5.0
 @export var sprint_speed := 8.5
@@ -163,6 +164,40 @@ func _unhandled_input(event: InputEvent) -> void:
 	if event.is_action_pressed("drop") and Input.mouse_mode == Input.MOUSE_MODE_CAPTURED:
 		drop_selected(Input.is_key_pressed(KEY_CTRL))
 
+## Moves the body, and walks up any step it would otherwise stop at: when the body is pressed against
+## something on the ground, it tries again raised by STEP_UP, walks on at the speed it wants to go, then
+## drops back onto whatever it reached.
+func _move_with_steps(delta: float, desired: Vector3) -> void:
+	var before := global_transform
+	var was_on_floor := is_on_floor()
+	move_and_slide()
+	if swimming or not was_on_floor or not is_on_wall() or desired.length() < 0.01:
+		return
+	var slid := global_transform
+	global_transform = before
+	if _climb(desired * delta, before.origin):
+		return
+	global_transform = slid
+
+
+## One attempt at a step: up, forward, then down onto the ground there. Keeps the step only if the
+## body got most of the way along the wanted walk and landed on something walkable.
+func _climb(wanted: Vector3, start: Vector3) -> bool:
+	var up := Vector3.UP * STEP_UP
+	if test_move(global_transform, up):
+		return false   # no room above
+	global_position += up
+	move_and_collide(wanted)
+	var down := move_and_collide(Vector3.DOWN * (STEP_UP + 0.1))
+	if down == null:
+		return false   # nothing under the step: it's a drop, not a step
+	# The rounded foot lands on a tread's edge, so the contact normal is tilted; what matters is that the
+	# body rose and kept most of its forward walk.
+	var rose := global_position.y - start.y
+	var progress := Vector2(global_position.x - start.x, global_position.z - start.z).length()
+	return rose > 0.05 and progress >= wanted.length() * 0.5
+
+
 func _physics_process(delta: float) -> void:
 	var on_floor := is_on_floor()
 	swimming = not Game.in_cave and global_position.y + 1.0 < Game.SEA_LEVEL
@@ -205,7 +240,7 @@ func _physics_process(delta: float) -> void:
 	velocity.z = lerpf(velocity.z, dir.z * speed, w)
 
 	var fall_speed := -velocity.y
-	move_and_slide()
+	_move_with_steps(delta, Vector3(dir.x, 0.0, dir.z) * speed)
 
 	# Landing: camera dip, thud, fall damage.
 	if is_on_floor() and not _was_on_floor and not swimming:
@@ -287,8 +322,12 @@ func _update_looking_at() -> void:
 		var sid: String = body.get_meta("structure")
 		if Game.structures.has(sid):
 			var st: Dictionary = Game.structures[sid]
-			looking_at = {"name": ItemDB.display_name(st.kind), "label": "Crafting station", "structure": sid,
-				"interact": "Craft", "attack": "Pack up"}
+			if st.kind in GameActions.DOOR_KINDS:
+				looking_at = {"name": ItemDB.display_name(st.kind), "label": "Door", "structure": sid, "door": sid,
+					"interact": "Close" if bool(st.get("open", false)) else "Open", "attack": "Pack up"}
+			else:
+				looking_at = {"name": ItemDB.display_name(st.kind), "label": "Crafting station", "structure": sid,
+					"interact": "Craft", "attack": "Pack up"}
 		return
 	if body.has_meta("animal"):
 		var animal: Node = body.get_meta("animal")
@@ -480,6 +519,9 @@ func _on_grab() -> void:
 	if look.has("cave_chest"):
 		cave_chest.emit(int(look.cave_chest))
 		return
+	if look.has("door"):
+		Net.request("toggle_door", {"structure": look.door})
+		return
 	if look.has("structure"):
 		open_crafting.emit()
 		return
@@ -577,7 +619,7 @@ func _update_placement() -> void:
 	if GameActions.is_building(kind):
 		# Building pieces snap to the grid (and walls to a foundation edge).
 		var prefer := float(placement.get("yaw", -1.0)) if placement.get("kind", "") == kind else -1.0
-		var snap := GameActions.snap_piece(kind, pos, prefer)
+		var snap := GameActions.snap_piece(kind, pos, prefer, rotation.y)
 		pos = snap.pos
 		yaw = snap.yaw
 		_snapped_level = int(snap.get("level", 0))
@@ -610,7 +652,7 @@ func _update_placement() -> void:
 ## Would a piece at pos overlap the player's body (feet to head, about 0.4 m around)?
 func _overlaps_player(pos: Vector3, kind: String, yaw: float) -> bool:
 	var half := Vector2(GameActions.CELL * 0.5, GameActions.CELL * 0.5)
-	if kind in GameActions.WALL_KINDS:
+	if kind in GameActions.EDGE_KINDS:
 		half = Vector2(GameActions.CELL * 0.5, 0.15) if absf(yaw) < 0.01 else Vector2(0.15, GameActions.CELL * 0.5)
 	elif kind in GameActions.COVER_KINDS:
 		half = Vector2(GameActions.CELL * 0.5, GameActions.CELL * 0.5)

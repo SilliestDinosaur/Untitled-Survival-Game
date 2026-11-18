@@ -3,9 +3,10 @@ extends SceneTree
 ## godot ... -s tests/tools/piece_gallery.gd (run under xvfb-run, it needs a real render).
 ## Environment variables:
 ##   OUT=/path/a.png        where to save (default /tmp/pieces.png)
-##   PIECES=foundation,wall  kinds to show (default: every building piece and station)
+##   PIECES=foundation,wall  kinds to show (default: every building piece, grouped by shape)
 ##   COLS=3 SPACING=3.4 SCALE=1.0   grid layout (default: one row)
 ##   CAM_Z=12 FOCUS=1.5 CAM_Y=4   camera distance, look-at height (default: middle of the grid), and camera height
+##   OPEN=1                 swing the doors open (the panels hang from their hinges)
 
 var _main: Node
 var _f := 0
@@ -35,6 +36,18 @@ func _process(_d: float) -> bool:
 	return false
 
 
+## Every building piece, grouped by shape and material (wood, brick, stone), so they read as a set.
+func _all_kinds() -> Array:
+	var gal_script = load("res://scripts/core/game_actions.gd")
+	var out: Array = []
+	for shape in ["floor", "wall", "half", "window", "doorway", "door", "stairs", "roof"]:
+		for mat in ["brick", "wood", "stone"]:
+			for id: String in gal_script.PIECES:
+				if gal_script.PIECES[id].shape == shape and gal_script.PIECES[id].mat == mat:
+					out.append(id)
+	return out
+
+
 func _build() -> void:
 	_main.player.set_physics_process(false)
 	_main._hud.hide()
@@ -43,9 +56,7 @@ func _build() -> void:
 	var mat: Material = art.painted({"brush_strength": 0.22, "rim_amount": 0.3})
 	var glow: Material = StandardMaterial3D.new()
 	var kinds_env := OS.get_environment("PIECES")
-	var kinds: PackedStringArray = kinds_env.split(",") if kinds_env != "" else PackedStringArray([
-		"foundation", "wood_floor", "wall", "window_wall", "doorway", "wood_doorway", "wood_wall", "ceiling", "roof",
-		"workbench", "forge", "campfire"])
+	var kinds: PackedStringArray = kinds_env.split(",") if kinds_env != "" else PackedStringArray(_all_kinds())
 	var gal := Node3D.new()
 	gal.position = Vector3(300, 300, 300)
 	root.add_child(gal)
@@ -62,6 +73,16 @@ func _build() -> void:
 		mi.position = Vector3((col - (mini(cols, kinds.size()) - 1) * 0.5) * spacing, (rows - 1 - row) * spacing, 0.0)
 		mi.scale = Vector3.ONE * item_scale
 		gal.add_child(mi)
+		var parts = sm.get_model(kinds[i], mat, glow)
+		if parts.door != null:   # a door's panel hangs from its hinge; OPEN=1 swings it open
+			var hinge := Node3D.new()
+			hinge.position = mi.position + Vector3(-0.7 * item_scale, 0.0, 0.0)
+			hinge.rotation.y = -PI * 0.5 if OS.get_environment("OPEN") != "" else 0.0
+			var panel := MeshInstance3D.new()
+			panel.mesh = parts.door
+			panel.scale = Vector3.ONE * item_scale
+			hinge.add_child(panel)
+			gal.add_child(hinge)
 		var label := Label3D.new()
 		label.text = kinds[i]
 		label.font_size = 48
