@@ -26,10 +26,34 @@ const STONE := Color(0.5, 0.5, 0.54)
 const FORWARD_PLANE := Basis(Vector3(0, 0, -1), Vector3(0, 1, 0), Vector3(1, 0, 0))
 
 static var _cache := {}
+static var _shapes := {}    ## id -> the first mesh made for it: other materials get a copy, not a rebuild
+static var _warm_ids: Array = []   ## items still to build ahead (prewarm_some)
 
 
 static func clear_cache() -> void:
 	_cache.clear()
+	_shapes.clear()
+	_warm_ids.clear()
+
+
+## Build items' models ahead, while the world loads, for up to `budget_us` microseconds this call; true once every
+## item has one. Built the first time each was needed, a new item in your hand (or dropped near you) cost a
+## 20-40 ms hitch.
+static func prewarm_some(material: Material, budget_us: int) -> bool:
+	if _warm_ids.is_empty():
+		for id: String in ItemDB.all_ids():
+			if ItemDB.info(id).get("kind", "") != "piece" and not _cache.has(id + str(material.get_instance_id())):
+				_warm_ids.append(id)
+		if _warm_ids.is_empty():
+			return true
+		_warm_ids.append("")   # end marker: the list was made this round
+	var until := Time.get_ticks_usec() + budget_us
+	while not _warm_ids.is_empty() and Time.get_ticks_usec() < until:
+		var id: String = _warm_ids.pop_front()
+		if id == "":
+			return true
+		mesh_for(id, material)
+	return _warm_ids.is_empty()
 
 
 # --- Tools part-way through being made (the crafting minigames) ----------------------------------
@@ -133,6 +157,12 @@ static func mesh_for(id: String, material: Material) -> ArrayMesh:
 	var key := id + str(material.get_instance_id())
 	if _cache.has(key):
 		return _cache[key]
+	if _shapes.has(id):   # built already for another material: copy it and swap the material
+		var copy: ArrayMesh = (_shapes[id] as ArrayMesh).duplicate()
+		for i in copy.get_surface_count():
+			copy.surface_set_material(i, material)
+		_cache[key] = copy
+		return copy
 	var info := ItemDB.info(id)
 	if info.kind == "placeable":
 		var m: ArrayMesh = StructureModels.get_model(info.station, material, material).body
@@ -161,6 +191,7 @@ static func mesh_for(id: String, material: Material) -> ArrayMesh:
 		_material_item(k, id, info)
 	var mesh := k.commit(material)
 	_cache[key] = mesh
+	_shapes[id] = mesh
 	return mesh
 
 

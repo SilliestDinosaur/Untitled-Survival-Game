@@ -26,6 +26,7 @@ var _wildlife: Node3D
 var _spawn := Vector3.ZERO
 var _load_pos := Vector3.ZERO       ## where the player will appear once loading finishes
 var _pending_player := {}           ## saved player data to apply after loading
+var _models_ready := false   ## every item's model is built (during loading; see ItemModels.prewarm_some)
 var _orbit := 0.0
 var _ambience_timer := 0.0
 var _ocean_level := 0.0
@@ -316,6 +317,7 @@ func _to_title() -> void:
 
 func _start_loading(at: Vector3, heading := "Generating") -> void:
 	state = State.LOADING
+	_models_ready = false   # each world has its own metals, so its own item models
 	Game.time_paused = not Net.is_online()   # with friends, the world keeps going
 	get_tree().paused = false
 	player.set_active(false)
@@ -430,7 +432,11 @@ func _process(delta: float) -> void:
 			_fly_menu_camera(delta)
 		State.LOADING:
 			_loading.set_progress(world.area_progress(_load_pos, 1))
+			# Item models are built meanwhile, a slice a frame, so none is built mid-game the first time it's held.
+			_models_ready = _models_ready or ItemModels.prewarm_some(player.viewmodel.held_material(), 12000)
 			if world.is_area_ready(_load_pos, 1):
+				while not _models_ready:   # the rest now, still behind the loading screen
+					_models_ready = ItemModels.prewarm_some(player.viewmodel.held_material(), 1000000)
 				_start_playing()
 		State.PLAYING:
 			_autosave -= delta

@@ -39,6 +39,11 @@ func _ready() -> void:
 		hold(_held))
 
 
+## The material held items are drawn with (item models are built ahead with it while the world loads).
+func held_material() -> Material:
+	return _mat
+
+
 ## Show what's in the selected hotbar slot ("" = nothing in hand).
 func hold(item_id: String) -> void:
 	_held = item_id

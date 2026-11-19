@@ -15,6 +15,7 @@ class SlotView extends PanelContainer:
 	var _dur: Control
 	var _dur_frac := -1.0
 	var _seed := 0
+	var _shown := ""   ## what this slot last showed (item, count, wear, selected)
 
 	func _init(inventory: Inventory, slot_index: int, is_interactive := true) -> void:
 		inv = inventory
@@ -58,6 +59,13 @@ class SlotView extends PanelContainer:
 			return
 		var s: Dictionary = inv.slots[index]
 		var id: String = s.get("id", "")
+		# Nothing to do if this slot shows the same thing as last time (most slots, on most changes): restyling all
+		# of them on every change was most of the cost of moving an item or changing the selection.
+		var sel_now := Inventory.is_hotbar(index) and index == inv.selected
+		var key := "%s|%s|%s|%s" % [id, str(s.get("count", 0)), str(s.get("dur", -1)), str(sel_now)]
+		if key == _shown:
+			return
+		_shown = key
 		_icon.item = id
 		_count.text = str(s.count) if not s.is_empty() and int(s.count) > 1 else ""
 		_dur_frac = -1.0
@@ -65,11 +73,15 @@ class SlotView extends PanelContainer:
 			_dur_frac = clampf(float(s.dur) / float(ItemDB.tool_stats(id).durability), 0.0, 1.0)
 		_dur.queue_redraw()
 		tooltip_text = ItemDB.display_name(id) if id != "" else ""
-		var sel := Inventory.is_hotbar(index) and index == inv.selected
-		var tint := UITheme.PAPER.lerp(UITheme.ACCENT_2, 0.45) if sel else Color(UITheme.PAPER, 0.9)
-		add_theme_stylebox_override("panel", UITheme.paper_box(tint, _seed, 9, 16, 96))
+		var sel := sel_now
+		add_theme_stylebox_override("panel", style(sel, _seed))
 		pivot_offset = Vector2(32, 32)
 		scale = Vector2(1.06, 1.06) if sel and not interactive else Vector2.ONE
+
+	## A slot's painted background: plain, or warm when it's the selected hotbar slot.
+	static func style(selected: bool, seed_value: int) -> StyleBoxTexture:
+		var tint := UITheme.PAPER.lerp(UITheme.ACCENT_2, 0.45) if selected else Color(UITheme.PAPER, 0.9)
+		return UITheme.paper_box(tint, seed_value, 9, 16, 96)
 
 	# Painted tooltip with the item's details.
 	func _make_custom_tooltip(_for_text: String) -> Object:
@@ -203,6 +215,7 @@ class InventoryPanel extends Control:
 	var inventory: Inventory
 	var player: Node
 	var _slots: Array[SlotView] = []
+	var _craft: CraftingPanel
 
 	func setup(inv: Inventory, p: Node) -> void:
 		inventory = inv
@@ -212,6 +225,17 @@ class InventoryPanel extends Control:
 				for sv in _slots:
 					sv.refresh())
 		_build()
+		_prewarm()
+
+	## Make now, while the game starts, what the menus would otherwise make the first time they're used: every
+	## slot's painted background (and each hotbar slot's selected one) and every recipe's row. Done then, it was a
+	## hitch of 20-30 ms the first time you opened a tab, moved an item or picked a hotbar slot.
+	func _prewarm() -> void:
+		for i in Inventory.SIZE:
+			SlotView.style(false, 40 + i)
+			if Inventory.is_hotbar(i):
+				SlotView.style(true, 40 + i)
+		_craft.prewarm()
 
 	func _ready() -> void:
 		set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
@@ -238,6 +262,7 @@ class InventoryPanel extends Control:
 		var craft := CraftingPanel.new()
 		craft.setup(inventory, player)
 		row.add_child(craft)
+		_craft = craft
 		var title_row := HBoxContainer.new()
 		title_row.add_child(UITheme.heading("Satchel", 36))
 		var spacer := Control.new()
@@ -292,6 +317,8 @@ class CraftingPanel extends PanelContainer:
 	var _tabs := {}
 	var _near: Array = []
 	var _timer := 0.0
+	var _rows := {}    ## recipe id -> {box, icon, needs, button, ok}: made once, then only updated
+	var _sig := ""     ## what the list last showed (see _signature); unchanged means nothing to do
 
 	func setup(inv: Inventory, p: Node) -> void:
 		inventory = inv
@@ -358,23 +385,70 @@ class CraftingPanel extends PanelContainer:
 			if near != _near:
 				refresh()
 
+	## Bring the list up to date. Rows are made once per recipe and kept; a refresh only rewrites their numbers,
+	## colours and buttons and re-sorts them, and does nothing at all when nothing it shows has changed (a hotbar
+	## selection, or a multiplayer sync that changed nothing here). Rebuilding every row on every change cost
+	## 30-70 ms a time with the satchel open.
 	func refresh() -> void:
 		if not player:
 			return
+		for g: String in _tabs:   # (before the early out: clicking the open tab again mustn't un-press it)
+			_tabs[g].set_pressed_no_signal(g == _group)
 		_near = GameActions.stations_near(player.global_position)
+		var sig := _signature()
+		if sig == _sig:
+			return
+		_sig = sig
 		var names: Array[String] = []
 		for k: String in _near:
 			names.append(Recipes.STATION_NAMES[k])
 		_near_label.text = "Nearby: " + (", ".join(names) if not names.is_empty() else "no stations (place a campfire or workbench)")
-		for g: String in _tabs:
-			_tabs[g].button_pressed = g == _group
-		for c in _list.get_children():
-			c.queue_free()
 		var recipes: Array = Recipes.all().filter(func(r: Dictionary) -> bool: return r.group == _group)
 		# Things you can make right now first, then things you're close to, then the rest.
-		recipes.sort_custom(func(a: Dictionary, b: Dictionary) -> bool: return _score(a) > _score(b))
+		var scores := {}
 		for r: Dictionary in recipes:
-			_list.add_child(_row(r))
+			scores[r.id] = _score(r)
+		recipes.sort_custom(func(a: Dictionary, b: Dictionary) -> bool:
+			return scores[a.id] > scores[b.id] or (scores[a.id] == scores[b.id] and a.id < b.id))
+		var shown := {}
+		for i in recipes.size():
+			var r: Dictionary = recipes[i]
+			if not _rows.has(r.id):
+				_rows[r.id] = _make_row(r)
+				_list.add_child(_rows[r.id].box)
+			_update_row(r, _rows[r.id])
+			_rows[r.id].box.visible = true
+			_list.move_child(_rows[r.id].box, i)
+			shown[r.id] = true
+		for id: String in _rows:
+			if not shown.has(id):
+				_rows[id].box.visible = false
+
+	## Every recipe's row, made ahead (hidden), so no tab builds its rows the first time it's opened.
+	func prewarm() -> void:
+		for r: Dictionary in Recipes.all():
+			if not _rows.has(r.id):
+				_rows[r.id] = _make_row(r)
+				_rows[r.id].box.visible = false
+				_list.add_child(_rows[r.id].box)
+		# Fill every tab in once too: the first fill sets up each row's look and buttons, the slow part.
+		if player and player.is_inside_tree():
+			var keep := _group
+			for g: String in Recipes.GROUPS:
+				_group = g
+				refresh()
+			_group = keep
+			_sig = ""
+
+	## Everything the list shows: the tab, the stations in reach, and how many of each ingredient you have.
+	func _signature() -> String:
+		var parts: Array[String] = [_group, ",".join(_near)]
+		for r: Dictionary in Recipes.all():
+			if r.group != _group:
+				continue
+			for item: String in r.needs:
+				parts.append("%s=%d" % [item, inventory.count(item)])
+		return "|".join(parts)
 
 	func _score(r: Dictionary) -> float:
 		var at_ok: bool = r.at == "" or _near.has(r.at)
@@ -384,16 +458,12 @@ class CraftingPanel extends PanelContainer:
 		have /= r.needs.size()
 		return (2.0 if at_ok and have >= 1.0 else 0.0) + have
 
-	func _row(r: Dictionary) -> Control:
-		var can := GameActions.craftable_count(inventory, r) >= 1
-		var at_ok: bool = r.at == "" or _near.has(r.at)
+	func _make_row(r: Dictionary) -> Dictionary:
 		var box := PanelContainer.new()
-		box.add_theme_stylebox_override("panel", UITheme.box(Color(UITheme.PAPER_DARK, 0.55 if can and at_ok else 0.25), 8, Color(0, 0, 0, 0), 0, 6))
 		var h := HBoxContainer.new()
 		h.add_theme_constant_override("separation", 10)
 		box.add_child(h)
 		var icon := ItemIcon.new(r.out, 44)
-		icon.modulate.a = 1.0 if can and at_ok else 0.6
 		h.add_child(icon)
 		var v := VBoxContainer.new()
 		v.size_flags_horizontal = Control.SIZE_EXPAND_FILL
@@ -411,6 +481,29 @@ class CraftingPanel extends PanelContainer:
 		needs.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 		needs.add_theme_font_size_override("normal_font_size", 14)
 		needs.add_theme_color_override("default_color", UITheme.INK)
+		v.add_child(needs)
+		var row := {"box": box, "icon": icon, "needs": needs, "button": null, "ok": null}
+		row.button = _craft_button(r, true)
+		h.add_child(row.button)
+		return row
+
+	func _craft_button(r: Dictionary, on: bool) -> Button:
+		var b := UITheme.button("Craft", on, 84)
+		b.custom_minimum_size = Vector2(84, 38)
+		b.size_flags_vertical = Control.SIZE_SHRINK_CENTER
+		b.pressed.connect(func() -> void: _craft(r))
+		return b
+
+	func _update_row(r: Dictionary, row: Dictionary) -> void:
+		var can := GameActions.craftable_count(inventory, r) >= 1
+		var at_ok: bool = r.at == "" or _near.has(r.at)
+		var ok := can and at_ok
+		if row.ok != ok:   # only when it flips
+			(row.box as PanelContainer).add_theme_stylebox_override("panel", UITheme.box(Color(UITheme.PAPER_DARK, 0.55 if ok else 0.25), 8, Color(0, 0, 0, 0), 0, 6))
+			(row.icon as Control).modulate.a = 1.0 if ok else 0.6
+			(row.button as Button).theme_type_variation = "PrimaryButton" if ok else ""
+			row.ok = ok
+		(row.button as Button).disabled = not ok
 		var parts: Array[String] = []
 		for item: String in r.needs:
 			var have := inventory.count(item)
@@ -420,15 +513,8 @@ class CraftingPanel extends PanelContainer:
 		var text := "  ·  ".join(parts)
 		if r.at != "":
 			text += "\n[color=%s]At a %s%s[/color]" % ["#5a4a3a" if at_ok else "#a3402a", Recipes.STATION_NAMES[r.at], "" if at_ok else " (none nearby)"]
-		needs.text = text
-		v.add_child(needs)
-		var b := UITheme.button("Craft", can and at_ok, 84)
-		b.custom_minimum_size = Vector2(84, 38)
-		b.size_flags_vertical = Control.SIZE_SHRINK_CENTER
-		b.disabled = not (can and at_ok)
-		b.pressed.connect(func() -> void: _craft(r))
-		h.add_child(b)
-		return box
+		if (row.needs as RichTextLabel).text != text:
+			(row.needs as RichTextLabel).text = text
 
 	func _craft(r: Dictionary) -> void:
 		var times := 5 if Input.is_key_pressed(KEY_SHIFT) else 1
