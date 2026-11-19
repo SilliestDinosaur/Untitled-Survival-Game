@@ -699,6 +699,8 @@ func run_action(pid: int, peer: int, action: String, a: Dictionary) -> Dictionar
 		"pick_up":
 			return {"got": GameActions.pick_up(pid, String(a.pickup))}
 		"drop":
+			if int(a.get("slot", -1)) < 0 or int(a.get("slot", -1)) >= Inventory.SIZE or int(a.get("amount", 0)) < 1:
+				return {"id": ""}
 			return {"id": GameActions.drop(pid, int(a.slot), int(a.amount), a.pos)}
 		"craft":
 			return GameActions.craft(pid, String(a.recipe), a.pos, int(a.get("times", 1)))
@@ -736,6 +738,11 @@ func run_action(pid: int, peer: int, action: String, a: Dictionary) -> Dictionar
 					_animal_event.rpc(int(a.animal), "consumed")
 			return res
 		"inv":
+			# Slots from a guest are checked: one out of range would be a script error on the host.
+			var sa := int(a.get("a", -1))
+			var sb := int(a.get("b", 0))
+			if sa < 0 or sa >= Inventory.SIZE or sb < 0 or sb >= Inventory.SIZE:
+				return {"ok": false}
 			match String(a.op):
 				"move": inv.move(int(a.a), int(a.b))
 				"split": inv.split(int(a.a), int(a.b))
