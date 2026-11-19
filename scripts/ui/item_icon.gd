@@ -296,6 +296,8 @@ func _piece(info: Dictionary, c: Vector2, s: float) -> void:
 			for i in steps:   # each tread's lighter nosing
 				draw_line(Vector2(x0 + i * w, y0 - (i + 1) * hh), Vector2(x0 + (i + 1) * w, y0 - (i + 1) * hh), base.lightened(0.25), 2.0)
 			draw_polyline(pts + PackedVector2Array([pts[0]]), line, 1.2)
+		"decor":
+			_decor_icon(String(info.get("station", "")), c, s)
 		"fence":   # posts and two rails
 			for px in [-0.32, 0.0, 0.32]:
 				draw_rect(Rect2(c + Vector2(px * s - s * 0.05, -s * 0.22), Vector2(s * 0.1, s * 0.5)), base)
@@ -380,3 +382,91 @@ func _blob(c: Vector2, r: float, col: Color, points: int, seed_value: int) -> vo
 		hi.append(c + (p - c) * 0.75 + Vector2(-r * 0.12, -r * 0.12))
 	draw_colored_polygon(hi, col)
 	draw_circle(c + Vector2(-r * 0.35, -r * 0.35), r * 0.15, Color(1, 1, 1, 0.25))
+
+
+## Furniture, lights and storage: a little picture of each.
+func _decor_icon(kind: String, c: Vector2, s: float) -> void:
+	var wood := Color(0.6, 0.45, 0.3)
+	var dark := Color(0.42, 0.3, 0.2)
+	var iron := Color(0.32, 0.32, 0.36)
+	var red := Color(0.62, 0.22, 0.18)
+	var blue := Color(0.26, 0.36, 0.52)
+	var gold := Color(0.86, 0.68, 0.28)
+	var flame := Color(1.0, 0.62, 0.22)
+	match kind:
+		"table":
+			draw_rect(Rect2(c + Vector2(-s * 0.38, -s * 0.12), Vector2(s * 0.76, s * 0.1)), wood)
+			for x in [-0.32, 0.26]:
+				draw_rect(Rect2(c + Vector2(x * s, -s * 0.02), Vector2(s * 0.06, s * 0.34)), dark)
+			draw_circle(c + Vector2(s * 0.18, -s * 0.2), s * 0.07, Color(0.72, 0.42, 0.28))
+		"chair":
+			draw_rect(Rect2(c + Vector2(-s * 0.2, -s * 0.38), Vector2(s * 0.06, s * 0.72)), dark)
+			draw_rect(Rect2(c + Vector2(-s * 0.2, -s * 0.02), Vector2(s * 0.4, s * 0.08)), wood)
+			draw_rect(Rect2(c + Vector2(s * 0.14, s * 0.04), Vector2(s * 0.06, s * 0.3)), dark)
+			for i in 3:
+				draw_rect(Rect2(c + Vector2(-s * 0.13 + i * s * 0.0, -s * 0.34 + i * s * 0.1), Vector2(s * 0.03, s * 0.06)), wood)
+		"bench":
+			draw_rect(Rect2(c + Vector2(-s * 0.4, -s * 0.06), Vector2(s * 0.8, s * 0.1)), wood)
+			for x in [-0.32, 0.24]:
+				draw_rect(Rect2(c + Vector2(x * s, s * 0.04), Vector2(s * 0.08, s * 0.26)), dark)
+		"bed":
+			draw_rect(Rect2(c + Vector2(-s * 0.4, -s * 0.28), Vector2(s * 0.08, s * 0.6)), dark)
+			draw_rect(Rect2(c + Vector2(-s * 0.32, -s * 0.02), Vector2(s * 0.72, s * 0.14)), Color(0.88, 0.82, 0.68))
+			draw_rect(Rect2(c + Vector2(-s * 0.08, -s * 0.06), Vector2(s * 0.48, s * 0.14)), red)
+			draw_circle(c + Vector2(-s * 0.2, -s * 0.06), s * 0.08, Color(0.95, 0.92, 0.84))
+			draw_rect(Rect2(c + Vector2(-s * 0.36, s * 0.12), Vector2(s * 0.76, s * 0.06)), dark)
+		"shelf":
+			draw_rect(Rect2(c + Vector2(-s * 0.3, -s * 0.38), Vector2(s * 0.6, s * 0.76)), dark.darkened(0.2))
+			for i in 3:
+				var y := -s * 0.14 + i * s * 0.24
+				draw_rect(Rect2(c + Vector2(-s * 0.3, y), Vector2(s * 0.6, s * 0.04)), wood)
+				for b in 3:
+					draw_rect(Rect2(c + Vector2(-s * 0.24 + b * s * 0.16, y - s * 0.16), Vector2(s * 0.08, s * 0.16)), [red, blue, gold][(b + i) % 3])
+		"rug":
+			draw_set_transform(c, 0.0, Vector2(1.0, 0.6))
+			draw_circle(Vector2.ZERO, s * 0.4, red)
+			draw_arc(Vector2.ZERO, s * 0.3, 0.0, TAU, 24, gold, s * 0.05)
+			draw_arc(Vector2.ZERO, s * 0.18, 0.0, TAU, 20, blue, s * 0.05)
+			draw_set_transform(Vector2.ZERO, 0.0, Vector2.ONE)
+		"barrel":
+			draw_rect(Rect2(c + Vector2(-s * 0.22, -s * 0.32), Vector2(s * 0.44, s * 0.64)), wood)
+			for y in [-0.22, 0.0, 0.22]:
+				draw_rect(Rect2(c + Vector2(-s * 0.24, y * s - s * 0.025), Vector2(s * 0.48, s * 0.05)), iron)
+		"crate":
+			draw_rect(Rect2(c + Vector2(-s * 0.3, -s * 0.28), Vector2(s * 0.6, s * 0.56)), wood)
+			draw_rect(Rect2(c + Vector2(-s * 0.3, -s * 0.28), Vector2(s * 0.6, s * 0.56)), dark, false, s * 0.06)
+			draw_line(c + Vector2(-s * 0.26, s * 0.24), c + Vector2(s * 0.26, -s * 0.24), dark, s * 0.06)
+		"flower_pot":
+			draw_colored_polygon(PackedVector2Array([c + Vector2(-s * 0.18, -s * 0.02), c + Vector2(s * 0.18, -s * 0.02), c + Vector2(s * 0.12, s * 0.32), c + Vector2(-s * 0.12, s * 0.32)]), Color(0.72, 0.42, 0.28))
+			for i in 5:
+				var p := c + Vector2((i - 2) * s * 0.09, -s * 0.18 - (i % 2) * s * 0.08)
+				draw_line(c + Vector2((i - 2) * s * 0.04, 0.0), p, Color(0.34, 0.52, 0.28), 1.5)
+				draw_circle(p, s * 0.06, [Color(0.92, 0.42, 0.38), Color(0.96, 0.82, 0.38), Color(0.78, 0.55, 0.85)][i % 3])
+		"banner":
+			draw_rect(Rect2(c + Vector2(-s * 0.03, -s * 0.4), Vector2(s * 0.05, s * 0.8)), dark)
+			draw_colored_polygon(PackedVector2Array([c + Vector2(-s * 0.2, -s * 0.34), c + Vector2(s * 0.24, -s * 0.34), c + Vector2(s * 0.24, s * 0.16), c + Vector2(s * 0.02, s * 0.04), c + Vector2(-s * 0.2, s * 0.16)]), blue)
+			draw_circle(c + Vector2(s * 0.02, -s * 0.12), s * 0.08, gold)
+		"brazier":
+			for x in [-0.2, 0.0, 0.2]:
+				draw_line(c + Vector2(x * s * 0.6, 0.0), c + Vector2(x * s * 1.4, s * 0.36), iron, s * 0.05)
+			draw_colored_polygon(PackedVector2Array([c + Vector2(-s * 0.3, -s * 0.06), c + Vector2(s * 0.3, -s * 0.06), c + Vector2(s * 0.2, s * 0.06), c + Vector2(-s * 0.2, s * 0.06)]), Color(0.55, 0.56, 0.6))
+			draw_colored_polygon(PackedVector2Array([c + Vector2(-s * 0.18, -s * 0.06), c + Vector2(0, -s * 0.42), c + Vector2(s * 0.18, -s * 0.06)]), flame)
+			draw_colored_polygon(PackedVector2Array([c + Vector2(-s * 0.08, -s * 0.06), c + Vector2(0, -s * 0.26), c + Vector2(s * 0.08, -s * 0.06)]), Color(1.0, 0.88, 0.5))
+		"lantern_post":
+			draw_rect(Rect2(c + Vector2(-s * 0.24, -s * 0.4), Vector2(s * 0.07, s * 0.8)), dark)
+			draw_line(c + Vector2(-s * 0.2, -s * 0.36), c + Vector2(s * 0.12, -s * 0.36), dark, s * 0.05)
+			draw_circle(c + Vector2(s * 0.12, -s * 0.06), s * 0.16, Color(1.0, 0.8, 0.45, 0.35))
+			draw_rect(Rect2(c + Vector2(s * 0.04, -s * 0.16), Vector2(s * 0.16, s * 0.2)), Color(1.0, 0.82, 0.5))
+			draw_rect(Rect2(c + Vector2(s * 0.04, -s * 0.16), Vector2(s * 0.16, s * 0.2)), iron, false, 1.5)
+		"standing_torch":
+			draw_line(c + Vector2(0, s * 0.4), c + Vector2(0, -s * 0.16), dark, s * 0.06)
+			draw_rect(Rect2(c + Vector2(-s * 0.06, -s * 0.2), Vector2(s * 0.12, s * 0.1)), Color(0.36, 0.26, 0.18))
+			draw_colored_polygon(PackedVector2Array([c + Vector2(-s * 0.1, -s * 0.2), c + Vector2(0, -s * 0.44), c + Vector2(s * 0.1, -s * 0.2)]), flame)
+		"chest", "large_chest":
+			var big := kind == "large_chest"
+			var w := s * (0.36 if big else 0.3)
+			draw_rect(Rect2(c + Vector2(-w, -s * 0.04), Vector2(w * 2.0, s * 0.3)), wood)
+			draw_rect(Rect2(c + Vector2(-w, -s * 0.2), Vector2(w * 2.0, s * 0.16)), wood.lightened(0.1))
+			for x in ([-0.5, 0.5] if not big else [-0.7, -0.25, 0.25, 0.7]):
+				draw_rect(Rect2(c + Vector2(x * w - s * 0.025, -s * 0.2), Vector2(s * 0.05, s * 0.46)), iron)
+			draw_rect(Rect2(c + Vector2(-s * 0.05, -s * 0.08), Vector2(s * 0.1, s * 0.1)), gold)

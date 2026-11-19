@@ -131,7 +131,11 @@ static func get_model(kind: String, material: Material, glow_material: Material,
 		var parts := _build_piece(kind, ends)
 		var door_kit: MeshKit = parts.door
 		var glass_kit: MeshKit = parts.glass
-		var piece := {"body": (parts.body as MeshKit).commit(material), "glow": null, "light": Vector3(0, 1, 0), "radius": 1.0,
+		var glow_kit: MeshKit = parts.get("glow")
+		var d: Dictionary = GameActions.DECOR.get(kind, {})
+		var piece := {"body": (parts.body as MeshKit).commit(material),
+			"glow": glow_kit.commit(glow_material) if glow_kit != null and not glow_kit.is_empty() else null,
+			"light": d.get("light_at", Vector3(0, float(d.get("light_y", 1.0)), 0)), "radius": 1.0,
 			"door": door_kit.commit(material) if door_kit != null else null,
 			"glass": glass_kit.commit(glass_material()) if glass_kit != null else null}
 		_cache[key] = piece
@@ -189,6 +193,7 @@ static func _build_piece(kind: String, ends := Vector2.ZERO) -> Dictionary:
 	var k := MeshKit.new(hash(kind))
 	var door: MeshKit = null
 	var glass: MeshKit = null
+	var glow: MeshKit = null
 	var rng := RandomNumberGenerator.new()
 	rng.seed = hash(kind)
 	var opening := Rect2(-DOOR_W, 0.0, DOOR_W * 2.0, DOOR_H)
@@ -227,7 +232,10 @@ static func _build_piece(kind: String, ends := Vector2.ZERO) -> Dictionary:
 			glass = MeshKit.new(hash(kind) + 5)
 			_window_fittings(k, glass)
 			_shutters(k, rng)
-	return {"body": k, "door": door, "glass": glass}
+		"decor":
+			glow = MeshKit.new(hash(kind) + 7)
+			DecorModels.build(kind, k, glow, rng)
+	return {"body": k, "door": door, "glass": glass, "glow": glow}
 
 
 ## A rail fence: posts at the ends and the middle in the piece's material (timber posts, piers of stacked stones,

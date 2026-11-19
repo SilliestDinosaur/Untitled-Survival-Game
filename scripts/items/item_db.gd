@@ -190,6 +190,11 @@ static func _piece_items() -> void:
 		if _items.has(kind):
 			continue
 		var spec: Dictionary = GameActions.PIECES[kind]
+		if GameActions.DECOR.has(kind):
+			var d: Dictionary = GameActions.DECOR[kind]
+			_items[kind] = {"name": d.name, "kind": "piece", "stack": 10, "icon": "piece", "shape": "decor", "mat": spec.mat,
+				"station": kind, "desc": d.desc}
+			continue
 		var shape: Array = PIECE_SHAPES.get(spec.shape, [String(spec.shape).capitalize(), ""])
 		_items[kind] = {"name": "%s %s" % [PIECE_MAT_NAMES.get(spec.mat, ""), shape[0]], "kind": "piece", "stack": 10, "icon": "piece",
 			"shape": spec.shape, "mat": spec.mat, "station": kind, "desc": shape[1]}

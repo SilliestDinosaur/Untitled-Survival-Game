@@ -336,6 +336,8 @@ func _piece_look(sid: String, st: Dictionary) -> Dictionary:
 	var name := ItemDB.display_name(st.kind)
 	var tool_type: String = ItemDB.tool_stats(inventory.selected_item()).get("type", "")
 	var look := {"name": name, "label": "Building piece", "structure": sid}
+	if GameActions.is_decor(st.kind):
+		look.label = {"furniture": "Furniture", "lights": "Light", "storage": "Storage"}.get(String(GameActions.DECOR[st.kind].page), "Furniture")
 	var hp := GameActions.piece_health(st)
 	if GameActions.is_blueprint(st):
 		look.name = "%s blueprint" % name
@@ -352,7 +354,10 @@ func _piece_look(sid: String, st: Dictionary) -> Dictionary:
 				look.attack = "Repair"
 		elif tool_type == GameActions.BREAK_TOOL[GameActions.piece_mat(st.kind)]:
 			look.label = "Health %d / %d" % [ceili(hp.x), roundi(hp.y)]
-			look.attack = "Knock down"
+			look.attack = "Take down" if GameActions.is_decor(st.kind) else "Knock down"
+		if GameActions.DECOR.get(st.kind, {}).has("slots"):
+			look.chest = sid
+			look.interact = "Open"
 		if st.kind in GameActions.DOOR_KINDS:
 			look.door = sid
 			look.interact = "Close" if bool(st.get("open", false)) else "Open"
@@ -713,8 +718,9 @@ func _update_placement() -> void:
 	if pos == Vector3.INF:
 		var flat := Vector3(dir.x, 0, dir.z).normalized()
 		pos = global_position + flat * 3.0
-	if not GameActions.is_building(kind_now):
-		# A station stands on the ground, or on the top of a floor when that's what you're aiming at.
+	if not GameActions.is_building(kind_now) or GameActions.is_decor(kind_now):
+		# A station (or furniture, a light...) stands on the ground, or on the top of a floor when that's what you're
+		# aiming at.
 		pos.y = Game.world_gen.get_height(pos.x, pos.z)
 		if ray.is_colliding() and ray.get_collider().has_meta("structure") and ray.get_collision_normal().y > 0.7 \
 				and ray.get_collision_point().distance_to(from) <= REACH + 2.0:
@@ -725,7 +731,7 @@ func _update_placement() -> void:
 		_place_turns = (_place_turns + 1) % 4
 	var yaw := rotation.y + PI + _place_turns * PI * 0.5
 	var kind := kind_now
-	if GameActions.is_building(kind):
+	if GameActions.is_building(kind) and not GameActions.is_decor(kind):
 		# Building pieces snap to the grid (and walls to a foundation edge).
 		var prefer := float(placement.get("yaw", -1.0)) if placement.get("kind", "") == kind else -1.0
 		var snap := GameActions.snap_piece(kind, pos, prefer, rotation.y)
@@ -741,7 +747,7 @@ func _update_placement() -> void:
 	var reason := GameActions.placement_problem(pos, kind, yaw)
 	if reason == "" and flat_dist < 1.2:
 		reason = "Too close to you"
-	if reason == "" and GameActions.is_building(kind) and _overlaps_player(pos, kind, yaw):
+	if reason == "" and GameActions.is_building(kind) and not GameActions.is_decor(kind) and _overlaps_player(pos, kind, yaw):
 		reason = "You're standing there"
 	var level := int(_snapped_level)
 	var label := ItemDB.display_name(kind)

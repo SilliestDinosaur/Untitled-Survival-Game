@@ -153,7 +153,9 @@ func _process(_d: float) -> bool:
 			_step = 4
 		4:
 			_check(_GA.is_building("stone_roof") and _GA.is_building("stone_stairs") and _GA.is_building("brick_floor"), "every material variant is a building piece")
-			_check(_GA.PIECES.size() == 24, "24 building pieces (%d)" % _GA.PIECES.size())
+			var shaped: Array = _GA.PIECES.keys().filter(func(k: String) -> bool: return not _GA.is_decor(k))
+			_check(shaped.size() == _GA.SHAPES.size() * _GA.MATERIALS.size(), "every shape in every material (%d pieces)" % shaped.size())
+			_check(_GA.DECOR.keys().all(func(k: String) -> bool: return _GA.PIECES.has(k) and _GA.PIECE_COSTS.has(k)), "every furniture piece is a building piece with a cost")
 			_step = 5
 		5:
 			# Stations on floors: a workbench stands on a finished foundation, not sunk into one from the ground, not

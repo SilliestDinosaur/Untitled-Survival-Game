@@ -214,20 +214,32 @@ func _make(st: Dictionary) -> Node3D:
 		gi.mesh = model.glow
 		gi.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
 		root.add_child(gi)
-	if st.kind in ["campfire", "forge"]:
+	var deco: Dictionary = GameActions.DECOR.get(st.kind, {})
+	if st.kind in ["campfire", "forge"] or (deco.has("light") and not blueprint):
 		var light := OmniLight3D.new()
 		light.name = "Light"
 		light.position = model.light
-		light.light_color = Color(1.0, 0.62, 0.3)
-		light.omni_range = 9.0 if st.kind == "campfire" else 6.0
+		light.light_color = deco.get("light", Color(1.0, 0.62, 0.3))
+		light.omni_range = float(deco.get("range", 9.0 if st.kind == "campfire" else 6.0))
 		light.omni_attenuation = 1.4
 		light.shadow_enabled = st.kind == "campfire" and Settings.shadow_quality in ["High", "Ultra"]
+		# Lights of furniture fade out a way off: a village of them mustn't all be lit at once.
+		if not deco.is_empty():
+			light.distance_fade_enabled = true
+			light.distance_fade_begin = 45.0
+			light.distance_fade_length = 12.0
 		root.add_child(light)
-	if st.kind == "campfire":
+	if st.kind == "campfire" or (st.kind in ["brazier", "standing_torch"] and not blueprint):
 		var flame := MeshInstance3D.new()
 		flame.name = "Flame"
 		flame.mesh = _flame_mesh
 		flame.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+		if st.kind == "standing_torch":
+			flame.position = Vector3(0, 1.48, 0)
+			flame.set_meta("size", 0.45)
+		elif st.kind == "brazier":
+			flame.position = Vector3(0, 0.72, 0)
+			flame.set_meta("size", 0.85)
 		root.add_child(flame)
 	var body := StaticBody3D.new()
 	# A blueprint can be aimed at (to hammer it) but walked through.
@@ -284,6 +296,13 @@ func _add_piece_colliders(body: StaticBody3D, kind: String) -> CollisionShape3D:
 			_box_collider(body, Vector3(GameActions.CELL, 1.0, 0.3), Vector3(0, 0.5, 0))
 		"fence":
 			_box_collider(body, Vector3(GameActions.CELL, 1.1, 0.2), Vector3(0, 0.55, 0))
+		"decor":
+			var size: Vector3 = GameActions.DECOR[kind].box
+			if size != Vector3.ZERO:
+				_box_collider(body, size, Vector3(0, size.y * 0.5, 0))
+			else:   # a rug: something to aim at (to take it up), nothing to bump into
+				body.collision_layer = TerrainChunk.LAYER_INTERACT
+				_box_collider(body, Vector3(1.6, 0.04, 1.0), Vector3(0, 0.02, 0))
 		"arch":
 			# Two sides and the crown over the arch: walkable through the opening (its top is round; the crown's
 			# box starts where the opening is still wide enough to walk under).
@@ -350,5 +369,6 @@ func _process(_delta: float) -> void:
 			light.light_energy = flicker * lerpf(0.8, 2.2, night)
 		var flame := e[2] as Node3D
 		if is_instance_valid(flame):
-			flame.scale = Vector3(1.0 + 0.08 * sin(t * 9.0 + ph), flicker * 1.1, 1.0 + 0.08 * cos(t * 7.0 + ph))
+			var fs: float = flame.get_meta("size", 1.0)
+			flame.scale = Vector3(1.0 + 0.08 * sin(t * 9.0 + ph), flicker * 1.1, 1.0 + 0.08 * cos(t * 7.0 + ph)) * fs
 			flame.rotation.y = t * 0.8 + ph

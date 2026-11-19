@@ -266,6 +266,46 @@ const PIECES := {
 	"wood_shutters": {"shape": "shutters", "mat": "wood"},
 	"stone_shutters": {"shape": "shutters", "mat": "stone"},
 	"brick_shutters": {"shape": "shutters", "mat": "brick"},
+	# Furniture, decor, lights and storage: built from a blueprint like the rest, but placed freely (see DECOR).
+	"table": {"shape": "decor", "mat": "wood"},
+	"chair": {"shape": "decor", "mat": "wood"},
+	"bench": {"shape": "decor", "mat": "wood"},
+	"bed": {"shape": "decor", "mat": "wood"},
+	"shelf": {"shape": "decor", "mat": "wood"},
+	"rug": {"shape": "decor", "mat": "wood"},
+	"barrel": {"shape": "decor", "mat": "wood"},
+	"crate": {"shape": "decor", "mat": "wood"},
+	"flower_pot": {"shape": "decor", "mat": "stone"},
+	"banner": {"shape": "decor", "mat": "wood"},
+	"brazier": {"shape": "decor", "mat": "stone"},
+	"lantern_post": {"shape": "decor", "mat": "wood"},
+	"standing_torch": {"shape": "decor", "mat": "wood"},
+	"chest": {"shape": "decor", "mat": "wood"},
+	"large_chest": {"shape": "decor", "mat": "wood"},
+}
+
+## Free-standing pieces (shape "decor"): where they go on the build wheel, their footprint (radius: how close other
+## things may stand; 0 lets you put things on top, like a rug), their collision box (size; ZERO for none), and for
+## lights the colour and height of their flame, for storage how many slots they hold.
+const DECOR := {
+	"table": {"name": "Table", "page": "furniture", "r": 0.7, "box": Vector3(1.3, 0.8, 0.8), "desc": "A sturdy plank table."},
+	"chair": {"name": "Chair", "page": "furniture", "r": 0.3, "box": Vector3(0.5, 0.95, 0.5), "desc": "A plank chair with a slatted back."},
+	"bench": {"name": "Bench", "page": "furniture", "r": 0.5, "box": Vector3(1.4, 0.48, 0.38), "desc": "A long bench for two."},
+	"bed": {"name": "Bed", "page": "furniture", "r": 0.9, "box": Vector3(1.1, 0.6, 2.1), "desc": "A timber bed with a straw mattress and a warm blanket."},
+	"shelf": {"name": "Shelf", "page": "furniture", "r": 0.55, "box": Vector3(1.2, 1.8, 0.4), "desc": "Shelves of jars, pots and bundles."},
+	"rug": {"name": "Rug", "page": "furniture", "r": 0.0, "box": Vector3.ZERO, "desc": "A woven rug. Things can stand on it."},
+	"barrel": {"name": "Barrel", "page": "furniture", "r": 0.33, "box": Vector3(0.62, 0.9, 0.62), "desc": "An iron-hooped barrel."},
+	"crate": {"name": "Crate", "page": "furniture", "r": 0.38, "box": Vector3(0.7, 0.62, 0.7), "desc": "A braced plank crate."},
+	"flower_pot": {"name": "Flower Pot", "page": "furniture", "r": 0.22, "box": Vector3(0.4, 0.55, 0.4), "desc": "A clay pot of wildflowers."},
+	"banner": {"name": "Banner", "page": "furniture", "r": 0.25, "box": Vector3(0.25, 2.3, 0.25), "desc": "A painted banner on a pole."},
+	"brazier": {"name": "Brazier", "page": "lights", "r": 0.42, "box": Vector3(0.8, 0.9, 0.8), "light": Color(1.0, 0.6, 0.28), "light_y": 1.05, "range": 8.0,
+		"desc": "A stone fire bowl. Lights the night."},
+	"lantern_post": {"name": "Lantern Post", "page": "lights", "r": 0.25, "box": Vector3(0.25, 2.2, 0.25), "light": Color(1.0, 0.78, 0.46), "light_at": Vector3(0, 1.78, 0.34), "range": 7.0,
+		"desc": "A lantern hung from a timber post."},
+	"standing_torch": {"name": "Standing Torch", "page": "lights", "r": 0.18, "box": Vector3(0.18, 1.5, 0.18), "light": Color(1.0, 0.62, 0.3), "light_y": 1.6, "range": 6.5,
+		"desc": "A torch on a stake, burning bright."},
+	"chest": {"name": "Chest", "page": "storage", "r": 0.48, "box": Vector3(0.95, 0.7, 0.6), "slots": 16, "desc": "Holds 16 stacks. Interact to open it."},
+	"large_chest": {"name": "Iron-Bound Chest", "page": "storage", "r": 0.6, "box": Vector3(1.2, 0.8, 0.7), "slots": 32, "desc": "Holds 32 stacks, bound in iron. Interact to open it."},
 }
 const FLOOR_KINDS := ["foundation", "wood_floor", "brick_floor"]
 ## Full-height walls, windows, doorways and doors. Roofs need two of these under them.
@@ -307,6 +347,10 @@ const PIECE_COSTS := {
 	"wood_fence": {"plank": 2}, "stone_fence": {"stone": 3, "plank": 1}, "brick_fence": {"brick": 2, "plank": 1},
 	"wood_arch": {"plank": 4}, "stone_arch": {"stone": 7}, "brick_arch": {"brick": 4},
 	"wood_shutters": {"plank": 6}, "stone_shutters": {"stone": 6, "plank": 3}, "brick_shutters": {"brick": 3, "plank": 3},
+	"table": {"plank": 4}, "chair": {"plank": 2}, "bench": {"plank": 3}, "bed": {"plank": 4, "hide": 2}, "shelf": {"plank": 4},
+	"rug": {"fiber": 12, "hide": 1}, "barrel": {"plank": 4, "rope": 1}, "crate": {"plank": 3}, "flower_pot": {"stone": 2, "fiber": 2},
+	"banner": {"sticks": 2, "fiber": 6}, "brazier": {"stone": 6, "charcoal": 2}, "lantern_post": {"plank": 2, "resin": 2},
+	"standing_torch": {"sticks": 3, "resin": 2, "fiber": 2}, "chest": {"plank": 6, "rope": 1}, "large_chest": {"plank": 8, "ingot_t2": 2},
 }
 
 
@@ -348,6 +392,16 @@ static func _upgrade_piece(st: Dictionary) -> void:
 
 static func is_building(kind: String) -> bool:
 	return PIECES.has(kind)
+
+
+## A free-standing piece: furniture, decor, a light or storage (see DECOR).
+static func is_decor(kind: String) -> bool:
+	return DECOR.has(kind)
+
+
+## How close other things may stand to a free-standing piece or a station.
+static func footprint(kind: String) -> float:
+	return float(DECOR[kind].r) if DECOR.has(kind) else STATION_GAP * 0.5
 
 
 static func shape_of(kind: String) -> String:
@@ -513,7 +567,7 @@ static func walls_around(cell: Vector2i, level: int) -> int:
 static func placement_problem(pos: Vector3, kind := "", yaw := 0.0) -> String:
 	if pos.y < Game.SEA_LEVEL + 0.15:
 		return "Can't build in water"
-	if is_building(kind):
+	if is_building(kind) and not is_decor(kind):
 		if kind in FLOOR_KINDS:
 			var sn := snap_piece(kind, pos)
 			pos = sn.pos
@@ -558,19 +612,22 @@ static func placement_problem(pos: Vector3, kind := "", yaw := 0.0) -> String:
 			if o.kind in EDGE_KINDS and _pos(o).distance_to(pos) < 0.5:
 				return "There's already a wall here"
 		return ""
-	# Stations: on the ground, or on top of a finished floor.
+	# Stations, furniture, lights and storage: on the ground, or on top of a finished floor.
 	var on_floor := not floor_under(pos).is_empty()
 	if not on_floor and Game.world_gen.get_normal(pos.x, pos.z).y < 0.8:
 		return "Too steep here"
+	var mine := footprint(kind)
 	for id: String in Game.structures:
 		var o: Dictionary = Game.structures[id]
 		var op := _pos(o)
-		if not is_building(o.kind):
-			if op.distance_to(pos) < STATION_GAP:
+		if not is_building(o.kind) or is_decor(o.kind):
+			var gap := mine + footprint(o.kind)
+			if mine > 0.0 and footprint(o.kind) > 0.0 and op.distance_to(pos) < gap:
 				return "Too close to the %s" % ItemDB.display_name(o.kind).to_lower()
 		elif o.kind in EDGE_KINDS:
-			# Clear of walls: its footprint (about a metre and a half across) mustn't reach into one.
-			if pos.y < op.y + WALL_H and pos.y + 1.2 > op.y and _to_wall(pos, op, float(o.get("yaw", 0.0))) < STATION_RADIUS:
+			# Clear of walls: its footprint mustn't reach into one.
+			var clear := minf(mine, STATION_RADIUS) if is_decor(kind) else STATION_RADIUS
+			if pos.y < op.y + WALL_H and pos.y + 1.2 > op.y and _to_wall(pos, op, float(o.get("yaw", 0.0))) < clear:
 				return "A wall is in the way"
 		elif o.kind in FLOOR_KINDS and not on_floor:
 			if cell_of(op) == cell_of(pos) and absf(op.y - pos.y) < 1.0:
@@ -675,6 +732,8 @@ static func place_blueprint(player_id: int, kind: String, pos: Vector3, yaw: flo
 		pos = sn_s.pos
 		yaw = sn_s.yaw
 		level = int(sn_s.level)
+	elif is_decor(kind):
+		level = 0
 	else:
 		level = level_of(kind, pos.y, wall_base(pos, yaw) if kind in EDGE_KINDS else base_y(cell_of(pos)))
 	var id := Game.new_entity_id("s")
@@ -710,7 +769,7 @@ static func removal_problem(st: Dictionary) -> String:
 			return "Take down the walls standing on it first"
 		for id: String in Game.structures:   # a station standing on it
 			var o: Dictionary = Game.structures[id]
-			if not is_building(o.kind) and floor_under(_pos(o)) == st:
+			if (not is_building(o.kind) or is_decor(o.kind)) and floor_under(_pos(o)) == st:
 				return "Pack up the %s on it first" % ItemDB.display_name(o.kind).to_lower()
 	elif st.kind in WALL_KINDS:
 		# A roof needs two walls under it; don't let it fall.
@@ -789,7 +848,8 @@ static func _hit_piece(player_id: int, st: Dictionary) -> Dictionary:
 		Game.structures_changed.emit()
 		return {"ok": false, "reason": why, "broke": broke}
 	_remove_piece(st)
-	_refund(inv, PIECE_COSTS.get(st.kind, {}), 0.5, pos)
+	# Furniture and the like come back whole (you'll move them about); walls and floors give back half.
+	_refund(inv, PIECE_COSTS.get(st.kind, {}), 1.0 if is_decor(st.kind) else 0.5, pos)
 	return {"ok": true, "destroyed": true, "kind": st.kind, "broke": broke}
 
 
