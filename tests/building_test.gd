@@ -190,6 +190,8 @@ func _process(_d: float) -> bool:
 			var ws: Dictionary = _GA.snap_piece("wall", fs.pos + Vector3(0, 0.5, -1.4))
 			var wall: Dictionary = _GA.place_blueprint(1, "wall", ws.pos, ws.yaw)
 			_check(wall.ok, "a wall on the foundation's edge")
+			var near: Array = _GA.stations_near(fs.pos)
+			_check(near == ["workbench"], "only stations count as nearby, not building pieces: %s" % str(near))
 			var by_wall: String = _GA.placement_problem(fs.pos + Vector3(-0.9, _GA.FLOOR_TOP, -1.2), "campfire")
 			_check(by_wall.contains("wall") or by_wall.contains("Too close"), "a station against a wall is refused: %s" % by_wall)
 			return _finish()

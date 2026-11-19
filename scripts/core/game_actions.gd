@@ -171,10 +171,13 @@ static func apply_food(stats: PlayerStats, id: String) -> Dictionary:
 # --- Crafting & structures ---------------------------------------------------------------
 
 ## Which station kinds are within reach of a position.
+## The kinds of crafting station (campfire, workbench, forge) within reach of pos. Building pieces don't count.
 static func stations_near(pos: Vector3) -> Array:
 	var out := []
 	for id: String in Game.structures:
 		var st: Dictionary = Game.structures[id]
+		if not Recipes.STATION_NAMES.has(st.kind) or st.kind == "":
+			continue
 		var p: Array = st.pos
 		if Vector3(p[0], p[1], p[2]).distance_to(pos) <= Recipes.STATION_RANGE and not out.has(st.kind):
 			out.append(st.kind)
