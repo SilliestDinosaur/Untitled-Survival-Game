@@ -84,6 +84,14 @@ func register_from(connection: ENetConnection) -> void:
 	connection.socket_send(server_ip, REGISTRAR_PORT, pid.to_utf8_buffer())
 
 
+## A blank line over the TCP connection (the server ignores it). Without it the connection carries nothing after the
+## host registers, and VPNs and routers drop connections that look idle, taking the invite code with them unnoticed;
+## with it, a dead connection shows up as closed within seconds, so the host can register again.
+func heartbeat() -> void:
+	if is_open():
+		_tcp.put_data("\n".to_utf8_buffer())
+
+
 func send(cmd: String, data := "") -> void:
 	if is_open():
 		_tcp.put_data(((cmd + " " + data) if data != "" else cmd).strip_edges().to_utf8_buffer() + "\n".to_utf8_buffer())

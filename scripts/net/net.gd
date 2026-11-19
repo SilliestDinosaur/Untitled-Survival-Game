@@ -340,7 +340,7 @@ func _join_via_relay(oid: String) -> void:
 			var at := RelayClient.parse_address(String(r.get("data", "")))
 			if at.is_empty():
 				if String(r.get("data", "")).contains("Unknown host"):
-					_join_gave_up(attempt, "No game with that code is open right now. Check the code with your friend.")
+					_join_gave_up(attempt, _no_game(oid))
 					return
 			else:
 				status_changed.emit("Connecting...")
@@ -364,7 +364,7 @@ func _join_via_relay(oid: String) -> void:
 		return
 	var data := String(rr.get("data", ""))
 	if not data.is_valid_int():
-		_join_gave_up(attempt, "No game with that code is open right now. Check the code with your friend." if data.contains("Unknown host")
+		_join_gave_up(attempt, _no_game(oid) if data.contains("Unknown host")
 			else "Couldn't connect through the relay. Try again in a moment.")
 		return
 	await RelayClient.handshake(get_tree(), local2, relay.server_ip, int(data), 3.0)
@@ -374,6 +374,11 @@ func _join_via_relay(oid: String) -> void:
 		join_route = "relay"
 	else:
 		_join_gave_up(attempt, "Couldn't connect to that game. Ask your friend to check it's still open, then try again.")
+
+
+## What a guest sees when the meeting server has no game under the code (with the code, to check against the host's).
+func _no_game(oid: String) -> String:
+	return "No game with the code %s is open right now. Check it against the code in your friend's pause menu: it changes if they reopen the world." % (oid.substr(0, 4) + "-" + oid.substr(4))
 
 
 ## Start the game connection from `local_port` (the one the routers have seen) and wait for it.
@@ -946,6 +951,7 @@ func _process(delta: float) -> void:
 			_relay_keepalive = RELAY_KEEPALIVE
 			if _relay.is_open():
 				_relay.register_from(_enet().host)
+				_relay.heartbeat()
 			else:
 				# Lost the meeting server (it restarted, or the connection dropped): its code no longer leads here.
 				# Register again for a new one; players already here aren't affected.
