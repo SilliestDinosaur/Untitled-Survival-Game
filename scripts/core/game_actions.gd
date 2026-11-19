@@ -864,6 +864,9 @@ static func drop_all(inv: Inventory, pos: Vector3) -> void:
 
 
 ## Drop items from a slot onto the ground in front of the player.
+const PICKUP_MERGE_RANGE := 1.5   ## a drop this close to a pile of the same thing joins it
+
+
 static func drop(player_id: int, slot: int, amount: int, pos: Vector3) -> String:
 	var inv := Game.inventory_of(player_id)
 	var stack := inv.take_from_slot(slot, amount)
@@ -873,6 +876,23 @@ static func drop(player_id: int, slot: int, amount: int, pos: Vector3) -> String
 
 
 static func spawn_pickup(item: String, count: int, dur: int, pos: Vector3) -> String:
+	# Stackable drops join a pile of the same thing close by (up to a full stack) instead of making another: a full
+	# satchel while gathering dropped one per swing, and every pickup is drawn, animated and sent to every guest.
+	if dur < 0:
+		var cap := ItemDB.stack_size(item)
+		for pid: String in Game.pickups:
+			var o: Dictionary = Game.pickups[pid]
+			if o.item != item or int(o.get("dur", -1)) >= 0 or int(o.count) >= cap:
+				continue
+			var op: Array = o.pos
+			if Vector3(op[0], op[1], op[2]).distance_to(pos) > PICKUP_MERGE_RANGE:
+				continue
+			var put := mini(count, cap - int(o.count))
+			o.count = int(o.count) + put
+			count -= put
+			if count <= 0:
+				Game.pickups_changed.emit()
+				return pid
 	var id := Game.new_entity_id("p")
 	Game.pickups[id] = {"id": id, "item": item, "count": count, "dur": dur, "pos": [pos.x, pos.y, pos.z]}
 	Game.pickups_changed.emit()

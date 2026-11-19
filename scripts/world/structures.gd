@@ -3,6 +3,7 @@ extends Node3D
 ## forges with glowing coals. Pure view of shared data, re-synced when it changes.
 
 var _nodes := {}   # structure id -> Node3D
+var _lit := {}     # structure id -> [node, light, flame] for the ones with a fire (animated each frame)
 var _corners := {}  # wall corners -> the wall pieces ending there (StructureModels.corner_index), for butt joints
 var _mat: ShaderMaterial
 var _glow_mat: StandardMaterial3D
@@ -86,6 +87,9 @@ func _sync() -> void:
 			_free_node(id)   # a blueprint just finished: rebuild it solid
 		if not _nodes.has(id) or not is_instance_valid(_nodes[id]):
 			_nodes[id] = _make(st)
+			var light := _nodes[id].get_node_or_null("Light") as OmniLight3D
+			if light:
+				_lit[id] = [_nodes[id], light, _nodes[id].get_node_or_null("Flame") as Node3D]
 		else:
 			_apply_door(_nodes[id], Game.structures[id])
 			_apply_ends(_nodes[id], Game.structures[id])
@@ -108,6 +112,7 @@ func _free_node(id: String) -> void:
 	if is_instance_valid(_nodes[id]):
 		_nodes[id].queue_free()
 	_nodes.erase(id)
+	_lit.erase(id)
 
 
 func _make(st: Dictionary) -> Node3D:
@@ -254,16 +259,18 @@ func _apply_door(root: Node3D, st: Dictionary) -> void:
 func _process(_delta: float) -> void:
 	var t := Time.get_ticks_msec() / 1000.0
 	var night := 1.0 - Game.daylight()
-	for id: String in _nodes:
-		var n: Node3D = _nodes[id]
-		if not is_instance_valid(n) or not n.has_meta("phase"):
+	# Only the fires (campfires and forges), not every wall and floor of a base.
+	for id: String in _lit:
+		var e: Array = _lit[id]
+		var n: Node3D = e[0]
+		if not is_instance_valid(n):
 			continue
 		var ph: float = n.get_meta("phase")
 		var flicker := 0.8 + 0.12 * sin(t * 11.0 + ph) + 0.08 * sin(t * 23.0 + ph * 2.0)
-		var light := n.get_node_or_null("Light") as OmniLight3D
-		if light:
+		var light := e[1] as OmniLight3D
+		if is_instance_valid(light):
 			light.light_energy = flicker * lerpf(0.8, 2.2, night)
-		var flame := n.get_node_or_null("Flame") as Node3D
-		if flame:
+		var flame := e[2] as Node3D
+		if is_instance_valid(flame):
 			flame.scale = Vector3(1.0 + 0.08 * sin(t * 9.0 + ph), flicker * 1.1, 1.0 + 0.08 * cos(t * 7.0 + ph))
 			flame.rotation.y = t * 0.8 + ph

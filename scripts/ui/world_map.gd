@@ -87,15 +87,24 @@ func _build_ground_rows(rows: int) -> void:
 		_ground_tex = ImageTexture.create_from_image(_ground)
 
 
+## The paper fog over what you haven't seen. Filled in one go, then cleared only where you've been (found with the
+## array's own search): pixel by pixel it was 13 ms, every half second while the map was open and you explored.
 func _build_fog() -> void:
 	var n := Game.explore_size()
 	var img := Image.create(n, n, false, Image.FORMAT_RGBA8)
 	var paper := UITheme.PAPER
-	for z in n:
-		for x in n:
-			var seen := Game.explored.size() == n * n and Game.explored[z * n + x] == 1
-			img.set_pixel(x, z, Color(paper.r, paper.g, paper.b, 0.0 if seen else 0.93))
-	_fog_tex = ImageTexture.create_from_image(img)
+	img.fill(Color(paper.r, paper.g, paper.b, 0.93))
+	if Game.explored.size() == n * n:
+		var data := img.get_data()
+		var i := Game.explored.find(1)
+		while i >= 0:
+			data[i * 4 + 3] = 0
+			i = Game.explored.find(1, i + 1)
+		img = Image.create_from_data(n, n, false, Image.FORMAT_RGBA8, data)
+	if _fog_tex and _fog_tex.get_size() == Vector2(n, n):
+		_fog_tex.update(img)
+	else:
+		_fog_tex = ImageTexture.create_from_image(img)
 
 
 ## Where a world position lands on the map, given the map's square.
