@@ -1,0 +1,129 @@
+# Multiplayer through the real relay server, from GitHub's machines (they can reach it; the dev container can't).
+# Runs when the relay-test branch is pushed. Results land on a branch named relay-test-results-<run id>.
+#   cross-network: a host on one machine and a guest on another (two public addresses), the guest joining by the
+#                  invite code through the meeting server, as two players in different homes would.
+#   same-machine:  the usual test pair through the server: by code (punch-through, else the relay), then relay only.
+name: Relay test
+on:
+  push:
+    branches: [relay-test]
+
+permissions:
+  contents: write
+  actions: read
+
+env:
+  RELAY: 3.139.2.153:8890
+  GODOT_ZIP: https://github.com/godotengine/godot/releases/download/4.5.1-stable/Godot_v4.5.1-stable_linux.x86_64.zip
+
+jobs:
+  host:
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+      - name: Godot
+        run: |
+          curl -sSLo godot.zip "$GODOT_ZIP" && unzip -q godot.zip && chmod +x Godot_v4.5.1-stable_linux.x86_64
+          echo "GODOT=$PWD/Godot_v4.5.1-stable_linux.x86_64" >> "$GITHUB_ENV"
+      - name: Import
+        run: timeout 600 "$GODOT" --headless --path . --import > /dev/null 2>&1 || true
+      - name: Host a world on the relay
+        run: |
+          curl -s https://api.ipify.org > host_ip.txt || true
+          NET_RELAY="$RELAY" NET_HOST_WAIT=600 timeout 1000 "$GODOT" --headless --path . -s tests/net_host_test.gd > host.log 2>&1 &
+          echo $! > host.pid
+          for i in $(seq 240); do grep -aq "HOST relay code:" host.log && break; grep -aq "HOST RESULT" host.log && break; sleep 2; done
+          grep -a "HOST relay code:" host.log | head -1 | sed 's/.*: //' > code.txt
+          echo "code: $(cat code.txt)"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: code
+          path: code.txt
+      - name: Wait for the guest
+        run: |
+          while kill -0 "$(cat host.pid)" 2>/dev/null; do sleep 3; done
+          tail -40 host.log
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: host-log
+          path: |
+            host.log
+            host_ip.txt
+
+  guest:
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+      - name: Godot
+        run: |
+          curl -sSLo godot.zip "$GODOT_ZIP" && unzip -q godot.zip && chmod +x Godot_v4.5.1-stable_linux.x86_64
+          echo "GODOT=$PWD/Godot_v4.5.1-stable_linux.x86_64" >> "$GITHUB_ENV"
+      - name: Import
+        run: timeout 600 "$GODOT" --headless --path . --import > /dev/null 2>&1 || true
+      - name: Get the host's invite code
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          for i in $(seq 120); do
+            id=$(gh api "repos/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID/artifacts" --jq '.artifacts[] | select(.name=="code") | .id' 2>/dev/null)
+            [ -n "$id" ] && break
+            sleep 5
+          done
+          gh api "repos/$GITHUB_REPOSITORY/actions/artifacts/$id/zip" > code.zip && unzip -o -q code.zip
+          echo "code: $(cat code.txt)"
+      - name: Join by code through the relay
+        run: |
+          curl -s https://api.ipify.org > guest_ip.txt || true
+          NET_RELAY="$RELAY" NET_JOIN="$(cat code.txt)" timeout 900 "$GODOT" --headless --path . -s tests/net_client_test.gd > guest.log 2>&1 || true
+          grep -a -E "^\s+(ok|FAIL) |joined by route|RESULT|Finding|Connecting|No game|Couldn" guest.log | head -60
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: guest-log
+          path: |
+            guest.log
+            guest_ip.txt
+
+  same-machine:
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+      - name: Godot
+        run: |
+          curl -sSLo godot.zip "$GODOT_ZIP" && unzip -q godot.zip && chmod +x Godot_v4.5.1-stable_linux.x86_64
+          echo "GODOT=$PWD/Godot_v4.5.1-stable_linux.x86_64" >> "$GITHUB_ENV"
+      - name: Import
+        run: timeout 600 "$GODOT" --headless --path . --import > /dev/null 2>&1 || true
+      - name: By code (punch-through, else relay)
+        run: bash tests/tools/run_net_test.sh > same-auto.txt 2>&1 || true; cat same-auto.txt
+      - name: Relay only
+        run: FORCE_RELAY=1 bash tests/tools/run_net_test.sh > same-relay.txt 2>&1 || true; cat same-relay.txt
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: same-machine
+          path: same-*.txt
+
+  report:
+    needs: [host, guest, same-machine]
+    if: always()
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with:
+          path: results
+      - name: Push the results to a branch
+        run: |
+          rm -rf results/code
+          git config user.name "relay-test"
+          git config user.email "relay-test@users.noreply.github.com"
+          git checkout --orphan "relay-test-results-$GITHUB_RUN_ID"
+          git rm -rq --cached . && find . -mindepth 1 -maxdepth 1 ! -name .git ! -name results -exec rm -rf {} +
+          git add results
+          git commit -qm "Relay test results, run $GITHUB_RUN_ID"
+          git push -q origin "HEAD:refs/heads/relay-test-results-$GITHUB_RUN_ID"
