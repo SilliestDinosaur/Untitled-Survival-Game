@@ -37,6 +37,13 @@ const ANIMAL_RATE := 0.1
 const ANIMAL_RANGE := 170.0
 ## Code alphabet: no 0/O/1/I so codes are easy to read out loud.
 const ALPHABET := "ABCDEFGHJKLMNPQRSTUVWXYZ23456789"
+## The meeting server (noray) that connects players on different networks: "host" or "host:port" (TCP, default
+## 8890). Empty: internet play falls back to UPnP only. Run it with NORAY_OID_CHARSET set to ALPHABET above and
+## NORAY_OID_LENGTH=9, so its codes read like ours (see README, "Relay server"). NET_RELAY overrides it (tests).
+const RELAY_SERVER := ""
+const RELAY_CODE_LENGTH := 9
+const RELAY_KEEPALIVE := 10.0   ## seconds between a host's address refreshes (also keeps its router's door open)
+const RELAY_RETRY := 30.0       ## a host that couldn't reach the meeting server tries again this often
 
 enum Mode { OFFLINE, HOST, CLIENT }
 
@@ -45,6 +52,10 @@ var port := PORT
 var invite_code := ""        ## works over the internet (if UPnP opened the port)
 var lan_code := ""           ## works on the same network
 var upnp_state := ""         ## "" | working | ok | failed
+var relay_state := ""        ## "" | working | ok | failed: the host's registration with the meeting server
+var relay_code := ""         ## the host's code on the meeting server (the invite code when it's there)
+var joining := false         ## a guest is finding the host through the meeting server
+var join_route := ""         ## how this guest got in: "address" | "direct" (punched through) | "relay"
 var public_ip := ""
 var players := {}            ## peer id -> {name, uid, color}
 var use_upnp := true         ## tests turn this off
@@ -76,6 +87,10 @@ var _upnp: UPNP
 var _upnp_thread: Thread
 var _rng := RandomNumberGenerator.new()
 var _join_timeout := 0.0
+var _relay: RelayClient
+var _relay_keepalive := 0.0
+var _relay_retry := 0.0
+var _join_attempt := 0       ## bumped by stop(), so a join still finding its way gives up
 
 
 func _ready() -> void:
@@ -153,9 +168,76 @@ func host() -> bool:
 		_upnp_thread.start(_upnp_open.bind(port))
 	else:
 		upnp_state = "failed"
+	if relay_server() != "":
+		_relay_host_start()
 	invite_ready.emit()
 	roster_changed.emit()
 	return true
+
+
+func relay_server() -> String:
+	var env := OS.get_environment("NET_RELAY")
+	return env if env != "" else RELAY_SERVER
+
+
+## Host: register with the meeting server so friends anywhere can find this game by its code.
+func _relay_host_start() -> void:
+	relay_state = "working"
+	_relay = RelayClient.new()
+	add_child(_relay)
+	var relay := _relay
+	if not await relay.open(relay_server()) or not await relay.register():
+		if relay == _relay and is_host():
+			relay_state = "failed"
+			_relay_retry = RELAY_RETRY
+			_relay = null
+			status_changed.emit(_host_status())
+			invite_ready.emit()
+		relay.close()
+		relay.queue_free()
+		return
+	if relay != _relay or not is_host():
+		return   # stopped hosting meanwhile
+	relay.command.connect(_on_relay_command)
+	for i in 3:   # UDP can drop one; the server doesn't mind repeats
+		relay.register_from(_enet().host)
+	_relay_keepalive = RELAY_KEEPALIVE
+	relay_code = relay.oid.substr(0, 4) + "-" + relay.oid.substr(4) if relay.oid.length() == RELAY_CODE_LENGTH else relay.oid
+	relay_state = "ok"
+	invite_code = relay_code
+	status_changed.emit(_host_status())
+	invite_ready.emit()
+
+
+## Host: the meeting server introduces a guest. Fire punch-through packets at them (or at their relay port) so
+## this router lets their connection in.
+func _on_relay_command(cmd: String, data: String) -> void:
+	if not is_host() or not _relay:
+		return
+	match cmd:
+		"connect":
+			var at := RelayClient.parse_address(data)
+			# NET_TEST_NO_PUNCH: act like a router that punch-through can't open (tests the fall-back to the relay).
+			if not at.is_empty() and OS.get_environment("NET_TEST_NO_PUNCH") == "":
+				RelayClient.blast(get_tree(), _enet(), at.ip, at.port, 8.0)
+		"connect-relay":
+			if data.is_valid_int():
+				RelayClient.blast(get_tree(), _enet(), _relay.server_ip, int(data), 8.0)
+
+
+func _enet() -> ENetMultiplayerPeer:
+	return multiplayer.multiplayer_peer as ENetMultiplayerPeer
+
+
+## What the host's menu says about inviting people.
+func _host_status() -> String:
+	if relay_state == "ok":
+		return "Ready: share your invite code."
+	if upnp_state == "ok":
+		return "Ready: share your invite code."
+	if relay_state == "working" or upnp_state == "working":
+		return "Setting up..."
+	return "Friends on this Wi-Fi can join automatically (no code needed). For internet play, forward UDP port %d or use a virtual LAN (Tailscale, ZeroTier, Radmin) and share that address." % port
 
 
 ## Runs on a thread: UPnP discovery can take a couple of seconds.
@@ -179,9 +261,10 @@ func _upnp_done(ok: bool, ip: String, u: UPNP) -> void:
 	_upnp = u if ok else null
 	upnp_state = "ok" if ok else "failed"
 	public_ip = ip
-	invite_code = encode_code(ip, port) if ok else ""
-	status_changed.emit("Ready: share your invite code." if ok else
-		"Friends on this Wi-Fi can join automatically (no code needed). For internet play, forward UDP port %d or use a virtual LAN (Tailscale, ZeroTier, Radmin) and share that address." % port)
+	# The meeting server's code works on more networks; UPnP's address code is the fallback when there's none.
+	if relay_code == "":
+		invite_code = encode_code(ip, port) if ok else ""
+	status_changed.emit(_host_status())
 	invite_ready.emit()
 
 
@@ -193,6 +276,10 @@ func join(code: String) -> bool:
 		stop()
 	var target := decode_code(code)
 	if target.is_empty():
+		var oid := relay_code_of(code)
+		if oid != "" and relay_server() != "":
+			_join_via_relay(oid)
+			return true
 		status_changed.emit("That code doesn't look right.")
 		return false
 	var peer := ENetMultiplayerPeer.new()
@@ -201,10 +288,120 @@ func join(code: String) -> bool:
 		return false
 	multiplayer.multiplayer_peer = peer
 	mode = Mode.CLIENT
+	join_route = "address"
 	players.clear()
 	_join_timeout = 12.0
 	status_changed.emit("Connecting to %s..." % code.strip_edges().to_upper())
 	return true
+
+
+## A meeting-server code as the server knows it ("KQ7M-B3XAP" -> "KQ7MB3XAP"), or "" if it isn't one.
+static func relay_code_of(code: String) -> String:
+	var c := code.strip_edges().to_upper().replace("-", "").replace(" ", "")
+	if c.length() != RELAY_CODE_LENGTH:
+		return ""
+	for ch in c:
+		if not ALPHABET.contains(ch):
+			return ""
+	return c
+
+
+## Guest: find the host through the meeting server. First a direct connection (both routers punched open); if
+## that can't be made, through the server's relay.
+func _join_via_relay(oid: String) -> void:
+	_join_attempt += 1
+	var attempt := _join_attempt
+	joining = true
+	players.clear()
+	status_changed.emit("Finding that game...")
+	if _relay:
+		_relay.queue_free()
+	_relay = RelayClient.new()
+	add_child(_relay)
+	var relay := _relay
+	if not await relay.open(relay_server()) or not await relay.register():
+		_join_gave_up(attempt, "Couldn't reach the matchmaking server. Check your internet connection and try again.")
+		return
+	if attempt != _join_attempt:
+		return
+	if OS.get_environment("NET_FORCE_RELAY") == "":
+		var local := await relay.register_udp()
+		if attempt != _join_attempt:
+			return
+		if local > 0:
+			relay.send("connect", oid)
+			var r: Dictionary = await relay.wait_for(["connect"], 6.0)
+			if attempt != _join_attempt:
+				return
+			var at := RelayClient.parse_address(String(r.get("data", "")))
+			if at.is_empty():
+				if String(r.get("data", "")).contains("Unknown host"):
+					_join_gave_up(attempt, "No game with that code is open right now. Check the code with your friend.")
+					return
+			else:
+				status_changed.emit("Connecting...")
+				if await RelayClient.handshake(get_tree(), local, at.ip, at.port, 4.0) and attempt == _join_attempt:
+					if await _try_connect(attempt, at.ip, at.port, local, 6.0):
+						join_route = "direct"
+						return
+	if attempt != _join_attempt:
+		return
+	# Through the relay: the server passes the traffic on.
+	status_changed.emit("Connecting through the relay...")
+	var local2 := await relay.register_udp()
+	if attempt != _join_attempt:
+		return
+	if local2 < 0:
+		_join_gave_up(attempt, "The matchmaking server stopped answering. Try again in a moment.")
+		return
+	relay.send("connect-relay", oid)
+	var rr: Dictionary = await relay.wait_for(["connect-relay"], 6.0)
+	if attempt != _join_attempt:
+		return
+	var data := String(rr.get("data", ""))
+	if not data.is_valid_int():
+		_join_gave_up(attempt, "No game with that code is open right now. Check the code with your friend." if data.contains("Unknown host")
+			else "Couldn't connect through the relay. Try again in a moment.")
+		return
+	await RelayClient.handshake(get_tree(), local2, relay.server_ip, int(data), 3.0)
+	if attempt != _join_attempt:
+		return
+	if await _try_connect(attempt, relay.server_ip, int(data), local2, 10.0):
+		join_route = "relay"
+	else:
+		_join_gave_up(attempt, "Couldn't connect to that game. Ask your friend to check it's still open, then try again.")
+
+
+## Start the game connection from `local_port` (the one the routers have seen) and wait for it.
+func _try_connect(attempt: int, ip: String, p: int, local_port: int, seconds: float) -> bool:
+	var peer := ENetMultiplayerPeer.new()
+	if peer.create_client(ip, p, 0, 0, 0, local_port) != OK:
+		return false
+	multiplayer.multiplayer_peer = peer
+	mode = Mode.CLIENT
+	_join_timeout = 0.0
+	var until := Time.get_ticks_msec() + int(seconds * 1000.0)
+	while peer.get_connection_status() == MultiplayerPeer.CONNECTION_CONNECTING and Time.get_ticks_msec() < until:
+		await get_tree().process_frame
+		if attempt != _join_attempt:
+			return true   # stopped meanwhile; nothing more to do here
+	if peer.get_connection_status() == MultiplayerPeer.CONNECTION_CONNECTED:
+		joining = false
+		return true
+	peer.close()
+	multiplayer.multiplayer_peer = null
+	mode = Mode.OFFLINE
+	return false
+
+
+func _join_gave_up(attempt: int, reason: String) -> void:
+	if attempt != _join_attempt:
+		return
+	joining = false
+	if _relay:
+		_relay.close()
+	status_changed.emit(reason)
+	session_ended.emit(reason)
 
 
 func _on_connected() -> void:
@@ -376,6 +573,14 @@ func stop() -> void:
 		multiplayer.multiplayer_peer.close()
 	multiplayer.multiplayer_peer = null
 	var was_client := is_client()
+	_join_attempt += 1
+	joining = false
+	if _relay:
+		_relay.close()
+		_relay.queue_free()
+		_relay = null
+	relay_state = ""
+	relay_code = ""
 	mode = Mode.OFFLINE
 	players.clear()
 	for a in avatars.values():
@@ -727,6 +932,26 @@ func _process(delta: float) -> void:
 			_fail("No answer from that game. If you're on different networks, the host's router may be blocking it.")
 	if not is_online():
 		return
+	if is_host() and relay_state == "failed" and relay_server() != "":
+		_relay_retry -= delta
+		if _relay_retry <= 0.0:
+			_relay_host_start()
+	if is_host() and relay_state == "ok" and _relay:
+		_relay_keepalive -= delta
+		if _relay_keepalive <= 0.0:
+			_relay_keepalive = RELAY_KEEPALIVE
+			if _relay.is_open():
+				_relay.register_from(_enet().host)
+			else:
+				# Lost the meeting server (it restarted, or the connection dropped): its code no longer leads here.
+				# Register again for a new one; players already here aren't affected.
+				_relay.queue_free()
+				_relay = null
+				relay_code = ""
+				invite_code = encode_code(public_ip, port) if upnp_state == "ok" else ""
+				_relay_host_start()
+				status_changed.emit("Reconnecting to the matchmaking server: your invite code will change.")
+				invite_ready.emit()
 	for p: int in _inv_dirty.keys():
 		_flush_inventory(p)
 	if not player or not main or not main.is_playing():

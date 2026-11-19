@@ -708,8 +708,8 @@ class MultiplayerBox extends VBoxContainer:
 		_lan_row.visible = Net.is_host()
 		_code.text = Net.invite_code
 		_lan.text = Net.lan_code
-		match Net.upnp_state:
-			"working": _info.text = "Setting up your router..."
+		match "ok" if Net.relay_state == "ok" else ("working" if Net.relay_state == "working" and Net.upnp_state != "ok" else Net.upnp_state):
+			"working": _info.text = "Setting up..."
 			"ok": _info.text = "Give your friend the invite code. They enter it under Play with Friends."
 			"failed": _info.text = "Your router didn't allow automatic setup, so the invite code isn't available. Friends on your Wi-Fi can use the same-network code. For internet play, forward UDP port %d to this computer, or both join a virtual LAN (Tailscale, ZeroTier, Radmin) and share that address." % Net.port
 			_: _info.text = "Let up to %d friends join this world. Their characters are saved here." % (Net.MAX_PLAYERS - 1) if not Net.is_client() else ""
@@ -787,13 +787,13 @@ class MultiplayerPanel extends Control:
 		var back := UITheme.button("Back", false, 160)
 		back.pressed.connect(func() -> void:
 			Net.stop_listening()
-			if Net.is_client():
+			if Net.is_client() or Net.joining:
 				Net.stop()
 			back_pressed.emit())
 		col.add_child(Menus._row([back]))
 		Net.status_changed.connect(func(t: String) -> void:
 			_status.text = t
-			_join.disabled = Net.is_client())
+			_join.disabled = Net.is_client() or Net.joining)
 		Net.games_changed.connect(_refresh_games)
 		_refresh_games()
 

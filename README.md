@@ -185,15 +185,30 @@ Sounds and music are synthesized at startup, so there are no audio files.
 
 ## Multiplayer (co-op, up to 4)
 - **Host:** switch on *Open to friends* when creating or loading a world, or press *Open to
-  Friends* in the pause menu. The game asks your router to open UDP port 24680 (UPnP) and shows
-  an **invite code** to give your friend. A **same-network code** is shown too.
+  Friends* in the pause menu. You get an **invite code** (like `KQ7M-B3XAP`) to give your friend, and a
+  **same-network code** for friends on your Wi-Fi (they also see your game listed automatically).
 - **Join:** title screen -> *Play with Friends*, pick your name and colour, enter the code.
-- If your router doesn't allow UPnP, the menu says so: friends on your Wi-Fi can still use the
-  same-network code; for internet play forward UDP port 24680, or both join a virtual LAN
-  (Tailscale, ZeroTier, Radmin VPN) and type the host's address (e.g. `100.64.1.2`) as the code.
+- **How the invite code connects:** it's the host's code on the game's matchmaking server (noray). The guest's
+  game first tries to connect straight to the host, with the server helping both routers open up (NAT
+  punch-through); if a router won't allow that, it goes through the server's relay. The router is also asked to
+  open UDP port 24680 (UPnP), which makes the direct connection easier. Without a matchmaking server configured
+  (`RELAY_SERVER` empty), the invite code is the UPnP address code as before, and only works when the host's
+  router allows UPnP.
 - It's the host's world: guests' characters (inventory, position, health) are saved in the host's
   save and restored when they rejoin.
 - Other players appear as simple floating figures (torso, head, held item, name tag).
+
+### Relay server (for internet play)
+The game needs one small always-on server for players on different networks to find each other. It runs
+[noray](https://github.com/foxssake/noray) (open source, MIT); `server/noray/` has everything for it.
+1. Get a small Linux server with a public address (any cheap VPS, or a free tier such as Oracle Cloud's), and
+   install Docker.
+2. Copy `server/noray/` to it and run `docker compose up -d` in that folder.
+3. Open these in the server's firewall: TCP 8890, UDP 8809, and UDP 49152-49351 (the relay slots).
+4. In `scripts/net/net.gd`, set `RELAY_SERVER := "your.server.address:8890"` and export the game again.
+
+Traffic: most games connect directly and only use the server for a moment; relayed players' traffic passes
+through it (a few KB/s each). Test it from home with `RELAY=your.server.address:8890 tests/tools/run_net_test.sh`.
 
 How it works: the host is the authority. Every world-changing action goes through
 `Net.request()` (`scripts/net/net.gd`): offline and on the host it runs `GameActions` directly;

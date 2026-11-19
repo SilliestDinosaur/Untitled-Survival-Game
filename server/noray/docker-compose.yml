@@ -1,0 +1,9 @@
+# The matchmaking / relay server for internet play (noray: https://github.com/foxssake/noray, MIT).
+# On a small Linux server with Docker:   docker compose up -d
+# Then put "<your server's address>:8890" in RELAY_SERVER in scripts/net/net.gd and export the game again.
+services:
+  noray:
+    image: ghcr.io/foxssake/noray:main
+    restart: unless-stopped
+    env_file: noray.env
+    network_mode: host   # relaying needs real UDP ports; noray's docs recommend host networking

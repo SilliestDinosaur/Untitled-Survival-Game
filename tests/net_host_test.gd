@@ -32,8 +32,16 @@ func _process(_delta: float) -> bool:
 			if _main.state == _main.State.PLAYING:
 				_check(_net.host(), "hosting")
 				print("HOST lan code: ", _net.lan_code)
+				_phase = "relay" if _net.relay_server() != "" else "wait"
+				_frames = 0
+		"relay":   # with a meeting server: wait for this game's code on it, for the guest to join by
+			if _net.relay_state == "ok":
+				print("HOST relay code: ", _net.relay_code)
 				_phase = "wait"
 				_frames = 0
+			elif _net.relay_state == "failed" or _frames > 60 * 30:
+				_check(false, "registered with the meeting server")
+				return _finish()
 		"wait":
 			if not _net.players.is_empty():
 				if not _client_seen:

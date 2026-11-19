@@ -46,6 +46,9 @@ func _process(_delta: float) -> bool:
 				_check(_net.join(to if to != "" else "127.0.0.1:%d" % _net.PORT), "connecting to %s" % (to if to != "" else "the host"))
 			if _main.state == _main.State.PLAYING:
 				_check(_game.world_seed == 424242, "got the host's world (seed %d)" % _game.world_seed)
+				print("  joined by route: ", _net.join_route)
+				if OS.get_environment("NET_FORCE_RELAY") != "":
+					_check(_net.join_route == "relay", "came in through the meeting server's relay")
 				_check(_player.inventory.count("rock") == 1, "starts with a rock from the host")
 				_check(_net.avatars.has(1), "host's avatar exists")
 				_next("give")
