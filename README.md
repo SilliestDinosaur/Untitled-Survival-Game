@@ -179,6 +179,9 @@ Sounds and music are synthesized at startup, so there are no audio files.
 | `shaders/` | Painterly include + terrain, painted, foliage, grass, sky, water, post filter |
 | `tests/smoke_test.gd` | `godot --headless --path . -s tests/smoke_test.gd` |
 | `tests/gameplay_test.gd` | Chops, mines, eats, hunts, harvests, then saves and reloads |
+| `tests/crafting_test.gd` | Plays every crafting minigame through (cooking, smelting, forging, workbench, knapping) |
+| `tests/tools/run_tests.sh` | Runs all the single-game suites and prints one line each |
+| `tests/tools/run_net_test.sh` | Multiplayer: a host and a guest on this machine; the guest gathers, crafts, builds a foundation and a door with the hammer, opens the door, hunts, butchers and cooks, all through the host. `LAG=150 JITTER=40 LOSS=2` runs it through a relay that delays and drops packets |
 
 ## Multiplayer (co-op, up to 4)
 - **Host:** switch on *Open to friends* when creating or loading a world, or press *Open to

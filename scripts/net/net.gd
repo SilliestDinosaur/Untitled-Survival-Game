@@ -27,6 +27,10 @@ const BEACON_TIMEOUT := 4.0
 
 const PORT := 24680
 const MAX_PLAYERS := 4
+## How long a connection may stay silent before it counts as lost (see _be_patient).
+const PEER_TIMEOUT_LIMIT := 32
+const PEER_TIMEOUT_MIN_MS := 30000
+const PEER_TIMEOUT_MAX_MS := 60000
 const PROTOCOL := 3
 const POSE_RATE := 1.0 / 15.0
 const ANIMAL_RATE := 0.1
@@ -204,6 +208,7 @@ func join(code: String) -> bool:
 
 
 func _on_connected() -> void:
+	_be_patient(1)
 	_join_timeout = 12.0
 	status_changed.emit("Connected. Getting the world...")
 	_hello.rpc_id(1, PROTOCOL, Settings.player_name, Settings.player_uid, Settings.player_color)
@@ -307,8 +312,21 @@ func _roster(roster: Dictionary) -> void:
 	roster_changed.emit()
 
 
-func _on_peer_connected(_peer: int) -> void:
-	pass   # the guest introduces itself with _hello
+func _on_peer_connected(peer: int) -> void:
+	_be_patient(peer)   # the guest introduces itself with _hello
+
+
+## A guest's game goes quiet while it generates the world on joining (several seconds on a slow laptop, more
+## when it's busy), and the host can stall briefly too (an autosave). ENet's default gives up on a silent peer after
+## as little as 5 s, which dropped guests mid-join: the host saw them leave while they finished loading and then
+## found nothing they did reached the host. Wait 30 s to a minute of silence before calling it a disconnect.
+func _be_patient(peer_id: int) -> void:
+	var enet := multiplayer.multiplayer_peer as ENetMultiplayerPeer
+	if enet == null:
+		return
+	var p := enet.get_peer(peer_id)
+	if p:
+		p.set_timeout(PEER_TIMEOUT_LIMIT, PEER_TIMEOUT_MIN_MS, PEER_TIMEOUT_MAX_MS)
 
 
 func _on_peer_disconnected(peer: int) -> void:

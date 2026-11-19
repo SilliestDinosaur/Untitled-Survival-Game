@@ -2,8 +2,9 @@ extends SceneTree
 ## Multiplayer test, host side. Run together with net_client_test.gd:
 ##   godot --headless --path . -s tests/net_host_test.gd &
 ##   godot --headless --path . -s tests/net_client_test.gd
-## The host opens a world; the client joins, gathers, crafts and places a campfire; then the
-## host checks that the changes reached its world and that the guest's character was kept.
+## The host opens a world; the client joins, gathers, crafts and places a campfire, builds (a foundation and a
+## door, opened), hunts and cooks; then the host checks that the changes reached its world and that the guest's
+## character was kept. tests/tools/run_net_test.sh runs the pair (LAG=ms puts a lag relay between them).
 
 var _main: Node
 var _game: Node
@@ -50,6 +51,17 @@ func _process(_delta: float) -> bool:
 			if not _game.guests.is_empty():
 				var g: Dictionary = _game.guests.values()[0]
 				_check(g.has("inventory") and g.has("pos"), "guest save has inventory and position")
+				_check(str(g.get("inventory", {})).contains("cooked_meat"), "the meat the guest cooked is in their saved pack")
+			var GA: GDScript = load("res://scripts/core/game_actions.gd")
+			var built_floor := false
+			var open_door := false
+			for st: Dictionary in _game.structures.values():
+				if st.kind == "foundation" and not GA.is_blueprint(st):
+					built_floor = true
+				if st.kind == "wood_door" and not GA.is_blueprint(st) and bool(st.get("open", false)):
+					open_door = true
+			_check(built_floor, "the foundation the guest built stands, finished, in the host's world")
+			_check(open_door, "the door the guest built and opened is open in the host's world")
 			return _finish()
 	return false
 
