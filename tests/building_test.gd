@@ -156,6 +156,26 @@ func _process(_d: float) -> bool:
 			var shaped: Array = _GA.PIECES.keys().filter(func(k: String) -> bool: return not _GA.is_decor(k))
 			_check(shaped.size() == _GA.SHAPES.size() * _GA.MATERIALS.size(), "every shape in every material (%d pieces)" % shaped.size())
 			_check(_GA.DECOR.keys().all(func(k: String) -> bool: return _GA.PIECES.has(k) and _GA.PIECE_COSTS.has(k)), "every furniture piece is a building piece with a cost")
+			# Furniture goes anywhere flat, keeps its own footprint (a chair right up to a table, not two tables in
+			# one), and a rug lets things stand on it.
+			var spot: Vector3 = Vector3.INF
+			for k in 80:
+				var cand: Vector3 = _spot + Vector3((k % 8 - 4) * 4.0, 0, -12.0 - (k / 8) * 4.0)
+				cand.y = _game.world_gen.get_height(cand.x, cand.z)
+				if _Terrain.tree_near(cand, 4.0) == null and cand.y > 2.0 and _game.world_gen.get_normal(cand.x, cand.z).y > 0.9 \
+						and _GA.placement_problem(cand, "table", 0.0) == "":
+					spot = cand
+					break
+			_check(spot != Vector3.INF, "found a flat spot for furniture")
+			if spot != Vector3.INF:
+				var tid: String = _game.new_entity_id("s")
+				_game.structures[tid] = {"id": tid, "kind": "table", "pos": [spot.x, spot.y, spot.z], "yaw": 0.0, "level": 0, "built": 1.0, "hp": 200.0, "max_hp": 200.0, "spent": {}}
+				var beside := spot + Vector3(1.0, 0, 0)
+				beside.y = _game.world_gen.get_height(beside.x, beside.z)
+				_check(_GA.placement_problem(beside, "chair", 0.0) == "", "a chair fits right up to a table (%s)" % _GA.placement_problem(beside, "chair", 0.0))
+				_check(_GA.placement_problem(spot + Vector3(0.5, 0, 0), "table", 0.0) != "", "two tables can't share a spot")
+				_check(_GA.placement_problem(spot, "rug", 0.0) == "", "a rug goes under a table")
+				_game.structures.erase(tid)
 			_step = 5
 		5:
 			# Stations on floors: a workbench stands on a finished foundation, not sunk into one from the ground, not

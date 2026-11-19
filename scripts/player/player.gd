@@ -65,7 +65,7 @@ var _snapped_level := 0   ## storey the building preview is on (for the prompt)
 var _ghost: MeshInstance3D
 var _place_turns := 0   ## quarter turns from Rotate (R) for the piece being placed
 ## The building wheel's pick for the Building Plan: a shape (GameActions.SHAPES) in a material (GameActions.MATERIALS).
-var build_choice := {"shape": "wall", "mat": "wood"}
+var build_choice := {"shape": "wall", "mat": "wood", "page": 0}   ## the wheel's picks (and per page, "decor<page>")
 var wheel_open := false   ## set by the building wheel while it's up (placing waits until it closes)
 var crafting: Node = null  ## the crafting minigame you're at (CraftSession), if any: you stand still while it runs
 var _ghost_kind := ""
@@ -469,7 +469,7 @@ func _update_actions(delta: float) -> void:
 	var focused := Input.mouse_mode == Input.MOUSE_MODE_CAPTURED or DisplayServer.get_name() == "headless"
 	if not focused or viewmodel.is_busy() or crafting:
 		return
-	if Input.is_action_pressed("interact") and _interact_cooldown <= 0.0 and looking_at.get("interact", "") != "":
+	if Input.is_action_pressed("interact") and not wheel_open and _interact_cooldown <= 0.0 and looking_at.get("interact", "") != "":
 		_interact_cooldown = 0.35
 		viewmodel.reach()
 		return
@@ -689,6 +689,9 @@ func held_build_kind() -> String:
 	if info.get("kind", "") == "placeable":
 		return String(info.station)
 	if ItemDB.tool_stats(item).get("type", "") == "plan":
+		var page := int(build_choice.get("page", 0))
+		if page > 0:
+			return String(build_choice.get("decor%d" % page, BuildWheel.page_items(page)[0]))
 		return GameActions.piece_kind(String(build_choice.shape), String(build_choice.mat))
 	return ""
 
