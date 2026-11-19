@@ -49,7 +49,7 @@ enum Mode { OFFLINE, HOST, CLIENT }
 
 var mode := Mode.OFFLINE
 var port := PORT
-var invite_code := ""        ## works over the internet (if UPnP opened the port)
+var invite_code := ""        ## for friends anywhere: the meeting server's code, or UPnP's address code without one
 var lan_code := ""           ## works on the same network
 var upnp_state := ""         ## "" | working | ok | failed
 var relay_state := ""        ## "" | working | ok | failed: the host's registration with the meeting server
@@ -193,8 +193,9 @@ func _relay_host_start() -> void:
 			_relay = null
 			status_changed.emit(_host_status())
 			invite_ready.emit()
-		relay.close()
-		relay.queue_free()
+		if is_instance_valid(relay):   # stop() may have freed it already
+			relay.close()
+			relay.queue_free()
 		return
 	if relay != _relay or not is_host():
 		return   # stopped hosting meanwhile
