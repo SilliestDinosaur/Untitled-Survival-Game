@@ -11,6 +11,7 @@ var _game: Node
 var _net: Node
 var _phase := "load"
 var _frames := 0
+var _wait_from := 0   ## when the host started waiting for its guest (msec)
 var _fails: Array[String] = []
 var _client_seen := false
 
@@ -34,11 +35,13 @@ func _process(_delta: float) -> bool:
 				print("HOST lan code: ", _net.lan_code)
 				_phase = "relay" if _net.relay_server() != "" else "wait"
 				_frames = 0
+				_wait_from = Time.get_ticks_msec()
 		"relay":   # with a meeting server: wait for this game's code on it, for the guest to join by
 			if _net.relay_state == "ok":
 				print("HOST relay code: ", _net.relay_code)
 				_phase = "wait"
 				_frames = 0
+				_wait_from = Time.get_ticks_msec()
 			elif _net.relay_state == "failed" or _frames > 60 * 30:
 				_check(false, "registered with the meeting server")
 				return _finish()
@@ -49,7 +52,10 @@ func _process(_delta: float) -> bool:
 				_client_seen = true
 			elif _client_seen:
 				_phase = "check"
-			if _frames > 60 * 240:
+			# Real seconds (headless frames can run faster than real time); NET_HOST_WAIT for a guest that starts
+			# a while later (on another machine).
+			var wait_s := float(OS.get_environment("NET_HOST_WAIT")) if OS.get_environment("NET_HOST_WAIT") != "" else 240.0
+			if Time.get_ticks_msec() - _wait_from > int(wait_s * 1000.0):
 				_check(false, "client never finished")
 				return _finish()
 		"check":
