@@ -294,33 +294,22 @@ static func umbrella(kit: MeshKit, rng: RandomNumberGenerator, bark: Color, leaf
 	var tips: Array = []
 	branch(kit, rng, top - Vector3(0, height * 0.2, 0), Vector3(rng.randf_range(-0.7, 0.7), 0.6, rng.randf_range(-0.7, 0.7)).normalized(), height * 0.4, radius * 0.6, 1, bark, tips, 5)
 	var canopy := top + Vector3(0, 0.3, 0)
-	# The canopy disc stays round at any detail: it's a handful of triangles, and few sides leave corners jutting out
-	# past the crown.
-	var sides := maxi(12, roundi(16.0 * MeshKit.detail))
+	# The flat-topped crown: a ring of wide, squashed leaf clumps round a middle one, overlapping into one broad
+	# layer, with a few smaller puffs on top. Each clump is shaded like any canopy (sunlit top, darker underside).
+	# (It used to be a cone with one straight-up normal, which lit as a flat pale plate.)
 	var rim_r := rng.randf_range(2.6, 3.4)
-	var noise := rng.randf() * TAU
-	var ring: Array = []
-	for i in sides:
-		var a := TAU * float(i) / sides
-		var rr := rim_r * (0.86 + 0.16 * sin(a * 3.0 + noise) + 0.06 * float(i % 2))
-		ring.append(canopy + Vector3(cos(a) * rr, -0.3 * (1.0 - rr / rim_r) * 0.5, sin(a) * rr))
-	var crown := canopy + Vector3(0, 0.9, 0)
-	var leaf_top := leaf.lightened(0.08)
-	var leaf_low := leaf.darkened(0.25)
-	for i in sides:
-		var a: Vector3 = ring[i]
-		var b: Vector3 = ring[(i + 1) % sides]
-		_tri(kit, crown, b, a, Vector3.UP, Vector3.UP, Vector3.UP, leaf_top, leaf_top, leaf_top)
-		_tri(kit, canopy, a, b, Vector3.DOWN, Vector3.DOWN, Vector3.DOWN, leaf_low, leaf_low, leaf_low)
-		# A ragged fringe round the rim: cards leaning out and down, in the canopy's colour (flat dark ones pointing
-		# straight down read as black specks from above).
-		var rim := (a + b) * 0.5
-		leaf(kit, rng, rim, (rim - canopy).normalized().lerp(Vector3.DOWN, 0.55).normalized(), 0.5, leaf)
-	# Puffs of leaves on the crown.
-	for i in 6:
+	var clumps := 6
+	var turn := rng.randf() * TAU
+	blob(kit, rng, canopy + Vector3(0, 0.25, 0), rim_r * 0.5, 0.45, leaf.darkened(0.03), 0.3)
+	for i in clumps:
+		var a := turn + TAU * (float(i) + rng.randf_range(-0.2, 0.2)) / clumps
+		var d := rim_r * rng.randf_range(0.5, 0.62)
+		blob(kit, rng, canopy + Vector3(cos(a) * d, rng.randf_range(0.0, 0.15), sin(a) * d), rim_r * rng.randf_range(0.36, 0.44), 0.42,
+			leaf.darkened(rng.randf_range(0.0, 0.06)), 0.3)
+	for i in 3:
 		var a := rng.randf() * TAU
-		var d := rng.randf_range(0.6, rim_r * 0.7)
-		blob(kit, rng, canopy + Vector3(cos(a) * d, 0.7, sin(a) * d), rng.randf_range(0.8, 1.1), 0.5, leaf, 0.4)
+		var d := rng.randf_range(0.3, rim_r * 0.45)
+		blob(kit, rng, canopy + Vector3(cos(a) * d, 0.75, sin(a) * d), rng.randf_range(0.7, 0.95), 0.55, leaf.lightened(0.03), 0.4)
 	for tip: Vector3 in tips:
 		blob(kit, rng, tip, 0.9, 0.7, leaf, 0.4)
 
