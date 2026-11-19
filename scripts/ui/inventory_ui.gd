@@ -264,6 +264,7 @@ class InventoryPanel extends Control:
 			if Inventory.is_hotbar(i):
 				SlotView.style(true, 40 + i)
 		_craft.prewarm()
+		_chest.prewarm()
 
 	func _ready() -> void:
 		set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
@@ -545,7 +546,7 @@ void fragment() {
 		# Fill every tab in once too: the first fill sets up each row's look and buttons, the slow part.
 		if player and player.is_inside_tree():
 			for kind: String in STATION_LOOK:
-				station = kind
+				set_station(kind)   # (its tinted paper too, made the first time it's shown)
 				for g: String in Recipes.GROUPS:
 					_group = g
 					refresh()
@@ -690,6 +691,16 @@ class ChestPanel extends PanelContainer:
 			if visible:
 				_refresh())
 
+	## Make the most slots any chest has now, while the game starts (the first chest opened was a 100 ms hitch).
+	func prewarm() -> void:
+		var most := 0
+		for kind: String in GameActions.DECOR:
+			most = maxi(most, int(GameActions.DECOR[kind].get("slots", 0)))
+		while _views.size() < most:
+			var v := ChestSlotView.new(_views.size())
+			_grid.add_child(v)
+			_views.append(v)
+
 	func open(sid: String) -> void:
 		_sid = sid
 		open_id = sid
@@ -750,7 +761,7 @@ class ChestSlotView extends PanelContainer:
 		index = i
 		custom_minimum_size = Vector2(64, 64)
 		mouse_filter = Control.MOUSE_FILTER_STOP
-		add_theme_stylebox_override("panel", SlotView.style(false, 140 + i))
+		add_theme_stylebox_override("panel", SlotView.style(false, 40 + i % Inventory.SIZE))   # the satchel's (already made)
 
 	func _ready() -> void:
 		var stack := Control.new()

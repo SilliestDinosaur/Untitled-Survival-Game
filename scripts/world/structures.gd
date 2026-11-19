@@ -112,6 +112,8 @@ static func _cut_for(mesh: Mesh, built: float) -> float:
 
 
 func _set_cut(root: Node3D, cut: float) -> void:
+	if not is_instance_valid(root):
+		return
 	root.set_meta("cut", cut)
 	for n in ["Body", "Ghost"]:
 		var mi := root.get_node_or_null(n) as GeometryInstance3D
@@ -132,7 +134,8 @@ func _apply_build(root: Node3D, st: Dictionary) -> void:
 	if is_equal_approx(now, target):
 		return
 	root.set_meta("cut", target)
-	var tw := create_tween()
+	# Bound to the piece: when the last hit finishes it, it's rebuilt solid, and the old one's rise stops with it.
+	var tw := root.create_tween()
 	tw.tween_method(func(c: float) -> void: _set_cut(root, c), now, target, 0.35).set_trans(Tween.TRANS_CUBIC).set_ease(Tween.EASE_OUT)
 	var mat := GameActions.piece_mat(st.kind)
 	var at := root.to_global(Vector3(0, target, 0))
@@ -147,7 +150,7 @@ func _finished_fx(root: Node3D, st: Dictionary) -> void:
 	Effects.chips(self, root.to_global(Vector3(0, h * 0.5, 0)), DUST.get(mat, Color(0.7, 0.6, 0.5)), 22, 0.07, 3.0)
 	Audio.play_3d("thud", root.global_position, -4.0, 0.8)
 	root.scale = Vector3(1.0, 0.94, 1.0)
-	var tw := create_tween()
+	var tw := root.create_tween()
 	tw.tween_property(root, "scale", Vector3.ONE, 0.35).set_trans(Tween.TRANS_BACK).set_ease(Tween.EASE_OUT)
 
 
