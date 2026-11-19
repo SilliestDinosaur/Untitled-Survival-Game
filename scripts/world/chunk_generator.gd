@@ -271,7 +271,10 @@ static func _place_resources(coord: Vector2i, origin: Vector3, gen: WorldGen, fl
 		# mountains, crystals near the peaks.
 		var kind := "rock"
 		var roll: float = a.r_kind
-		if h > 58.0 and roll < 0.07:
+		# Crystals on the upper mountains, likelier the higher up (only a handful of spots reach the very peaks, so
+		# they once came out at about one an island). They take the top of the roll, so the second metal, which
+		# takes the bottom, is as common as it was.
+		if h > 44.0 and roll > 1.0 - (0.08 + (h - 44.0) / 100.0):
 			kind = "gem_t4"
 		elif h > 34.0 and roll < 0.16:
 			kind = "ore_t3"
