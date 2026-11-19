@@ -207,6 +207,11 @@ The game needs one small always-on server for players on different networks to f
 3. Open these in the server's firewall: TCP 8890, UDP 8809, and UDP 49152-49351 (the relay slots).
 4. In `scripts/net/net.gd`, set `RELAY_SERVER := "your.server.address:8890"` and export the game again.
 
+The game's server runs on AWS Lightsail (Ubuntu 24.04, the smallest IPv4 plan, static IP `3.139.2.153`), with
+the three firewall rules above open to any IPv4 address, started with `docker run --network host` and the
+settings from `server/noray/noray.env` passed as `-e` options (`--restart unless-stopped`, so it survives reboots).
+`sudo docker logs noray` on the server shows what it's doing.
+
 Traffic: most games connect directly and only use the server for a moment; relayed players' traffic passes
 through it (a few KB/s each). Test it from home with `RELAY=your.server.address:8890 tests/tools/run_net_test.sh`.
 

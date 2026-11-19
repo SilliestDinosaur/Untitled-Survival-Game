@@ -39,8 +39,9 @@ const ANIMAL_RANGE := 170.0
 const ALPHABET := "ABCDEFGHJKLMNPQRSTUVWXYZ23456789"
 ## The meeting server (noray) that connects players on different networks: "host" or "host:port" (TCP, default
 ## 8890). Empty: internet play falls back to UPnP only. Run it with NORAY_OID_CHARSET set to ALPHABET above and
-## NORAY_OID_LENGTH=9, so its codes read like ours (see README, "Relay server"). NET_RELAY overrides it (tests).
-const RELAY_SERVER := ""
+## NORAY_OID_LENGTH=9, so its codes read like ours (see README, "Relay server"). NET_RELAY overrides it (tests;
+## "off" for none).
+const RELAY_SERVER := "3.139.2.153:8890"   # the relay on AWS Lightsail (see README, "Relay server")
 const RELAY_CODE_LENGTH := 9
 const RELAY_KEEPALIVE := 10.0   ## seconds between a host's address refreshes (also keeps its router's door open)
 const RELAY_RETRY := 30.0       ## a host that couldn't reach the meeting server tries again this often
@@ -177,6 +178,8 @@ func host() -> bool:
 
 func relay_server() -> String:
 	var env := OS.get_environment("NET_RELAY")
+	if env == "off":   # tests of play without the meeting server
+		return ""
 	return env if env != "" else RELAY_SERVER
 
 
