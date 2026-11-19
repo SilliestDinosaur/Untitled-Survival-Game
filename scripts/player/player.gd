@@ -6,7 +6,7 @@ extends CharacterBody3D
 signal landed(impact: float)
 signal hint(text: String)   ## short messages for the HUD ("Too hard to break by hand")
 signal hit_landed           ## a swing connected with something
-signal open_crafting        ## Interact on a station
+signal open_crafting(kind: String)   ## Interact on a station: open its crafting panel
 signal cave_chest(index: int)    ## Interact with a cave's supply chest
 signal crafting_started      ## a crafting minigame began (the satchel should close)
 
@@ -614,7 +614,7 @@ func _on_grab() -> void:
 		Net.request("toggle_door", {"structure": look.door})
 		return
 	if look.has("station"):
-		open_crafting.emit()
+		open_crafting.emit(String(look.station))
 		return
 	if look.has("pickup"):
 		Net.request("pick_up", {"pickup": look.pickup}, func(res: Dictionary) -> void:

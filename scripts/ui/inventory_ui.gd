@@ -212,6 +212,8 @@ class PickupFeed extends VBoxContainer:
 
 ## Tab: the satchel. Backpack grid + hotbar row; drag outside the card to drop items.
 class InventoryPanel extends Control:
+	signal left_station   ## the station whose panel is open is out of reach now
+
 	var inventory: Inventory
 	var player: Node
 	var _slots: Array[SlotView] = []
@@ -226,6 +228,11 @@ class InventoryPanel extends Control:
 					sv.refresh())
 		_build()
 		_prewarm()
+
+	## Open beside the satchel: a station's own crafting panel, or ("") what you can make by hand.
+	func show_for(station_kind: String) -> void:
+		_craft.set_station(station_kind)
+		show()
 
 	## Make now, while the game starts, what the menus would otherwise make the first time they're used: every
 	## slot's painted background (and each hotbar slot's selected one) and every recipe's row. Done then, it was a
@@ -263,6 +270,7 @@ class InventoryPanel extends Control:
 		craft.setup(inventory, player)
 		row.add_child(craft)
 		_craft = craft
+		craft.left_station.connect(func() -> void: left_station.emit())
 		var title_row := HBoxContainer.new()
 		title_row.add_child(UITheme.heading("Satchel", 36))
 		var spacer := Control.new()
@@ -305,14 +313,30 @@ class InventoryPanel extends Control:
 
 
 
-## Crafting list beside the satchel: recipes by group, ingredients you have / need, the station
-## each needs (and whether one is near), and Craft buttons (Shift-click crafts five).
+## Crafting list beside the satchel: recipes by group, ingredients you have / need, and Craft buttons (Shift-click
+## crafts five). From the satchel (Tab) it lists what you can make by hand; at a campfire, workbench or forge it's
+## that station's own panel, with only its recipes, under a header in the station's colours.
 class CraftingPanel extends PanelContainer:
+	signal left_station   ## you walked out of reach of the station this panel is for
+
+	## Each station's look: its colour (header, panel tint) and a line under its name.
+	const STATION_LOOK := {
+		"": {"title": "Crafting", "sub": "By hand", "tint": Color(0.95, 0.91, 0.82), "accent": Color(0.42, 0.3, 0.2)},
+		"campfire": {"title": "Campfire", "sub": "Cook over the flames, and burn charcoal", "tint": Color(0.98, 0.88, 0.74), "accent": Color(0.78, 0.36, 0.12)},
+		"workbench": {"title": "Workbench", "sub": "Saw, shape and fit", "tint": Color(0.94, 0.88, 0.76), "accent": Color(0.5, 0.34, 0.18)},
+		"forge": {"title": "Forge", "sub": "Smelt ore and forge metal", "tint": Color(0.96, 0.84, 0.78), "accent": Color(0.66, 0.2, 0.12)},
+	}
+
 	var inventory: Inventory
 	var player: Node
+	var station := ""   ## "" by hand (the satchel), or the station this panel is for
 	var _group := "Basics"
 	var _list: VBoxContainer
 	var _near_label: Label
+	var _title: Label
+	var _head_icon: ItemIcon
+	var _glow: ColorRect
+	var _glow_t := 0.0
 	var _status: Label
 	var _tabs := {}
 	var _near: Array = []
@@ -328,9 +352,30 @@ class CraftingPanel extends PanelContainer:
 		var col := VBoxContainer.new()
 		col.add_theme_constant_override("separation", 8)
 		add_child(col)
-		col.add_child(UITheme.heading("Crafting", 36))
+		# The header: the station's picture on a soft glow (it breathes, like the fire's light), its name and a line.
+		var head := HBoxContainer.new()
+		head.add_theme_constant_override("separation", 12)
+		col.add_child(head)
+		var badge := Control.new()
+		badge.custom_minimum_size = Vector2(64, 64)
+		head.add_child(badge)
+		_glow = ColorRect.new()
+		_glow.size = Vector2(64, 64)
+		_glow.mouse_filter = Control.MOUSE_FILTER_IGNORE
+		_glow.material = _glow_material()
+		badge.add_child(_glow)
+		_head_icon = ItemIcon.new("", 60)
+		_head_icon.position = Vector2(2, 2)
+		_head_icon.size = Vector2(60, 60)
+		badge.add_child(_head_icon)
+		var names := VBoxContainer.new()
+		names.add_theme_constant_override("separation", -4)
+		names.size_flags_vertical = Control.SIZE_SHRINK_CENTER
+		head.add_child(names)
+		_title = UITheme.heading("Crafting", 36)
+		names.add_child(_title)
 		_near_label = UITheme.label("", 15, UITheme.INK_DIM)
-		col.add_child(_near_label)
+		names.add_child(_near_label)
 		# One row of tabs: tighter padding than the theme's buttons, so all the groups fit across the panel.
 		var tabs := HBoxContainer.new()
 		tabs.add_theme_constant_override("separation", 2)
@@ -378,12 +423,56 @@ class CraftingPanel extends PanelContainer:
 	func _process(delta: float) -> void:
 		if not is_visible_in_tree() or not player:
 			return
+		if station != "":
+			_glow_t += delta
+			(_glow.material as ShaderMaterial).set_shader_parameter("pulse", 0.75 + 0.25 * sin(_glow_t * 2.2))
 		_timer -= delta
 		if _timer <= 0.0:
 			_timer = 0.5
 			var near := GameActions.stations_near(player.global_position)
+			if station != "" and not near.has(station):
+				left_station.emit()
+				return
 			if near != _near:
 				refresh()
+
+	## Show this station's recipes (or "" for what you can make by hand), under its own header.
+	func set_station(kind: String) -> void:
+		station = kind
+		var look: Dictionary = STATION_LOOK.get(kind, STATION_LOOK[""])
+		_title.text = look.title
+		_title.add_theme_color_override("font_color", (look.accent as Color).darkened(0.1))
+		_near_label.text = look.sub
+		_head_icon.item = kind
+		_glow.get_parent().visible = kind != ""
+		(_glow.material as ShaderMaterial).set_shader_parameter("tint", look.accent)
+		add_theme_stylebox_override("panel", UITheme.paper_box(look.tint, 12, 30))
+		# Only the groups this station has anything in, and start on the first of them.
+		var first := ""
+		for g: String in _tabs:
+			var any := Recipes.all().any(func(r: Dictionary) -> bool: return r.group == g and r.at == kind)
+			_tabs[g].visible = any
+			if any and first == "":
+				first = g
+		if not (_tabs.has(_group) and _tabs[_group].visible):
+			_group = first
+		_sig = ""
+		_status.text = ""
+		refresh()
+
+	## A soft round glow behind the station's picture, its strength set each frame ("pulse").
+	static func _glow_material() -> ShaderMaterial:
+		var sh := Shader.new()
+		sh.code = """shader_type canvas_item;
+uniform vec4 tint : source_color = vec4(1.0, 0.5, 0.2, 1.0);
+uniform float pulse = 1.0;
+void fragment() {
+	float d = distance(UV, vec2(0.5));
+	COLOR = vec4(tint.rgb, tint.a * pulse * 0.55 * (1.0 - smoothstep(0.1, 0.5, d)));
+}"""
+		var m := ShaderMaterial.new()
+		m.shader = sh
+		return m
 
 	## Bring the list up to date. Rows are made once per recipe and kept; a refresh only rewrites their numbers,
 	## colours and buttons and re-sorts them, and does nothing at all when nothing it shows has changed (a hotbar
@@ -399,11 +488,7 @@ class CraftingPanel extends PanelContainer:
 		if sig == _sig:
 			return
 		_sig = sig
-		var names: Array[String] = []
-		for k: String in _near:
-			names.append(Recipes.STATION_NAMES[k])
-		_near_label.text = "Nearby: " + (", ".join(names) if not names.is_empty() else "no stations (place a campfire or workbench)")
-		var recipes: Array = Recipes.all().filter(func(r: Dictionary) -> bool: return r.group == _group)
+		var recipes: Array = Recipes.all().filter(func(r: Dictionary) -> bool: return r.group == _group and r.at == station)
 		# Things you can make right now first, then things you're close to, then the rest.
 		var scores := {}
 		for r: Dictionary in recipes:
@@ -433,18 +518,18 @@ class CraftingPanel extends PanelContainer:
 				_list.add_child(_rows[r.id].box)
 		# Fill every tab in once too: the first fill sets up each row's look and buttons, the slow part.
 		if player and player.is_inside_tree():
-			var keep := _group
-			for g: String in Recipes.GROUPS:
-				_group = g
-				refresh()
-			_group = keep
-			_sig = ""
+			for kind: String in STATION_LOOK:
+				station = kind
+				for g: String in Recipes.GROUPS:
+					_group = g
+					refresh()
+			set_station("")
 
 	## Everything the list shows: the tab, the stations in reach, and how many of each ingredient you have.
 	func _signature() -> String:
-		var parts: Array[String] = [_group, ",".join(_near)]
+		var parts: Array[String] = [station, _group, ",".join(_near)]
 		for r: Dictionary in Recipes.all():
-			if r.group != _group:
+			if r.group != _group or r.at != station:
 				continue
 			for item: String in r.needs:
 				parts.append("%s=%d" % [item, inventory.count(item)])
@@ -511,8 +596,6 @@ class CraftingPanel extends PanelContainer:
 			var c := "#3d6b2e" if have >= need else "#a3402a"
 			parts.append("[color=%s]%s %d/%d[/color]" % [c, ItemDB.display_name(item), have, need])
 		var text := "  ·  ".join(parts)
-		if r.at != "":
-			text += "\n[color=%s]At a %s%s[/color]" % ["#5a4a3a" if at_ok else "#a3402a", Recipes.STATION_NAMES[r.at], "" if at_ok else " (none nearby)"]
 		if (row.needs as RichTextLabel).text != text:
 			(row.needs as RichTextLabel).text = text
 

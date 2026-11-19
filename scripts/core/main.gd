@@ -145,9 +145,12 @@ func _ready() -> void:
 	player.crafting_started.connect(func() -> void:
 		if _inventory.visible:
 			_toggle_inventory(false))
-	player.open_crafting.connect(func() -> void:
+	player.open_crafting.connect(func(kind: String) -> void:
 		if state == State.PLAYING and not _inventory.visible:
-			_toggle_inventory(true))
+			_toggle_inventory(true, kind))
+	_inventory.left_station.connect(func() -> void:
+		if _inventory.visible:
+			_toggle_inventory(false))
 
 	_wildlife = preload("res://scripts/wildlife/wildlife_manager.gd").new()
 	_wildlife.name = "Wildlife"
@@ -361,7 +364,12 @@ func _toggle_map(open: bool) -> void:
 	Input.mouse_mode = Input.MOUSE_MODE_VISIBLE if open else Input.MOUSE_MODE_CAPTURED
 
 
-func _toggle_inventory(open: bool) -> void:
+## Open or close the satchel; opened at a station (`station`), its crafting side is that station's own panel.
+func _toggle_inventory(open: bool, station := "") -> void:
+	if open:
+		_inventory.show_for(station)
+		if station != "":
+			Audio.play("chop" if station == "workbench" else "clink" if station == "forge" else "rustle", -10.0, 0.9)
 	_inventory.visible = open
 	Input.mouse_mode = Input.MOUSE_MODE_VISIBLE if open else Input.MOUSE_MODE_CAPTURED
 
