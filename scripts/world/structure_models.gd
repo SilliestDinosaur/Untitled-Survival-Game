@@ -149,7 +149,7 @@ static func get_model(kind: String, material: Material, glow_material: Material,
 			radius = 0.8
 		"forge":
 			_forge(k, g, stone)
-			light = Vector3(0, 0.55, -0.45)
+			light = Vector3(0, FORGE_HEARTH.y + 0.18, -0.05)   # over the coals
 			radius = 0.85
 	var out := {"body": k.commit(material), "glow": g.commit(glow_material) if not g.is_empty() else null,
 		"light": light, "radius": radius}
@@ -597,10 +597,35 @@ static func _workbench(k: MeshKit) -> void:
 	for i in 2:
 		var z := -0.12 + i * 0.22
 		k.loft([Vector3(-0.45, 0.37, z), Vector3(0.45, 0.37, z)], [0.07, 0.07], 12, BARK, Callable(), Callable(), true, true, 0.006)
-	# Tools lying on the top: a mallet and a coil of rope.
+	# On the top: a plank offcut with a hand saw across it, a few curls of shavings, and a coil of rope.
 	var y := top_y + 0.035
-	k.loft([Vector3(0.25, y + 0.02, -0.15), Vector3(0.6, y + 0.02, -0.05)], [0.016, 0.014], 8, WOOD)
-	k.loft([Vector3(0.6, y + 0.05, -0.13), Vector3(0.6, y + 0.05, 0.03)], [0.05, 0.05], 12, WOOD_DARK.lightened(0.1))
+	var flat := Basis(Vector3.RIGHT, -PI * 0.5)   # outlines drawn in x/y lie flat on the bench (y -> -z)
+	var turn := Basis(Vector3.UP, 0.22)
+	_board(k, Vector3(0.55, 0.16, 0.035), Transform3D(turn * flat, Vector3(0.36, y + 0.0175, -0.06)), WOOD.lightened(0.14))
+	var saw_at := Vector3(0.3, y + 0.04, -0.04)
+	var saw_turn := Basis(Vector3.UP, -0.35)
+	var steel := Color(0.7, 0.72, 0.76)
+	# The blade: a long tapering plate, toothed along its lower edge (a darker rim).
+	var blade := PackedVector2Array([Vector2(0.0, -0.05), Vector2(0.42, -0.028), Vector2(0.42, 0.012), Vector2(0.0, 0.045)])
+	k.extrude(blade, Transform3D(saw_turn * flat, saw_at), 0.004, 0.0, steel, steel.darkened(0.35))
+	# The handle: a closed grip at the heel, with a darker hand-hole.
+	var grip := PackedVector2Array([Vector2(-0.13, -0.045), Vector2(0.01, -0.06), Vector2(0.01, 0.06), Vector2(-0.09, 0.07), Vector2(-0.14, 0.03)])
+	k.extrude(grip, Transform3D(saw_turn * flat, saw_at + Vector3(0, 0.004, 0)), 0.022, 0.006, WOOD_DARK.lightened(0.18), WOOD_DARK)
+	var hole := PackedVector2Array([Vector2(-0.1, -0.022), Vector2(-0.03, -0.028), Vector2(-0.03, 0.026), Vector2(-0.08, 0.034), Vector2(-0.11, 0.012)])
+	k.extrude(hole, Transform3D(saw_turn * flat, saw_at + Vector3(0, 0.016, 0)), 0.004, 0.0, WOOD_DARK.darkened(0.45), WOOD_DARK.darkened(0.45))
+	# Shavings: little curls of pale wood scattered off the end of the plank.
+	var shave := WOOD.lightened(0.2)
+	for i in 8:
+		var c := Vector3(0.6 + rng.randf_range(-0.09, 0.09), y + 0.012, 0.12 + rng.randf_range(-0.1, 0.08))
+		var a0 := rng.randf() * TAU
+		var r := rng.randf_range(0.022, 0.034)
+		var path: Array = []
+		var radii: Array = []
+		for t in 8:
+			var a2 := a0 + t * 0.75
+			path.append(c + Vector3(cos(a2) * r, 0.008 + sin(t * 0.6) * 0.012, sin(a2) * r))
+			radii.append(0.007)
+		k.loft(path, radii, 4, shave, Callable(), Callable(), true, true)
 	for i in 3:
 		var r := 0.09 - i * 0.012
 		var ring := []
@@ -616,45 +641,100 @@ static func _workbench(k: MeshKit) -> void:
 
 
 static func _forge(k: MeshKit, g: MeshKit, stone: Color) -> void:
+	# A blacksmith's forge: a waist-high hearth of mortared stone with a bed of coals on top, a back wall carrying a
+	# brick hood and a short chimney over the fire, leather bellows at its left side, and the anvil on a stump.
 	var rng := RandomNumberGenerator.new()
 	rng.seed = 23
-	var mortar := stone.darkened(0.25)
-	# Base: a rounded hearth of mortared stone, built up course by course.
-	k.add_primitive(MeshKit.cylinder(0.6, 0.72, 0.85, 18), Transform3D(Basis(), Vector3(0, 0.42, 0)), mortar, 0.03, 0.08)
-	k.flat_shading = true
-	for course in 4:
-		var y := 0.1 + course * 0.22
-		var r := 0.72 - course * 0.04
-		var count := 11 - course
-		for i in count:
-			var a := TAU * (i + (course % 2) * 0.5) / count
-			if course >= 1 and absf(angle_difference(a, -PI * 0.5)) < 0.45:
-				continue   # the mouth of the forge faces forward (-Z)
-			_stone(k, Vector3(cos(a) * r, y, sin(a) * r), rng.randf_range(0.12, 0.15), stone, rng)
-	k.flat_shading = false
-	# Chimney: a tapering stone stack with a darker lip.
-	var path := []
-	var radii := []
-	for i in 7:
-		var t := i / 6.0
-		path.append(Vector3(0, 0.85 + t * 1.15, 0.08 * t))
-		radii.append(lerpf(0.5, 0.22, pow(t, 0.7)))
-	var chimney_col := func(t: float, a: float) -> Color:
-		var band := fposmod(t * 9.0 + sin(a * 3.0) * 0.2, 1.0) < 0.14
-		return mortar.darkened(0.15) if band or t > 0.93 else mortar.lightened(0.08 * sin(a * 5.0 + t * 11.0))
-	k.loft(path, radii, 14, mortar.lightened(0.05), chimney_col, Callable(), true, true, 0.02)
-	# Mouth: dark recess with glowing coals.
-	k.add_primitive(MeshKit.sphere(0.3, 14, 8), Transform3D(Basis.from_scale(Vector3(1.0, 0.8, 0.6)), Vector3(0, 0.55, -0.48)), Color(0.16, 0.08, 0.05), 0.0, 0.02)
-	for i in 9:
-		g.add_primitive(MeshKit.sphere(rng.randf_range(0.05, 0.08), 7, 5),
-			Transform3D(Basis(), Vector3(rng.randf_range(-0.18, 0.18), 0.4 + rng.randf_range(0.0, 0.06), -0.66 + rng.randf_range(-0.05, 0.05))),
-			Color(1.0, rng.randf_range(0.3, 0.55), 0.1), 0.012, 0.15)
+	var mortar := stone.darkened(0.3)
+	var brick := Color(0.6, 0.35, 0.26)
+	var hw := FORGE_HEARTH.x * 0.5
+	var hd := FORGE_HEARTH.z * 0.5
+	var top := FORGE_HEARTH.y
+	_stone_box(k, Vector3(hw * 2.0, top, hd * 2.0), Vector3(0, top * 0.5, 0), stone, mortar, rng)
+	# A curb of dressed stone round the top, and the fire bed inside it: ash, dark coal and glowing coals.
+	var curb := stone.lightened(0.06)
+	for side in [-1.0, 1.0]:
+		# (Lifted a hair off the hearth, and the short sides a hair shorter, so no faces or edges coincide.)
+		k.add_primitive(_box(Vector3(hw * 2.0, 0.08, 0.1)), Transform3D(Basis(), Vector3(0, top + 0.043, side * (hd - 0.05))), curb, 0.0, 0.04)
+		k.add_primitive(_box(Vector3(0.1, 0.08, hd * 2.0 - 0.206)), Transform3D(Basis(), Vector3(side * (hw - 0.05), top + 0.043, 0)), curb, 0.0, 0.04)
+	k.add_primitive(_box(Vector3(hw * 2.0 - 0.2, 0.03, hd * 2.0 - 0.2)), Transform3D(Basis(), Vector3(0, top + 0.015, 0)), ASH, 0.0, 0.05)
+	for i in 22:
+		var at := Vector3(rng.randf_range(-0.32, 0.32), top + 0.04 + rng.randf_range(0.0, 0.03), rng.randf_range(-0.2, 0.16))
+		var r := rng.randf_range(0.035, 0.06)
+		if i % 3 == 0:   # dark coal among the glowing
+			k.add_primitive(MeshKit.sphere(r, 7, 5), Transform3D(Basis.from_scale(Vector3(1.2, 0.7, 1.0)), at), Color(0.12, 0.1, 0.09), r * 0.3, 0.1)
+		else:
+			g.add_primitive(MeshKit.sphere(r, 7, 5), Transform3D(Basis.from_scale(Vector3(1.2, 0.7, 1.0)), at),
+				Color(1.0, rng.randf_range(0.3, 0.55), 0.1), r * 0.25, 0.15)
+	# The back wall, carrying the hood.
+	var back_h := 0.62
+	# (Sunk a hair into the hearth so its bottom edges don't sit exactly on the hearth's top edge.)
+	_stone_box(k, Vector3(hw * 2.0, back_h + 0.02, 0.2), Vector3(0, top + back_h * 0.5 - 0.01, hd - 0.1), stone, mortar, rng)
+	# The hood: brick, narrowing from over the fire up into the chimney.
+	var hood_y := top + back_h
+	var hood := PackedVector2Array([Vector2(-hw - 0.04, 0.0), Vector2(hw + 0.04, 0.0), Vector2(0.2, 0.45), Vector2(-0.2, 0.45)])
+	k.extrude(hood, Transform3D(Basis(), Vector3(0, hood_y, 0.08)), 0.62, 0.02, brick, brick.darkened(0.15))
+	k.add_primitive(_box(Vector3(hw * 2.0 + 0.04, 0.08, 0.66)), Transform3D(Basis(), Vector3(0, hood_y - 0.02, 0.08)), brick.darkened(0.2), 0.0, 0.03)
+	var chimney_h := 0.85
+	for i in 5:   # courses of brick, alternately a shade lighter
+		var y := hood_y + 0.42 + i * chimney_h / 5.0
+		k.add_primitive(_box(Vector3(0.36, chimney_h / 5.0 - 0.012, 0.36)), Transform3D(Basis(), Vector3(0, y + chimney_h / 10.0, 0.1)),
+			brick.lightened(0.05 * float(i % 2)), 0.0, 0.03)
+	k.add_primitive(_box(Vector3(0.44, 0.07, 0.44)), Transform3D(Basis(), Vector3(0, hood_y + 0.42 + chimney_h + 0.035, 0.1)), brick.darkened(0.3), 0.0, 0.03)
+	# Bellows on the left: two wooden boards with pleated leather between, an iron nozzle into the fire, a handle.
+	var bx := -hw - 0.42
+	var by := top - 0.18
+	var board := PackedVector2Array([Vector2(-0.3, 0.0), Vector2(-0.22, -0.18), Vector2(0.12, -0.12), Vector2(0.22, 0.0), Vector2(0.12, 0.12), Vector2(-0.22, 0.18)])
+	var flat := Basis(Vector3.RIGHT, -PI * 0.5)
+	for yb in [by - 0.09, by + 0.09]:
+		k.extrude(board, Transform3D(flat, Vector3(bx, yb, 0.0)), 0.025, 0.006, WOOD, WOOD_DARK)
+	var leather := Color(0.36, 0.22, 0.14)
+	var pleats := PackedVector2Array()
+	for p in board:
+		pleats.append(p * 0.92)
+	for j in 3:
+		k.extrude(pleats, Transform3D(flat, Vector3(bx, by - 0.05 + j * 0.05, 0.0)), 0.04, 0.012, leather.lightened(0.05 * float(j % 2)), leather.darkened(0.2))
+	k.loft([Vector3(bx + 0.2, by, 0.0), Vector3(-hw + 0.02, by + 0.06, 0.0), Vector3(-hw + 0.22, top + 0.06, 0.0)], [0.025, 0.02, 0.018], 8, IRON)
+	k.loft([Vector3(bx - 0.28, by + 0.1, 0.0), Vector3(bx - 0.48, by + 0.32, 0.0)], [0.02, 0.018], 7, WOOD_DARK)
+	k.add_primitive(_box(Vector3(0.12, by - 0.11, 0.12)), Transform3D(Basis(), Vector3(bx, (by - 0.11) * 0.5, 0.0)), WOOD_DARK, 0.0, 0.03)   # its stand
 	# Anvil on a stump beside it.
 	var ax := Vector3(0.95, 0, -0.2)
 	k.loft([ax, ax + Vector3(0, 0.45, 0)], [0.2, 0.18], 14, BARK, func(t: float, _a: float) -> Color: return BARK if t < 0.98 else WOOD, Callable(), true, true, 0.008)
 	var anvil := PackedVector2Array([Vector2(-0.24, 0.0), Vector2(-0.1, 0.02), Vector2(-0.08, 0.14), Vector2(-0.22, 0.17), Vector2(-0.3, 0.2),
 		Vector2(0.18, 0.2), Vector2(0.3, 0.17), Vector2(0.12, 0.13), Vector2(0.09, 0.02), Vector2(0.2, 0.0)])
 	k.extrude(anvil, Transform3D(Basis(Vector3.UP, 0.3), ax + Vector3(0, 0.45, 0)), 0.13, 0.025, IRON, IRON.lightened(0.35), 0.4)
-	# Tongs leaning on the hearth.
+	# Tongs leaning on the front of the hearth.
 	for s in [-1.0, 1.0]:
-		k.loft([Vector3(-0.75 + s * 0.02, 0.0, -0.15), Vector3(-0.6, 0.75, -0.25)], [0.012, 0.01], 6, IRON)
+		k.loft([Vector3(-0.3 + s * 0.02, 0.0, -hd - 0.3), Vector3(-0.25, top + 0.02, -hd - 0.01)], [0.012, 0.01], 6, IRON)
+
+
+## Where the forge's fire is: the hearth's size (x width, y height of its top, z depth). The crafting minigame
+## puts its crucible and bars on the coals there.
+const FORGE_HEARTH := Vector3(1.1, 0.78, 0.8)
+
+
+## A block of mortar faced on its four sides with courses of rough stones.
+static func _stone_box(k: MeshKit, size: Vector3, center: Vector3, stone: Color, mortar: Color, rng: RandomNumberGenerator) -> void:
+	k.add_primitive(_box(size - Vector3(0.02, 0.0, 0.02)), Transform3D(Basis(), center), mortar, 0.0, 0.03)
+	var rows := maxi(1, roundi(size.y / 0.2))
+	var rh := size.y / rows
+	var y0 := center.y - size.y * 0.5
+	for face in 4:
+		var along := size.x if face < 2 else size.z
+		var out := (size.z if face < 2 else size.x) * 0.5
+		var sgn := 1.0 if face % 2 == 0 else -1.0
+		var basis := Basis(Vector3.UP, 0.0 if face < 2 else PI * 0.5)
+		for row in rows:
+			var x := -along * 0.5 - (rng.randf_range(0.05, 0.15) if row % 2 == 1 else 0.0)
+			while x < along * 0.5 - 0.04:
+				var x0 := maxf(x, -along * 0.5)
+				var x1 := minf(x0 + rng.randf_range(0.22, 0.38), along * 0.5)
+				if along * 0.5 - x1 < 0.12:
+					x1 = along * 0.5
+				x = x1
+				if x1 - x0 < 0.08:
+					continue
+				var c := stone.lightened(rng.randf_range(-0.08, 0.08))
+				var local := Vector3((x0 + x1) * 0.5, y0 + rh * (row + 0.5), sgn * out)
+				k.extrude(_rounded_rect((x1 - x0) * 0.5 - 0.012, rh * 0.5 - 0.012, 0.04, 2), Transform3D(basis, Vector3(center.x, 0, center.z) + basis * local),
+					0.05, 0.015, c, c.darkened(0.14))

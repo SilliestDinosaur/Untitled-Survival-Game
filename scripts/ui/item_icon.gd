@@ -226,11 +226,16 @@ func _draw() -> void:
 				draw_rect(Rect2(c + Vector2(x * s, -s * 0.02), Vector2(s * 0.07, s * 0.36)), Color(0.42, 0.3, 0.19))
 			draw_rect(Rect2(c + Vector2(-s * 0.3, s * 0.16), Vector2(s * 0.6, s * 0.05)), Color(0.42, 0.3, 0.19))
 			_capsule(c + Vector2(s * 0.05, -s * 0.2), c + Vector2(s * 0.3, -s * 0.18), s * 0.025, Color(0.55, 0.4, 0.26))
-		"forge":
-			draw_colored_polygon(PackedVector2Array([c + Vector2(-s * 0.36, s * 0.38), c + Vector2(s * 0.36, s * 0.38), c + Vector2(s * 0.3, -s * 0.02), c + Vector2(-s * 0.3, -s * 0.02)]), pal.rock.darkened(0.1))
-			draw_colored_polygon(PackedVector2Array([c + Vector2(-s * 0.16, -s * 0.02), c + Vector2(s * 0.16, -s * 0.02), c + Vector2(s * 0.08, -s * 0.42), c + Vector2(-s * 0.08, -s * 0.42)]), pal.rock.darkened(0.2))
-			draw_circle(c + Vector2(0, s * 0.18), s * 0.12, Color(0.08, 0.06, 0.05))
-			draw_circle(c + Vector2(0, s * 0.24), s * 0.08, Color(1.0, 0.5, 0.12))
+		"forge":   # the hearth with its fire on top, the brick hood and chimney over it
+			var stone_c := pal.rock.darkened(0.1)
+			var brick_c := Color(0.6, 0.35, 0.26)
+			draw_rect(Rect2(c + Vector2(-s * 0.36, s * 0.06), Vector2(s * 0.72, s * 0.32)), stone_c)
+			for i in range(1, 3):
+				draw_line(c + Vector2(-s * 0.36, s * (0.06 + i * 0.107)), c + Vector2(s * 0.36, s * (0.06 + i * 0.107)), stone_c.darkened(0.3), 1.2)
+			draw_rect(Rect2(c + Vector2(-s * 0.26, s * 0.0), Vector2(s * 0.52, s * 0.07)), Color(1.0, 0.5, 0.12))   # the coals
+			draw_colored_polygon(PackedVector2Array([c + Vector2(-s * 0.32, -s * 0.06), c + Vector2(s * 0.32, -s * 0.06),
+				c + Vector2(s * 0.12, -s * 0.24), c + Vector2(-s * 0.12, -s * 0.24)]), brick_c)
+			draw_rect(Rect2(c + Vector2(-s * 0.09, -s * 0.44), Vector2(s * 0.18, s * 0.21)), brick_c.darkened(0.08))
 		_:
 			draw_circle(c, s * 0.3, Color(1, 1, 1, 0.5))
 

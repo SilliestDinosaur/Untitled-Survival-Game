@@ -36,7 +36,7 @@ const WRAP_TURNS := 3.0     ## full circles to wind a whole binding
 const POUR_RATE := 0.4
 const POUR_BAND := Vector2(0.8, 0.95)
 ## Where things sit at the forge (station-local): the crucible on the coals at the mouth, the bucket by the anvil.
-const CRUCIBLE_AT := Vector3(0.0, 0.5, -0.7)
+const CRUCIBLE_AT := Vector3(0.0, 0.82, -0.05)
 const BUCKET_AT := Vector3(0.55, 0.0, -0.75)
 
 var player: Node
@@ -261,9 +261,9 @@ func _view(key: String) -> Transform3D:
 		"fire":
 			var c: Vector3 = _station.pos
 			return _look(c + _side * 1.35 + Vector3(0, 1.2, 0), c + Vector3(0, 0.66, 0))
-		"mouth":
-			from = Vector3(0.25, 1.05, -1.55)
-			at = Vector3(0.05, 0.5, -0.62)
+		"mouth":   # over the hearth's fire, from the front
+			from = Vector3(0.3, 1.65, -1.3)
+			at = Vector3(0.0, 0.82, -0.05)
 		"anvil":
 			from = Vector3(1.3, 1.4, -1.05)
 			at = Vector3(0.95, 0.67, -0.2)
@@ -533,7 +533,9 @@ func _tool_place(where: String) -> Transform3D:
 		"bench":
 			return _global_to_local(_xf * Transform3D(_lying(), Vector3(head - 0.12, 0.875, _bench_side() * 0.08)))
 		"coals":
-			return _global_to_local(_xf * Transform3D(Basis(Vector3.RIGHT, PI * 0.5 - 0.1) * Basis(Vector3.UP, PI * 0.5), Vector3(0.05, 0.53, -0.72 - head)))
+			# Lying on the coals, the head in the fire and the tang out to the right.
+			var bc := Basis(Vector3.UP, 0.15)
+			return _global_to_local(_xf * Transform3D(bc * _lying(), Vector3(0.0, 0.86, -0.05) + bc * Vector3(head, 0, 0)))
 		_:   # anvil: lying flat, the head over the middle of the face
 			var b := Basis(Vector3.UP, 0.3)
 			return _global_to_local(_xf * Transform3D(b * _lying(), Vector3(0.95, 0.68, -0.2) + b * Vector3(head - 0.04, 0, 0)))
