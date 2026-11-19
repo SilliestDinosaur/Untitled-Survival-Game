@@ -737,6 +737,8 @@ static func _material_item(k: MeshKit, id: String, info: Dictionary) -> void:
 			_stone_lump(k, at)
 		"flint":
 			_flake(k, at)
+		"charcoal":
+			_charcoal(k, at)
 		"fiber":
 			_fiber(k, at)
 		"resin":
@@ -821,6 +823,17 @@ static func _stone_lump(k: MeshKit, at: Vector3) -> void:
 	k.add_primitive(MeshKit.sphere(0.04, 8, 5), Transform3D(Basis.from_scale(Vector3(1.2, 0.85, 1.0)), at), Game.palette.rock, 0.005, 0.05)
 	k.add_primitive(MeshKit.sphere(0.018, 6, 4), Transform3D(Basis.from_scale(Vector3(1.0, 0.45, 1.0)), at + Vector3(0.02, 0.022, 0.018)),
 		Game.palette.rock.lightened(0.25), 0.0, 0.03)
+	k.flat_shading = false
+
+
+## Charcoal: three blackened, cracked chunks of burnt wood, ashy grey at the edges.
+static func _charcoal(k: MeshKit, at: Vector3) -> void:
+	k.flat_shading = true
+	var black := Color(0.12, 0.11, 0.11)
+	var spots := [Vector3(-0.025, 0.0, 0.01), Vector3(0.022, 0.0, 0.012), Vector3(0.0, 0.004, -0.022)]
+	for i in spots.size():
+		var xf := Transform3D(Basis(Vector3.UP, i * 1.3).scaled(Vector3(1.5, 0.75, 0.9)), at + spots[i])
+		k.add_primitive(MeshKit.sphere(0.022, 6, 4), xf, black.lightened(0.04 * i), 0.004, 0.12)
 	k.flat_shading = false
 
 

@@ -49,6 +49,7 @@ const BASE_ITEMS := {
 	"bone": {"name": "Bone", "kind": "resource", "stack": 100, "icon": "bone", "desc": "From animal carcasses."},
 	"raw_meat": {"name": "Raw Meat", "kind": "food", "stack": 40, "icon": "meat", "food": 16.0, "health": -4.0, "desc": "Filling, but it should really be cooked."},
 	"cactus_flesh": {"name": "Cactus Flesh", "kind": "food", "stack": 40, "icon": "cactus", "food": 5.0, "health": 3.0, "desc": "Watery and a little sour."},
+	"charcoal": {"name": "Charcoal", "kind": "material", "stack": 100, "icon": "charcoal", "desc": "Wood burnt slow in a campfire. Burns hot enough to smelt ore."},
 	"essence": {"name": "Shadow Essence", "kind": "material", "stack": 50, "icon": "essence", "tier": 5, "desc": "Left behind by shadow creatures. Forges Duskforged tools."},
 	# Crafted materials
 	"rope": {"name": "Rope", "kind": "material", "stack": 50, "icon": "rope", "desc": "Twisted plant fiber. Lashes tools and frames together."},
@@ -97,7 +98,7 @@ const BASE_ITEMS := {
 	"stone_stairs": {"name": "Stone Stairs", "kind": "piece", "stack": 10, "icon": "piece", "shape": "stairs", "mat": "stone", "station": "stone_stairs", "desc": "Twelve stone steps up one storey. Needs a floor to climb from and nothing overhead."},
 	"wood_roof": {"name": "Shingle Roof", "kind": "piece", "stack": 10, "icon": "piece", "shape": "roof", "mat": "wood", "station": "wood_roof", "desc": "A roof of overlapping wooden shingles. Needs a foundation and at least two walls under it."},
 	"stone_roof": {"name": "Slate Roof", "kind": "piece", "stack": 10, "icon": "piece", "shape": "roof", "mat": "stone", "station": "stone_roof", "desc": "A roof of grey slates. Needs a foundation and at least two walls under it."},
-	"brick": {"name": "Stone Brick", "kind": "material", "stack": 100, "icon": "brick", "color": Color(0.7, 0.5, 0.38), "desc": "Chiseled stone. Brick is for building (coming soon)."},
+	"brick": {"name": "Stone Brick", "kind": "material", "stack": 100, "icon": "brick", "color": Color(0.7, 0.5, 0.38), "desc": "Chiseled stone. For brick walls and floors, and for building a forge."},
 	"rock": {"name": "Rock", "kind": "tool", "stack": 1, "icon": "tool", "tier": 0, "desc": "A fist-sized flint rock. Better than bare hands.",
 		"tool": {"type": "rock", "tier": 0, "tree": 0.6, "rock": 0.6, "bush": 1.0, "carcass": 0.6, "damage": 10.0, "cooldown": 0.7, "durability": 110}},
 }
@@ -109,8 +110,9 @@ const HANDS := {"type": "hands", "tier": -1, "tree": 0.15, "rock": 0.0, "bush": 
 const YIELDS := {
 	"tree": [["wood", 4, 6]],
 	"rock": [["stone", 3, 5]],
-	"ore_t2": [["ore_t2", 1, 2], ["stone", 0, 1]],
-	"ore_t3": [["ore_t3", 1, 2], ["stone", 0, 1]],
+	# Ore deposits chip stone with each swing; the ore itself comes out when the deposit breaks (BONUS).
+	"ore_t2": [["stone", 0, 1]],
+	"ore_t3": [["stone", 0, 1]],
 	"gem_t4": [["gem_t4", 1, 1]],
 	"bush": [["fiber", 1, 2]],
 	"berry": [["fiber", 1, 2]],
@@ -129,8 +131,8 @@ const YIELDS := {
 const BONUS := {
 	"tree": [["wood", 8, 12]],
 	"rock": [["stone", 6, 9]],
-	"ore_t2": [["ore_t2", 2, 4]],
-	"ore_t3": [["ore_t3", 2, 3]],
+	"ore_t2": [["ore_t2", 5, 7]],   # about two ingots a deposit (scaled by the difficulty's "ore")
+	"ore_t3": [["ore_t3", 5, 7]],
 	"gem_t4": [["gem_t4", 1, 2]],
 	"boulder": [["stone", 10, 14], ["ore_t2", 0, 2]],
 	"cactus": [["fiber", 2, 3]],

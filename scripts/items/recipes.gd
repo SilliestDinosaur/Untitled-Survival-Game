@@ -35,7 +35,8 @@ static func _build() -> void:
 	_add("bandage", 2, {"fiber": 4, "resin": 1}, "", "Basics")
 	_add("campfire", 1, {"stone": 8, "sticks": 6, "wood": 4}, "", "Stations")
 	_add("workbench", 1, {"wood": 30, "stone": 10, "rope": 2}, "", "Stations")
-	_add("forge", 1, {"stone": 45, "wood": 15, "rope": 2}, "workbench", "Stations")
+	# The forge is built of fired bricks, so it waits for a workbench (to dress the stone) first.
+	_add("forge", 1, {"brick": 12, "stone": 20, "rope": 2}, "workbench", "Stations")
 	# Stone tools are knapped by hand.
 	_add("hatchet_t1", 1, {"sticks": 2, "stone": 6, "fiber": 3}, "", "Tools")
 	_add("pickaxe_t1", 1, {"sticks": 2, "stone": 8, "fiber": 3}, "", "Tools")
@@ -44,13 +45,17 @@ static func _build() -> void:
 	_add("building_plan", 1, {"fiber": 3, "sticks": 2}, "", "Tools")
 	_add("hammer", 1, {"sticks": 2, "stone": 4, "fiber": 2}, "", "Tools")
 	# Materials
+	# Charcoal: wood burnt slow in a campfire. Only it burns hot enough to smelt, so metal starts with a fire.
+	_add("charcoal", 2, {"wood": 5}, "campfire", "Materials")
 	_add("plank", 2, {"wood": 4}, "workbench", "Materials")
 	_add("brick", 2, {"stone": 4}, "workbench", "Materials")
 	_add("leather", 1, {"hide": 2, "resin": 1}, "workbench", "Materials")
-	_add("ingot_t2", 1, {"ore_t2": 3, "wood": 2}, "forge", "Materials")
-	_add("ingot_t3", 1, {"ore_t3": 3, "wood": 3}, "forge", "Materials")
-	_add("cut_gem", 1, {"gem_t4": 2}, "workbench", "Materials")
-	_add("dusk_ingot", 1, {"essence": 4, "ingot_t3": 1}, "forge", "Materials")
+	_add("ingot_t2", 1, {"ore_t2": 3, "charcoal": 2}, "forge", "Materials")
+	# The second metal is an alloy: it needs the first one to take.
+	_add("ingot_t3", 1, {"ore_t3": 3, "ingot_t2": 1, "charcoal": 3}, "forge", "Materials")
+	# Gems are ground into shape with flint grit.
+	_add("cut_gem", 1, {"gem_t4": 2, "flint": 2}, "workbench", "Materials")
+	_add("dusk_ingot", 1, {"essence": 4, "ingot_t3": 1, "charcoal": 2}, "forge", "Materials")
 	# Metal, gem and dusk tools
 	var heads := {"hatchet": 3, "pickaxe": 4, "spear": 2, "knife": 2}
 	for type: String in heads:

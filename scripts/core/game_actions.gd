@@ -45,7 +45,9 @@ static func hit_resource_r(player_id: int, r: Dictionary, rng: RandomNumberGener
 	r.hp = float(r.hp) - ItemDB.HIT_DAMAGE * mult
 	_give(inv, ItemDB.YIELDS.get(key, []), mult * ItemDB.GATHER_RATE * float(Difficulty.preset(Game.difficulty).yield), rng, result.items)
 	if r.hp <= 0.0:
-		_give(inv, ItemDB.BONUS.get(key, []), 1.0, rng, result.items)
+		# Ore and crystals come out when the deposit breaks, in a share set by the difficulty.
+		var bonus_mult := float(Difficulty.preset(Game.difficulty).ore) if key in ["ore_t2", "ore_t3", "gem_t4"] else 1.0
+		_give(inv, ItemDB.BONUS.get(key, []), bonus_mult, rng, result.items)
 		if r.kind == "cache":
 			Game.looted[r.id] = true
 		Game.mark_removed(r.id)
@@ -923,16 +925,17 @@ static func _loot_cache(inv: Inventory, cache_id: String, _rng: RandomNumberGene
 	var rng := RandomNumberGenerator.new()
 	rng.seed = hash([Game.world_seed, cache_id])
 	var tools := ItemDB.TOOL_TYPES.keys()
-	# One or two tools, usually stone or the world's first metal, rarely better.
+	# One or two well-used tools: stone, now and then the world's first metal (never better: metal is earned).
+	var metal := float(Difficulty.preset(Game.difficulty).cache_metal)
 	for i in rng.randi_range(1, 2):
 		var roll := rng.randf()
-		var tier := 1 if roll < 0.6 else (2 if roll < 0.9 else 3)
+		var tier := 2 if roll < metal else 1
 		var id := "%s_t%d" % [tools[rng.randi() % tools.size()], tier]
 		var dur := int(ItemDB.tool_stats(id).durability * rng.randf_range(0.4, 0.9))   # well used
 		var got := inv.add(id, 1, false, dur)
 		if got > 0:
 			out[id] = out.get(id, 0) + 1
-	var supplies := [["wood", 10, 30], ["stone", 10, 25], ["fiber", 5, 15], ["ore_t2", 3, 8], ["flint", 1, 4], ["berries", 3, 8], ["resin", 1, 3]]
+	var supplies := [["wood", 10, 30], ["stone", 10, 25], ["fiber", 5, 15], ["charcoal", 2, 4], ["flint", 1, 4], ["berries", 3, 8], ["resin", 1, 3]]
 	for i in rng.randi_range(2, 4):
 		var e: Array = supplies[rng.randi() % supplies.size()]
 		_add(inv, e[0], rng.randi_range(e[1], e[2]), out)

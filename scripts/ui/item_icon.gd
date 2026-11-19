@@ -42,6 +42,13 @@ func _draw() -> void:
 				_capsule(a, b, s * 0.035, pal.bark.lightened(0.15 + i * 0.05))
 		"stone":
 			_blob(c, s * 0.32, pal.rock.lightened(0.05), 7, 3)
+		"charcoal":
+			for i in 3:
+				var o := c + Vector2((i - 1) * s * 0.2, (0.08 if i != 1 else -0.06) * s)
+				var pts := PackedVector2Array([o + Vector2(-0.15, 0.1) * s, o + Vector2(-0.12, -0.1) * s, o + Vector2(0.1, -0.13) * s, o + Vector2(0.16, 0.06) * s, o + Vector2(0.04, 0.13) * s])
+				draw_colored_polygon(pts, Color(0.13, 0.12, 0.12).lightened(0.05 * i))
+				draw_polyline(PackedVector2Array([pts[1], pts[2], pts[3]]), Color(0.42, 0.4, 0.38), 1.2)
+				draw_line(o + Vector2(-0.08, 0.0) * s, o + Vector2(0.08, -0.03) * s, Color(0.3, 0.28, 0.27), 1.0)
 		"flint":
 			var pts := PackedVector2Array([c + Vector2(-0.3, 0.2) * s, c + Vector2(-0.05, -0.32) * s, c + Vector2(0.3, -0.05) * s, c + Vector2(0.12, 0.28) * s])
 			draw_colored_polygon(pts, Color(0.35, 0.37, 0.42))

@@ -371,7 +371,7 @@ func _build_foundry() -> void:
 	_pool = _mesh_node(MeshKit.cylinder(0.07, 0.06, 0.02, 14), _crucible, _molten_mat)
 	var ore := ""
 	for item: String in recipe.needs:
-		if item != "wood":
+		if item != "wood" and item != "charcoal":   # the fuel isn't what goes in the crucible
 			ore = item
 			break
 	var rng := RandomNumberGenerator.new()

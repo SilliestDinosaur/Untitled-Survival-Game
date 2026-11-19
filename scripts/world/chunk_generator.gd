@@ -275,7 +275,7 @@ static func _place_resources(coord: Vector2i, origin: Vector3, gen: WorldGen, fl
 			kind = "gem_t4"
 		elif h > 34.0 and roll < 0.16:
 			kind = "ore_t3"
-		elif roll < 0.07 + clampf((h - 8.0) / 100.0, 0.0, 0.14):
+		elif roll < 0.03 + clampf((h - 10.0) / 90.0, 0.0, 0.13):   # scarce on the low hills, commoner higher up
 			kind = "ore_t2"
 		var s := lerpf(0.5, 1.6, a.scl - 0.8)
 		if kind != "rock":
