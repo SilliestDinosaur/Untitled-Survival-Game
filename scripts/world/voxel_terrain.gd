@@ -226,7 +226,7 @@ static func build(gen: WorldGen, origin: Vector3, size: float, step: float, segs
 					_quad(indices, faces, verts, normals, cell_vert, [
 						k * ncy * ncx + (j - 1) * ncx + (i - 1), k * ncy * ncx + (j - 1) * ncx + i,
 						k * ncy * ncx + j * ncx + i, k * ncy * ncx + j * ncx + (i - 1)])
-	return _clip_to_chunk(verts, normals, colors, indices, size)
+	return _match_borders(_clip_to_chunk(verts, normals, colors, indices, size), gen, plan, origin, size)
 
 
 ## Keeps only the part of the surface inside the chunk's square (x and z from 0 to size). Each chunk makes faces a
@@ -261,6 +261,120 @@ static func _clip_to_chunk(verts: PackedVector3Array, normals: PackedVector3Arra
 
 
 ## Sutherland-Hodgman against the four sides of the square; each point is [position, normal, colour].
+## Where this chunk meets a heightfield chunk, the ground along the border has to be the very same line, or thin
+## cracks show. A heightfield border runs straight between samples every ChunkGenerator.FINE metres, so: the ground
+## points on the border are put on that line, and border edges are split at its samples, so both sides share every
+## point. (Cave walls crossing a border are left alone: they're nowhere near the line, and the neighbour is solid
+## ground there too, cut the same way.)
+static func _match_borders(m: Dictionary, gen: WorldGen, plan: Dictionary, origin: Vector3, size: float) -> Dictionary:
+	var v_in: PackedVector3Array = m.verts
+	var n_in: PackedVector3Array = m.normals
+	var c_in: PackedColorArray = m.colors
+	var out_v := PackedVector3Array()
+	var out_n := PackedVector3Array()
+	var out_c := PackedColorArray()
+	var out_i := PackedInt32Array()
+	var faces := PackedVector3Array()
+	var line := {}   # border sample heights, by world xz
+	for t in range(0, v_in.size(), 3):
+		var tri: Array = []
+		for c in 3:
+			var p := v_in[t + c]
+			var b := _border_plane(p, size)
+			if b >= 0:
+				var want := _border_line(gen, origin, p, b, line)
+				if absf(p.y - want) < 1.0 and Caves.void_distance(plan, p + origin) > 1.5:
+					p.y = want
+			tri.append([p, n_in[t + c], c_in[t + c]])
+		for piece: Array in _split_on_border(tri, gen, plan, origin, size, line):
+			for corner: Array in piece:
+				out_i.append(out_v.size())
+				out_v.append(corner[0])
+				out_n.append(corner[1])
+				out_c.append(corner[2])
+				faces.append(corner[0])
+	return {"verts": out_v, "normals": out_n, "colors": out_c, "indices": out_i, "faces": faces}
+
+
+## Which border a local point is on: 0 = x 0, 1 = x size, 2 = z 0, 3 = z size; -1 for none.
+static func _border_plane(p: Vector3, size: float) -> int:
+	if absf(p.x) < 0.001:
+		return 0
+	if absf(p.x - size) < 0.001:
+		return 1
+	if absf(p.z) < 0.001:
+		return 2
+	if absf(p.z - size) < 0.001:
+		return 3
+	return -1
+
+
+## The heightfield's ground height at a local border point: straight between the FINE samples either side.
+static func _border_line(gen: WorldGen, origin: Vector3, p: Vector3, plane: int, cache: Dictionary) -> float:
+	var along := p.z if plane < 2 else p.x
+	var f := ChunkGenerator.FINE
+	var i0 := floori(along / f + 0.0001)
+	var t := clampf(along / f - i0, 0.0, 1.0)
+	var h0 := _sample(gen, origin, p, plane, i0 * f, cache)
+	if t < 0.0001:
+		return h0
+	return lerpf(h0, _sample(gen, origin, p, plane, (i0 + 1) * f, cache), t)
+
+
+static func _sample(gen: WorldGen, origin: Vector3, p: Vector3, plane: int, along: float, cache: Dictionary) -> float:
+	var w := Vector2(origin.x + p.x, origin.z + along) if plane < 2 else Vector2(origin.x + along, origin.z + p.z)
+	if not cache.has(w):
+		cache[w] = gen.get_height(w.x, w.y)
+	return cache[w]
+
+
+## A triangle, split wherever one of its edges runs along the border past a heightfield sample, so the sample is a
+## corner here too. Corners are [position, normal, colour].
+static func _split_on_border(tri: Array, gen: WorldGen, plan: Dictionary, origin: Vector3, size: float, line: Dictionary) -> Array:
+	for e in 3:
+		var a: Array = tri[e]
+		var b: Array = tri[(e + 1) % 3]
+		var pa: Vector3 = a[0]
+		var pb: Vector3 = b[0]
+		var plane := -1
+		for pl in 4:
+			if _on_plane(pa, pl, size) and _on_plane(pb, pl, size):
+				plane = pl
+				break
+		if plane < 0:
+			continue
+		var sa := pa.z if plane < 2 else pa.x
+		var sb := pb.z if plane < 2 else pb.x
+		var f := ChunkGenerator.FINE
+		var lo := minf(sa, sb)
+		var hi := maxf(sa, sb)
+		var k := ceili((lo + 0.01) / f)
+		var s := k * f
+		if s >= hi - 0.01:
+			continue
+		# Split this edge at the sample s.
+		var t := (s - sa) / (sb - sa)
+		var q: Vector3 = pa.lerp(pb, t)
+		var want := _border_line(gen, origin, q, plane, line)
+		if absf(q.y - want) < 1.0 and Caves.void_distance(plan, q + origin) > 1.5:
+			q.y = want
+		var mid := [q, (a[1] as Vector3).lerp(b[1], t).normalized(), (a[2] as Color).lerp(b[2], t)]
+		var c: Array = tri[(e + 2) % 3]
+		var out: Array = []
+		out.append_array(_split_on_border([a, mid, c], gen, plan, origin, size, line))
+		out.append_array(_split_on_border([mid, b, c], gen, plan, origin, size, line))
+		return out
+	return [tri]
+
+
+static func _on_plane(p: Vector3, plane: int, size: float) -> bool:
+	match plane:
+		0: return absf(p.x) < 0.001
+		1: return absf(p.x - size) < 0.001
+		2: return absf(p.z) < 0.001
+		_: return absf(p.z - size) < 0.001
+
+
 static func _clip_polygon(poly: Array, size: float) -> Array:
 	for plane in 4:
 		var out: Array = []

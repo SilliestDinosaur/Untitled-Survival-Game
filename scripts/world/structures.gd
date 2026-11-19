@@ -130,6 +130,14 @@ func _make(st: Dictionary) -> Node3D:
 		# Its light sits inside the log teepee: the logs would throw hard spokes of shadow across the ground.
 		mi.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
 	root.add_child(mi)
+	if model.get("glass") != null:   # a window's pane: see-through, and no shadow
+		var gl := MeshInstance3D.new()
+		gl.name = "Glass"
+		gl.mesh = model.glass
+		gl.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+		if blueprint:
+			gl.material_override = _blueprint_mat
+		root.add_child(gl)
 	if model.glow:
 		var gi := MeshInstance3D.new()
 		gi.mesh = model.glow

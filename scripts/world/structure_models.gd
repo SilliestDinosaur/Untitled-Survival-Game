@@ -117,7 +117,8 @@ static func _extent(kind: String) -> Vector2:
 	return _extents[mat]
 
 
-## {body: ArrayMesh, glow: ArrayMesh or null, light: Vector3 (local), radius: float (collision)}
+## {body: ArrayMesh, glow: ArrayMesh or null, light: Vector3 (local), radius: float (collision)}; building pieces also
+## have door and glass (ArrayMesh or null: a door's swinging panel, a window's see-through pane).
 ## `ends` (wall pieces only): how far the left and right ends reach past (+) or stop short of (-) the cell's corners,
 ## for butt joints with the walls they meet (see wall_ends).
 static func get_model(kind: String, material: Material, glow_material: Material, ends := Vector2.ZERO) -> Dictionary:
@@ -129,8 +130,10 @@ static func get_model(kind: String, material: Material, glow_material: Material,
 	if GameActions.is_building(kind):
 		var parts := _build_piece(kind, ends)
 		var door_kit: MeshKit = parts.door
+		var glass_kit: MeshKit = parts.glass
 		var piece := {"body": (parts.body as MeshKit).commit(material), "glow": null, "light": Vector3(0, 1, 0), "radius": 1.0,
-			"door": door_kit.commit(material) if door_kit != null else null}
+			"door": door_kit.commit(material) if door_kit != null else null,
+			"glass": glass_kit.commit(glass_material()) if glass_kit != null else null}
 		_cache[key] = piece
 		return piece
 	var k := MeshKit.new(hash(kind))
@@ -177,13 +180,15 @@ const DOOR_W := 0.7     ## half the width of a doorway
 const DOOR_H := 2.3     ## height of a doorway's opening
 
 
-## {body: MeshKit, door: MeshKit or null}. A door's panel is its own mesh, hinged at its left edge.
+## {body: MeshKit, door: MeshKit or null, glass: MeshKit or null}. A door's panel is its own mesh, hinged at its left
+## edge; a window's pane is its own mesh too, drawn see-through.
 static func _build_piece(kind: String, ends := Vector2.ZERO) -> Dictionary:
 	var spec: Dictionary = GameActions.PIECES[kind]
 	var shape: String = spec.shape
 	var mat: String = spec.mat
 	var k := MeshKit.new(hash(kind))
 	var door: MeshKit = null
+	var glass: MeshKit = null
 	var rng := RandomNumberGenerator.new()
 	rng.seed = hash(kind)
 	var opening := Rect2(-DOOR_W, 0.0, DOOR_W * 2.0, DOOR_H)
@@ -198,7 +203,8 @@ static func _build_piece(kind: String, ends := Vector2.ZERO) -> Dictionary:
 			_edge(k, mat, 1.0, [], rng, x0, x1)
 		"window":
 			_edge(k, mat, GameActions.WALL_H, [Rect2(-0.55, 1.0, 1.1, 1.0)], rng, x0, x1)
-			_window_fittings(k)
+			glass = MeshKit.new(hash(kind) + 5)
+			_window_fittings(k, glass)
 		"doorway":
 			_edge(k, mat, GameActions.WALL_H, [opening], rng, x0, x1)
 			_door_fittings(k)
@@ -211,7 +217,7 @@ static func _build_piece(kind: String, ends := Vector2.ZERO) -> Dictionary:
 			_stairs(k, mat)
 		"roof":
 			_roof(k, mat, rng)
-	return {"body": k, "door": door}
+	return {"body": k, "door": door, "glass": glass}
 
 
 static func _mat_colour(mat: String) -> Color:
@@ -433,7 +439,7 @@ static func _door_fittings(k: MeshKit) -> void:
 
 
 ## A window's timber frame, its mullion and the pane.
-static func _window_fittings(k: MeshKit) -> void:
+static func _window_fittings(k: MeshKit, glass: MeshKit) -> void:
 	var lo := 1.0
 	var hi := 2.0
 	var wx := 0.55
@@ -442,7 +448,23 @@ static func _window_fittings(k: MeshKit) -> void:
 	for side in [-1.0, 1.0]:
 		_board(k, Vector3(0.1, hi - lo, 0.16), Transform3D(Basis(), Vector3(side * (wx + 0.03), (lo + hi) * 0.5, 0.1)), WOOD_DARK)
 	_board(k, Vector3(0.06, hi - lo, 0.04), Transform3D(Basis(), Vector3(0, (lo + hi) * 0.5, 0.1)), WOOD_DARK)
-	_board(k, Vector3(wx * 2.0 + 0.04, hi - lo + 0.04, 0.03), Transform3D(Basis(), Vector3(0, (lo + hi) * 0.5, 0.06)), GLASS)
+	glass.add_primitive(_box(Vector3(wx * 2.0 + 0.04, hi - lo + 0.04, 0.02)), Transform3D(Basis(), Vector3(0, (lo + hi) * 0.5, 0.06)), GLASS, 0.0, 0.0)
+
+
+static var _glass_mat: StandardMaterial3D
+
+
+## Window glass: a faint blue-green tint you can see through, with a little shine.
+static func glass_material() -> StandardMaterial3D:
+	if _glass_mat == null:
+		_glass_mat = StandardMaterial3D.new()
+		_glass_mat.vertex_color_use_as_albedo = true
+		_glass_mat.albedo_color = Color(1, 1, 1, 0.22)
+		_glass_mat.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
+		_glass_mat.roughness = 0.08
+		_glass_mat.metallic_specular = 0.8
+		_glass_mat.cull_mode = BaseMaterial3D.CULL_DISABLED
+	return _glass_mat
 
 
 ## A plank door, hinged at x = 0 (the hinge side), with iron straps and a latch.
