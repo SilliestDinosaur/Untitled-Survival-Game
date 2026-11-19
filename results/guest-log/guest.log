@@ -1,0 +1,24 @@
+Godot Engine v4.5.1.stable.official.f62fdbde1 - https://godotengine.org
+
+  ok   connecting to NUJP-6U3NP
+  ok   got the host's world (seed 424242)
+  joined by route: direct
+  ok   starts with a rock from the host
+  ok   host's avatar exists
+  ok   host gave items (fiber 20)
+  ok   crafted a campfire through the host
+  ok   placed campfire shows up for the guest
+  ok   chopped a tree through the host (wood 6 -> 35)
+  ok   host's animals appear for the guest: 18
+  ok   laid a foundation blueprint through the host
+  ok   built foundation up with the hammer through the host
+  ok   a door fits on the foundation's edge ()
+  ok   built wood_door up with the hammer through the host
+  ok   opened the door through the host, and it shows open for the guest
+  ok   killed an animal through the host
+  ok   butchered it through the host (raw meat 5)
+  ok   the campfire minigame starts for the guest
+  ok   cooked meat through the minigame (cooked meat 1)
+CLIENT RESULT: PASS
+WARNING: ObjectDB instances leaked at exit (run with --verbose for details).
+     at: cleanup (core/object/object.cpp:2514)

@@ -1,0 +1,16 @@
+Godot Engine v4.5.1.stable.official.f62fdbde1 - https://godotengine.org
+
+  ok   hosting
+HOST lan code: AFAC-AEC
+HOST relay code: NUJP-6U3NP
+HOST guest joined: Wanderer 43
+  ok   guest's campfire is in the host's world: 3
+  ok   guest's gathering reached the host: 1 removed
+  ok   guest's character kept for next time: 1
+  ok   guest save has inventory and position
+  ok   the meat the guest cooked is in their saved pack
+  ok   the foundation the guest built stands, finished, in the host's world
+  ok   the door the guest built and opened is open in the host's world
+HOST RESULT: PASS
+WARNING: ObjectDB instances leaked at exit (run with --verbose for details).
+     at: cleanup (core/object/object.cpp:2514)

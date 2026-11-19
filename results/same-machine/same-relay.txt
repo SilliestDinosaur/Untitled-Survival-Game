@@ -1,0 +1,31 @@
+  (joining by code WT2B-NDSBM through 3.139.2.153:8890, relay only)
+  guest   ok   connecting to WT2B-NDSBM
+  guest   ok   got the host's world (seed 424242)
+  guest   joined by route: relay
+  guest   ok   came in through the meeting server's relay
+  guest   ok   starts with a rock from the host
+  guest   ok   host's avatar exists
+  guest   ok   host gave items (fiber 20)
+  guest   ok   crafted a campfire through the host
+  guest   ok   placed campfire shows up for the guest
+  guest   ok   chopped a tree through the host (wood 6 -> 36)
+  guest   ok   host's animals appear for the guest: 19
+  guest   ok   laid a foundation blueprint through the host
+  guest   ok   built foundation up with the hammer through the host
+  guest   ok   a door fits on the foundation's edge ()
+  guest   ok   built wood_door up with the hammer through the host
+  guest   ok   opened the door through the host, and it shows open for the guest
+  guest   ok   killed an animal through the host
+  guest   ok   butchered it through the host (raw meat 2)
+  guest   ok   the campfire minigame starts for the guest
+  guest   ok   cooked meat through the minigame (cooked meat 1)
+  host    ok   hosting
+  host    ok   guest's campfire is in the host's world: 3
+  host    ok   guest's gathering reached the host: 1 removed
+  host    ok   guest's character kept for next time: 1
+  host    ok   guest save has inventory and position
+  host    ok   the meat the guest cooked is in their saved pack
+  host    ok   the foundation the guest built stands, finished, in the host's world
+  host    ok   the door the guest built and opened is open in the host's world
+CLIENT RESULT: PASS
+HOST RESULT: PASS
