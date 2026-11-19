@@ -140,6 +140,7 @@ static func _nearest_station(pos: Vector3, kind: String) -> Dictionary:
 func _plan() -> Array:
 	var tool_type := String(ItemDB.info(recipe.out).get("tool", {}).get("type", ""))
 	var knife := tool_type == "knife"
+	var spear := tool_type == "spear"
 	match mode:
 		Mode.KNAP:
 			var plan := [{"mech": Mech.RING, "id": "knap", "n": 5, "view": "hand", "say": "Strike the stone as the ring closes, to knap it into a head"}]
@@ -147,14 +148,18 @@ func _plan() -> Array:
 				plan.append({"mech": Mech.WRAP, "id": "grip", "view": "hand", "say": "Circle the mouse to wind the cord grip on"})
 			else:
 				plan.append({"mech": Mech.DROP, "id": "fit", "n": 2, "view": "hand", "say": "Click when the shaft lines up, to fit the head on"})
-				plan.append({"mech": Mech.WRAP, "id": "lash", "view": "hand", "say": "Circle the mouse to lash it tight"})
+				if spear:
+					plan.append({"mech": Mech.WRAP, "id": "socket", "view": "hand", "say": "Circle the mouse to bind the socket on"})
+				else:
+					plan.append({"mech": Mech.RING, "id": "wedge", "n": 2, "view": "hand", "say": "Strike as the ring closes, to drive the wedge home"})
 			return plan
 		Mode.CARVE:
 			var plan := [{"mech": Mech.SWEEP, "id": "shape", "n": 5, "view": "bench", "say": "Strike as the marker crosses the mark, to shape the handle"},
 				{"mech": Mech.DROP, "id": "seat", "n": 2, "view": "bench", "say": "Click when the head is over the handle, to seat it"}]
-			if not knife:
-				plan.append({"mech": Mech.WRAP, "id": "lash", "view": "bench", "say": "Circle the mouse to bind it"})
-			plan.append({"mech": Mech.RING, "id": "wedge", "n": 2, "view": "bench", "say": "Strike as the ring closes, to drive the wedge home" if not knife else "Strike as the ring closes, to fit the guard"})
+			if spear:
+				plan.append({"mech": Mech.WRAP, "id": "socket", "view": "bench", "say": "Circle the mouse to bind the socket on"})
+			if not spear:   # a spear's socket holds it; axes and picks get a wedge, knives a guard
+				plan.append({"mech": Mech.RING, "id": "wedge", "n": 2, "view": "bench", "say": "Strike as the ring closes, to drive the wedge home" if not knife else "Strike as the ring closes, to fit the guard"})
 			return plan
 		Mode.SMITH:
 			return [{"mech": Mech.PUMP, "id": "heat", "dur": 2.5, "view": "mouth", "say": "Hold to pump the bellows and heat the bar"},
@@ -484,8 +489,8 @@ func _refresh_tool(id: String, s: float) -> void:
 			part_slide = -(1.0 - s)   # the shaft comes up from below
 		"grip":
 			stage = {"head": 1.0, "handle": 1.0, "lash": s, "wedge": 1.0}
-		"lash":
-			stage = {"head": 1.0, "handle": 1.0, "lash": s, "wedge": 0.0 if mode == Mode.CARVE else 1.0}
+		"socket":
+			stage = {"head": 1.0, "handle": 1.0, "lash": s, "wedge": 1.0}
 		"shape":
 			stage = {"head": -1.0, "handle": s, "lash": 0.0, "wedge": 0.0}
 		"seat":
@@ -500,7 +505,7 @@ func _refresh_tool(id: String, s: float) -> void:
 			stage = {"head": s if id == "hammer" else 1.0, "handle": -1.0, "lash": 0.0, "wedge": 0.0}
 		"haft":
 			stage = {"head": 1.0, "handle": -1.0, "lash": 0.0, "wedge": 0.0}
-			part_stage = {"head": -1.0, "handle": 1.0, "lash": 1.0 if not knife else 0.0, "wedge": 0.0}
+			part_stage = {"head": -1.0, "handle": 1.0, "lash": 1.0 if not knife else 0.0, "wedge": 1.0 if not knife else 0.0}
 			part_slide = -(1.0 - s)
 	var key := "%s|%s|%s|%s" % [id, str(stage), str(part_stage), where]
 	if key != _last_stage or part_slide != 0.0:

@@ -38,7 +38,7 @@ static func clear_cache() -> void:
 ## optional (missing = done):
 ##   head    -1: no head yet. 0..1: from a rough blank (a rounded lump of the material) to the finished head
 ##   handle  -1: no handle yet. 0..1: from an oversized, square-hewn haft to the finished one
-##   lash    0..1: how much of the binding is on (cord wraps, a spear's socket sleeve, a stone knife's wound grip)
+##   lash    0..1: how much of the binding is on (a spear's socket sleeve, a stone knife's wound grip)
 ##   wedge   0..1: the wedge (or a knife's guard and pommel): 0 not there, rising out of the top until driven home at 1
 static var _st := {}
 
@@ -117,24 +117,6 @@ static func _stage_color(fn: Callable, tier: int, m: Dictionary) -> Callable:
 	var plain := _head_color(tier, m, PackedVector2Array())
 	var w := smoothstep(0.55, 1.0, s)
 	return func(p: Vector2, th: float) -> Color: return (plain.call(p, th) as Color).lerp(fn.call(p, th), w)
-
-
-## A cord binding wound round the haft, from `low` up `height` metres, `amount` of the way on.
-static func _lashing(k: MeshKit, low: float, height: float, radius: float) -> void:
-	var amount := _s("lash")
-	if amount <= 0.02:
-		return
-	var turns := 4.5 * amount
-	var steps := maxi(3, roundi(turns * 8.0))
-	var cord_r := 0.0055
-	var path: Array = []
-	var radii: Array = []
-	for i in steps + 1:
-		var t := float(i) / steps
-		var a := t * turns * TAU
-		path.append(Vector3(cos(a) * (radius + cord_r), low + height * amount * t, sin(a) * (radius + cord_r)))
-		radii.append(cord_r)
-	k.loft(path, radii, 4, CORD, func(t: float, _a: float) -> Color: return CORD.darkened(0.08 * sin(t * 40.0) + 0.04), Callable(), true, true)
 
 
 ## The wedge at its stage: proud of the haft's top until driven home (`rise` m higher at the start).
@@ -340,8 +322,6 @@ static func _hatchet(k: MeshKit, tier: int, col: Color) -> void:
 	var m := _metal(tier, col)
 	var hr := 0.016
 	_handle(k, top + 0.045, 1, hr * 1.25)
-	if _s("handle") >= 0.0:
-		_lashing(k, top - 0.115, 0.06, hr * 1.25 * 1.3)
 	if _s("head") < 0.0:
 		_wedge(k, Vector3(0.03, 0.012, 0.014), Vector3(0, top + 0.046, 0), WOOD.darkened(0.15))
 		return
@@ -373,8 +353,6 @@ static func _pickaxe(k: MeshKit, tier: int, col: Color) -> void:
 	var top := 0.35
 	var m := _metal(tier, col)
 	_handle(k, top + 0.04, 1, 0.02)   # the same round branch as the axe
-	if _s("handle") >= 0.0:
-		_lashing(k, top - 0.135, 0.06, 0.02 * 1.3)
 	if _s("head") < 0.0:
 		return
 	var outline := _knap(PackedVector2Array([Vector2(-0.045, 0.0), Vector2(-0.02, -0.04), Vector2(0.06, -0.038), Vector2(0.17, 0.0), Vector2(0.06, 0.04), Vector2(-0.02, 0.04)]), 41, 0.004)

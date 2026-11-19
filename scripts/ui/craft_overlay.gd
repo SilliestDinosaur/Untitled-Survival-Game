@@ -8,7 +8,7 @@ extends Control
 const GREEN := Color(0.56, 0.86, 0.45)
 const OCHRE := UITheme.ACCENT_2
 const SHADE := Color(0.08, 0.06, 0.04, 0.55)
-const STEP_NAMES := {"knap": "Knap the head", "fit": "Fit the head on", "lash": "Lash it", "grip": "Wind the grip",
+const STEP_NAMES := {"knap": "Knap the head", "fit": "Fit the head on", "socket": "Bind the socket", "grip": "Wind the grip",
 	"shape": "Shape the handle", "seat": "Seat the head", "wedge": "Drive the wedge", "heat": "Heat the bar",
 	"hammer": "Hammer it out", "quench": "Quench it", "haft": "Fit the handle", "load": "Load the ore",
 	"melt": "Melt it", "pour": "Pour", "tap": "Knock it out", "add": "Add the ingredients", "stir": "Stir",
