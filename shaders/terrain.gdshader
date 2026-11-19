@@ -9,5 +9,8 @@ void fragment() {
 	float stroke;
 	ALBEDO = brush(COLOR.rgb, wpos, wn, stroke);
 	paint_stroke = stroke;
+	paint_sky = COLOR.a;   // baked per vertex: cave walls see little sky
+	AO = COLOR.a;
+	AO_LIGHT_AFFECT = 0.0;
 	ROUGHNESS = 1.0;
 }

@@ -12,6 +12,10 @@ uniform float light_wrap = 0.45;
 uniform float edge_pool = 0.18;        // darkening at grazing angles (0 for terrain)
 
 varying float paint_stroke;
+// How much open sky reaches this surface: 1 in the open, low deep in a cave (see Caves.sky_seen). Every shader sets
+// it in fragment(), along with AO = it and AO_LIGHT_AFFECT = 0, so it darkens only the sky's ambient light and the
+// sun and moon: torches, fires and glowing fungus light a cave as usual, and nothing outside changes.
+varying float paint_sky;
 
 // Two soft steps instead of a smooth gradient: reads as "painted" rather than "rendered".
 float paint_ramp(float ndl) {
@@ -66,7 +70,8 @@ void light() {
 	if (LIGHT_IS_DIRECTIONAL) {
 		// ATTENUATION is only the shadow here: brush its edge.
 		float shadow = smoothstep(0.25, 0.75, ATTENUATION + jitter * 0.6);
-		DIFFUSE_LIGHT += r * shadow * LIGHT_COLOR / PI;
+		// Deep in a cave, the sun and moon can't reach whatever the shadows say (or with shadows off).
+		DIFFUSE_LIGHT += r * shadow * smoothstep(0.05, 0.5, paint_sky) * LIGHT_COLOR / PI;
 	} else {
 		// Torches, fires and glowcaps: ATTENUATION carries the distance falloff too, so keep its smooth pool of
 		// light (capped, so a surface right beside the flame doesn't blow out).

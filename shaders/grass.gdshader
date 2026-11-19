@@ -21,6 +21,7 @@ void fragment() {
 	float stroke;
 	ALBEDO = brush(COLOR.rgb, wpos, vec3(0.0, 1.0, 0.0), stroke);
 	paint_stroke = stroke;
+	paint_sky = 1.0;   // never in caves
 	ROUGHNESS = 1.0;
 	BACKLIGHT = COLOR.rgb * 0.3;
 }

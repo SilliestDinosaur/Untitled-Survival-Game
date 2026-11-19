@@ -195,10 +195,12 @@ static func build(gen: WorldGen, origin: Vector3, size: float, step: float, segs
 					col = Game.palette.rock.darkened(0.3)
 				else:
 					col = gen.get_terrain_color(vert.y, nrm.y, vert.x, vert.z)
+				col = col.srgb_to_linear()
+				col.a = Caves.sky_seen(plan, vert)   # how much sky this spot sees: the terrain shader's ambient occlusion
 				cell_vert[(ck * ncy + cj) * ncx + ci] = verts.size()
 				verts.append(vert - origin)
 				normals.append(nrm)
-				colors.append(col.srgb_to_linear())
+				colors.append(col)
 
 	# Faces: every grid edge that crosses the surface makes a quad from the four cells around it. Faces are made a
 	# cell past each edge of the chunk, and then clipped to the chunk's square (see _clip_to_chunk), so the surface

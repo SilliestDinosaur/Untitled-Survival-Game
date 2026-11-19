@@ -63,6 +63,7 @@ func setup(sp: FaunaLibrary.Species, pos: Vector3, p: Node3D) -> void:
 	_body = Node3D.new()
 	_body.position.y = sp.leg_len + sp.body_h * 0.25
 	add_child(_body)
+	add_child(CaveShade.new())   # darker when it wanders into a cave
 	_body.add_child(_mesh(sp.body_mesh))
 	_head = Node3D.new()
 	_head.position = sp.head_pivot

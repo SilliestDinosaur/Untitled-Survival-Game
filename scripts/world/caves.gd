@@ -151,7 +151,10 @@ static func plan(gen: WorldGen) -> Dictionary:
 			var n: Dictionary = nodes[i]
 			var ang := rng.randf() * TAU
 			glow.append(n.p + Vector3(cos(ang) * float(n.r) * 0.5, -float(n.r) * 0.8, sin(ang) * float(n.r) * 0.5))
-	# Tunnel pieces: each edge is two straight pieces with a slight bend, so they read as dug rock.
+	# How far each node is from daylight: the walk along the tunnels from the nearest mouth.
+	var walk := _walk_from(nodes, edges, roots)
+	# Tunnel pieces: each edge is two straight pieces with a slight bend, so they read as dug rock. Each piece also
+	# carries the walk from daylight at its two ends.
 	var segs: Array = []
 	for edge: Array in edges:
 		var a: Dictionary = nodes[edge[0]]
@@ -159,8 +162,11 @@ static func plan(gen: WorldGen) -> Dictionary:
 		var mid: Vector3 = (a.p + b.p) * 0.5
 		mid += Vector3(sin(a.p.x * 0.13 + b.p.z * 0.07), 0.0, cos(a.p.z * 0.11 + b.p.x * 0.05)) * minf(a.p.distance_to(b.p) * 0.12, 1.2)
 		var mid_r := (float(a.r) + float(b.r)) * 0.5 * 0.92
-		segs.append([a.p, mid, float(a.r), mid_r])
-		segs.append([mid, b.p, mid_r, float(b.r)])
+		var wa: float = walk[edge[0]]
+		var wb: float = walk[edge[1]]
+		var wm := minf(wa + a.p.distance_to(mid), wb + b.p.distance_to(mid))
+		segs.append([a.p, mid, float(a.r), mid_r, wa, wm])
+		segs.append([mid, b.p, mid_r, float(b.r), wm, wb])
 	var buckets := {}
 	for si in segs.size():
 		var s: Array = segs[si]
@@ -175,6 +181,45 @@ static func plan(gen: WorldGen) -> Dictionary:
 				buckets[key].append(si)
 	return {"entrances": spots, "roots": roots, "nodes": nodes, "rooms": rooms, "chests": chests,
 		"glow": glow, "segs": segs, "buckets": buckets}
+
+
+## The shortest walk along the tunnels from any mouth to each node (Dijkstra; the network is small).
+static func _walk_from(nodes: Array, edges: Array, roots: Array) -> PackedFloat32Array:
+	var walk := PackedFloat32Array()
+	walk.resize(nodes.size())
+	walk.fill(INF)
+	var links: Array = []
+	links.resize(nodes.size())
+	for i in nodes.size():
+		links[i] = []
+	for e: Array in edges:
+		var len: float = nodes[e[0]].p.distance_to(nodes[e[1]].p)
+		links[e[0]].append([e[1], len])
+		links[e[1]].append([e[0], len])
+	var open: Array = []
+	for r: int in roots:
+		walk[r] = 0.0
+		open.append(r)
+	var done := {}
+	while not open.is_empty():
+		var bi := 0
+		for i in range(1, open.size()):
+			if walk[open[i]] < walk[open[bi]]:
+				bi = i
+		var n: int = open[bi]
+		open.remove_at(bi)
+		if done.has(n):
+			continue
+		done[n] = true
+		for l: Array in links[n]:
+			var d: float = walk[n] + float(l[1])
+			if d < walk[l[0]]:
+				walk[l[0]] = d
+				open.append(l[0])
+	for i in walk.size():
+		if walk[i] == INF:
+			walk[i] = 999.0   # cut off from every mouth: dark
+	return walk
 
 
 static func _base_grad(gen: WorldGen, x: float, z: float) -> Vector2:
@@ -251,6 +296,37 @@ static func void_distance(plan: Dictionary, p: Vector3) -> float:
 	for si: int in plan.buckets[key]:
 		best = minf(best, _piece_distance(plan.segs[si], p))
 	return best
+
+
+## How much open sky a spot sees: 1 outside, falling off along the tunnels with the walk from the nearest mouth,
+## down to a little at the deep end. It darkens the sky's light on cave walls and on things in caves (ambient
+## occlusion: torches, fires and glowing fungus aren't touched), so the caves are dark by their own shape and the
+## world outside never changes.
+const DAYLIGHT_REACH := Vector2(4.0, 26.0)   ## metres walked in from a mouth where the light starts and stops falling
+const DEEP_SKY := 0.08                        ## what's left at the far end (the eye adjusts to a little)
+
+
+static func sky_seen(plan: Dictionary, p: Vector3) -> float:
+	if plan.is_empty():
+		return 1.0
+	var key := Vector2i(floori(p.x / BUCKET), floori(p.z / BUCKET))
+	if not plan.buckets.has(key):
+		return 1.0
+	var best := 99.0
+	var best_walk := 0.0
+	for si: int in plan.buckets[key]:
+		var s: Array = plan.segs[si]
+		var a: Vector3 = s[0]
+		var ab: Vector3 = s[1] - a
+		var t := clampf((p - a).dot(ab) / maxf(ab.length_squared(), 0.0001), 0.0, 1.0)
+		var d := p.distance_to(a + ab * t) - lerpf(float(s[2]), float(s[3]), t)
+		if d < best:
+			best = d
+			best_walk = lerpf(float(s[4]), float(s[5]), t)
+	# Only the tunnels and what's in them: rock walls are within a step of the void, ground overhead is further.
+	var inside := 1.0 - smoothstep(0.6, 1.4, best)
+	var lit := lerpf(DEEP_SKY, 1.0, 1.0 - smoothstep(DAYLIGHT_REACH.x, DAYLIGHT_REACH.y, best_walk))
+	return lerpf(1.0, lit, inside)
 
 
 static func _piece_distance(s: Array, p: Vector3) -> float:

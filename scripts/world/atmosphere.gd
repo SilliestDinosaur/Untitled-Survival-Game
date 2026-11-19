@@ -17,15 +17,13 @@ const DUSK_GLOW := Color(1.0, 0.55, 0.3)
 ## ambient colour, which is black above ground.)
 const SKY_AMBIENT_DAY := 0.85
 const SKY_AMBIENT_NIGHT := 0.3
-## Underground there's no sky at all: just a faint cool fill so walls are barely there without a torch.
-const CAVE_AMBIENT := Color(0.06, 0.068, 0.09)
-const CAVE_FOG := Color(0.02, 0.02, 0.03)
 
 var _day_top: Color
 var _day_horizon: Color
 var _day_sun: Color
 var _update_cd := 0.0
-var _cave := 0.0   ## 0 above ground .. 1 deep in a cave, eased so walking through a cave mouth fades the light
+## (Caves aren't darkened here: the world's light stays the same everywhere, and cave walls and the things in caves
+## see less of the sky by their own shading, see Caves.sky_seen and CaveShade.)
 
 
 func _ready() -> void:
@@ -95,15 +93,12 @@ func apply_palette() -> void:
 	var rng := RandomNumberGenerator.new()
 	rng.seed = Game.world_seed + 99
 	sky_material.set_shader_parameter("cloud_coverage", rng.randf_range(0.3, 0.6))
-	_cave = 1.0 if Game.in_cave else 0.0   # a new world starts settled, not mid-fade
 	_apply_time(true)
 
 
 func _process(delta: float) -> void:
 	_update_cd -= delta
-	var cave_was := _cave
-	_cave = move_toward(_cave, 1.0 if Game.in_cave else 0.0, delta / 1.5)
-	if _update_cd <= 0.0 or _cave != cave_was:
+	if _update_cd <= 0.0:
 		_update_cd = 0.05   # 20 times a second is plenty for a slow sun
 		_apply_time()
 
@@ -118,9 +113,6 @@ func light_state(t: float) -> Dictionary:
 
 
 func _apply_time(_force := false) -> void:
-	var open := 1.0 - _cave   # how much of the sky reaches here
-	environment.reflected_light_source = Environment.REFLECTION_SOURCE_SKY if _cave < 1.0 else Environment.REFLECTION_SOURCE_DISABLED
-	environment.ambient_light_color = CAVE_AMBIENT * _cave
 	var t := Game.time_of_day
 	var st := light_state(t)
 	var day: float = st.day
@@ -132,10 +124,10 @@ func _apply_time(_force := false) -> void:
 	moon_dir = moon_dir.normalized()
 	_point(sun, sun_dir)
 	_point(moon, moon_dir)
-	sun.light_energy = 1.25 * smoothstep(-0.05, 0.15, sun_dir.y) * open
+	sun.light_energy = 1.25 * smoothstep(-0.05, 0.15, sun_dir.y)
 	sun.light_color = _day_sun.lerp(DUSK_GLOW, golden * 0.85)
-	sun.visible = sun_dir.y > -0.08 and open > 0.0
-	moon.light_energy = 0.13 * smoothstep(0.0, 0.2, moon_dir.y) * (1.0 - day) * open
+	sun.visible = sun_dir.y > -0.08
+	moon.light_energy = 0.13 * smoothstep(0.0, 0.2, moon_dir.y) * (1.0 - day)
 	moon.visible = moon.light_energy > 0.01 and Settings.shadow_quality != "Off"
 	moon.shadow_enabled = Settings.shadow_quality in ["High", "Ultra"]
 
@@ -148,8 +140,8 @@ func _apply_time(_force := false) -> void:
 	sky_material.set_shader_parameter("sunset", golden)
 	sky_material.set_shader_parameter("sun_dir", sun_dir)
 	sky_material.set_shader_parameter("moon_dir", moon_dir)
-	environment.fog_light_color = horizon.lerp(top, 0.3 * (1.0 - day)).lerp(CAVE_FOG, _cave)
-	environment.ambient_light_sky_contribution = lerpf(SKY_AMBIENT_NIGHT, SKY_AMBIENT_DAY, day) * open
+	environment.fog_light_color = horizon.lerp(top, 0.3 * (1.0 - day))
+	environment.ambient_light_sky_contribution = lerpf(SKY_AMBIENT_NIGHT, SKY_AMBIENT_DAY, day)
 	environment.fog_sun_scatter = 0.35 + golden * 0.4
 	environment.adjustment_saturation = lerpf(0.55, 1.1, day)
 	var water := get_tree().get_first_node_in_group("water") as MeshInstance3D

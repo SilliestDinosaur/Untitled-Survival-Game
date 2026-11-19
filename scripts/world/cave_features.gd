@@ -45,6 +45,7 @@ func _build_chests(chests: Array) -> void:
 		mi.visibility_range_end = SEEN_WITHIN
 		body.add_child(mi)
 		add_child(body)
+		CaveShade.apply(body, CaveShade.at(c))
 
 
 func _build_glowcaps(glow: Array, rng: RandomNumberGenerator) -> void:
@@ -61,6 +62,7 @@ func _build_glowcaps(glow: Array, rng: RandomNumberGenerator) -> void:
 		mi.scale = Vector3.ONE * rng.randf_range(0.8, 1.3)
 		mi.visibility_range_end = SEEN_WITHIN
 		add_child(mi)
+		CaveShade.apply(mi, CaveShade.at(g))
 		if k % 10 == 0 and _lights.size() < 12:   # a few of them light the place up
 			var light := OmniLight3D.new()
 			light.light_color = Game.palette.glow

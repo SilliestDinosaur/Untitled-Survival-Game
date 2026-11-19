@@ -39,6 +39,7 @@ func setup(pname: String, color: Color) -> void:
 
 	_body = Node3D.new()
 	add_child(_body)
+	add_child(CaveShade.new())   # darker in a cave, like everything else there
 	var torso := MeshInstance3D.new()
 	torso.mesh = _torso_mesh(color)
 	_body.add_child(torso)

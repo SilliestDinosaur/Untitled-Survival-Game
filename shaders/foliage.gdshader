@@ -7,6 +7,7 @@ uniform float sway_strength = 0.022;
 uniform float sway_start = 1.5;
 uniform float sway_speed = 1.1;
 uniform float backlight = 0.35;
+instance uniform float sky_seen : hint_range(0.0, 1.0) = 1.0;   // glowcaps in caves (see CaveShade)
 
 void vertex() {
 	vec3 o = MODEL_MATRIX[3].xyz;
@@ -23,6 +24,9 @@ void fragment() {
 	float stroke;
 	ALBEDO = pool_edges(brush(COLOR.rgb, wpos * 1.6, wn, stroke), NORMAL, VIEW);
 	paint_stroke = stroke;
+	paint_sky = sky_seen;
+	AO = sky_seen;
+	AO_LIGHT_AFFECT = 0.0;
 	ROUGHNESS = 1.0;
 	BACKLIGHT = COLOR.rgb * backlight;
 	RIM = 0.25;

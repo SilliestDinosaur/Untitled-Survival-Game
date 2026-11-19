@@ -23,6 +23,7 @@ func setup(sp: FaunaLibrary.Species, pos: Vector3, p: Node3D) -> void:
 	_body = Node3D.new()
 	_body.position.y = sp.leg_len + sp.body_h * 0.2
 	add_child(_body)
+	add_child(CaveShade.new())
 	for m in [sp.body_mesh]:
 		var mi := MeshInstance3D.new()
 		mi.mesh = m

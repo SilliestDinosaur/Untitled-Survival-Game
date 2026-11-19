@@ -73,6 +73,7 @@ func _make(p: Dictionary) -> Node3D:
 	root.add_child(body)
 	root.set_meta("phase", randf() * TAU)
 	add_child(root)
+	CaveShade.apply(root, CaveShade.at(root.position))   # dropped in a cave: the sky doesn't reach it
 	return root
 
 

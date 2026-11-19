@@ -29,6 +29,7 @@ func _ready() -> void:
 	_item = MeshInstance3D.new()
 	_item.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
 	add_child(_item)
+	add_child(CaveShade.new())   # the held item is in the cave's dark too (a torch lights it)
 	Game.world_changed.connect(func() -> void:
 		ItemModels.clear_cache()
 		hold(_held))
