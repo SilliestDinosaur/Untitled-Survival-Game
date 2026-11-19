@@ -48,6 +48,11 @@ static func hit_resource_r(player_id: int, r: Dictionary, rng: RandomNumberGener
 		# Ore and crystals come out when the deposit breaks, in a share set by the difficulty.
 		var bonus_mult := float(Difficulty.preset(Game.difficulty).ore) if key in ["ore_t2", "ore_t3", "gem_t4"] else 1.0
 		_give(inv, ItemDB.BONUS.get(key, []), bonus_mult, rng, result.items)
+		# A felled tree may give up some resin: conifers, the sappy ones, more often.
+		if key == "tree" and FloraLibrary.category_of(r.kind) == "tree":
+			var chance := 0.6 if r.kind in ["pine", "fir"] else 0.25
+			if rng.randf() < chance:
+				_add(inv, "resin", rng.randi_range(1, 2), result.items)
 		if r.kind == "cache":
 			Game.looted[r.id] = true
 		Game.mark_removed(r.id)

@@ -37,6 +37,21 @@ const POUR_RATE := 0.4
 const POUR_BAND := Vector2(0.8, 0.95)
 ## Where things sit at the forge (station-local): the crucible on the coals at the mouth, the bucket by the anvil.
 const CRUCIBLE_AT := Vector3(0.0, 0.82, -0.05)
+const MOULD_AT := Vector3(0.95, 0.65, -0.2)
+## A crucible's outline, spun round its axis (MeshKit.lathe): out across the base, up the outside, over the rolled
+## rim, down the inside and in across its floor. The inside is a real hollow.
+const CRUCIBLE_PROFILE := [Vector2(0.0, 0.0), Vector2(0.05, 0.0), Vector2(0.058, 0.006), Vector2(0.072, 0.05), Vector2(0.083, 0.11),
+	Vector2(0.09, 0.128), Vector2(0.087, 0.138), Vector2(0.079, 0.139), Vector2(0.073, 0.13), Vector2(0.064, 0.08),
+	Vector2(0.05, 0.034), Vector2(0.041, 0.022), Vector2(0.0, 0.02)]
+const CRUCIBLE_LIP := Vector3(0.0, 0.138, 0.088)   ## where it pours from (the lip that dips when it tips)
+## A cooking pot's outline, the same way: an iron belly, a lip, the inside down to its floor.
+const POT_PROFILE := [Vector2(0.0, 0.0), Vector2(0.1, 0.0), Vector2(0.13, 0.03), Vector2(0.152, 0.09), Vector2(0.15, 0.15),
+	Vector2(0.16, 0.168), Vector2(0.155, 0.176), Vector2(0.142, 0.17), Vector2(0.14, 0.15), Vector2(0.142, 0.09),
+	Vector2(0.12, 0.034), Vector2(0.09, 0.012), Vector2(0.0, 0.012)]
+const POT_BASE := 0.575   ## the pot's foot above the campfire's ground
+## A water bucket: staved wood, its inside down to the floor (the water is a disc inside it).
+const BUCKET_PROFILE := [Vector2(0.0, 0.0), Vector2(0.14, 0.0), Vector2(0.162, 0.3), Vector2(0.152, 0.306), Vector2(0.142, 0.296),
+	Vector2(0.124, 0.02), Vector2(0.0, 0.02)]
 const BUCKET_AT := Vector3(0.55, 0.0, -0.75)
 
 var player: Node
@@ -364,13 +379,23 @@ func _build_spit() -> void:
 			k.loft([foot + Vector3(0, 0.84, 0), foot + Vector3(0, 0.97, 0) + _side * 0.05 * f], [0.014, 0.01], 5, bark, Callable(), Callable(), true, true)
 	if recipe.out == "stew":   # a pot hung from the crossbar on a cord
 		k.loft([along * -0.62 + Vector3(0, 0.88, 0), along * 0.62 + Vector3(0, 0.88, 0)], [0.013, 0.013], 7, bark.lightened(0.1), Callable(), Callable(), true, true)
-		k.loft([Vector3(0, 0.88, 0), Vector3(0, 0.74, 0)], [0.006, 0.006], 5, Color(0.6, 0.5, 0.35))
-		k.add_primitive(MeshKit.cylinder(0.15, 0.12, 0.17, 16), Transform3D(Basis(), Vector3(0, 0.66, 0)), Color(0.2, 0.19, 0.2), 0.0, 0.05)
+		k.loft([Vector3(0, 0.88, 0), Vector3(0, 0.83, 0)], [0.006, 0.006], 5, Color(0.6, 0.5, 0.35))
+		# A hollow iron pot (open at the top, its inside down to a floor), hung by a wire bail from the cord.
+		var iron := Color(0.2, 0.19, 0.2)
+		k.lathe(POT_PROFILE, 18, iron, func(t: float, _a: float) -> Color: return iron.darkened(0.25) if t > 0.62 else iron, Transform3D(Basis(), Vector3(0, POT_BASE, 0)))
+		var bail: Array = []
+		for i in 9:
+			var a := PI * i / 8.0
+			bail.append(along * cos(a) * 0.162 + Vector3(0, POT_BASE + 0.16 + sin(a) * 0.08, 0))
+		k.loft(bail, bail.map(func(_p: Vector3) -> float: return 0.005), 5, Color(0.3, 0.3, 0.32))
 		var surf := StandardMaterial3D.new()
 		surf.albedo_color = Color(0.4, 0.5, 0.58)
 		surf.roughness = 0.4
-		_pot_surface = _mesh_node(MeshKit.cylinder(0.135, 0.135, 0.01, 16), _props, surf)
-		_pot_surface.position = _station.pos + Vector3(0, 0.745, 0)
+		# The stew: a disc inside the pot, as wide as the pot is there (it rises as things go in).
+		var fill_y := POT_BASE + 0.13
+		var r := _inner_radius(POT_PROFILE, 0.13) - 0.003
+		_pot_surface = _mesh_node(MeshKit.cylinder(r, r, 0.012, 18), _props, surf)
+		_pot_surface.position = _station.pos + Vector3(0, fill_y, 0)
 	else:
 		var kb := MeshKit.new(6)   # the crossbar on its own: it's pushed through the food to skewer it
 		kb.loft([along * -0.62, along * 0.62], [0.013, 0.013], 7, bark.lightened(0.1), Callable(), Callable(), true, true)
@@ -382,18 +407,16 @@ func _build_spit() -> void:
 func _build_foundry() -> void:
 	var k := MeshKit.new(7)
 	var clay := Color(0.55, 0.36, 0.26)
-	var path: Array = []
-	var radii: Array = []
-	for i in 6:
-		var t := i / 5.0
-		path.append(Vector3(0, t * 0.13, 0))
-		radii.append(lerpf(0.055, 0.085, sqrt(t)))
-	k.loft(path, radii, 14, clay, func(t: float, _a: float) -> Color: return clay.darkened(0.35 * (1.0 - t)), Callable(), true, false)
-	k.add_primitive(MeshKit.cylinder(0.075, 0.07, 0.01, 14), Transform3D(Basis(), Vector3(0, 0.125, 0)), Color(0.12, 0.08, 0.06), 0.0, 0.0)
+	# A real hollow crucible: sooty clay outside, a rolled rim, a charred inside down to its floor.
+	k.lathe(CRUCIBLE_PROFILE, 16, clay, func(t: float, _a: float) -> Color:
+		if t > 0.6:
+			return Color(0.16, 0.11, 0.08)   # inside: charred
+		return clay.darkened(0.35 * (1.0 - clampf(t / 0.45, 0.0, 1.0))))
 	_crucible = Node3D.new()
 	_props.add_child(_crucible)
 	_mesh_node(k.commit(_mat), _crucible)
-	_pool = _mesh_node(MeshKit.cylinder(0.07, 0.06, 0.02, 14), _crucible, _molten_mat)
+	# The melt: a disc sized each frame to the inside of the crucible where it stands.
+	_pool = _mesh_node(MeshKit.cylinder(1.0, 1.0, 0.01, 16), _crucible, _molten_mat)
 	var ore := ""
 	for item: String in recipe.needs:
 		if item != "wood" and item != "charcoal":   # the fuel isn't what goes in the crucible
@@ -409,17 +432,21 @@ func _build_foundry() -> void:
 		_lumps.append(lump)
 	var mk := MeshKit.new(8)   # the mould: an iron block with an ingot-shaped hollow
 	var iron := Color(0.24, 0.23, 0.25)
-	for b: Array in [[Vector3(0.26, 0.03, 0.14), Vector3(0, 0.015, 0)], [Vector3(0.26, 0.03, 0.03), Vector3(0, 0.045, 0.055)],
-			[Vector3(0.26, 0.03, 0.03), Vector3(0, 0.045, -0.055)], [Vector3(0.03, 0.03, 0.08), Vector3(0.115, 0.045, 0)], [Vector3(0.03, 0.03, 0.08), Vector3(-0.115, 0.045, 0)]]:
+	# A base and four walls standing on it, the walls sunk a little into the base and the end walls a little
+	# into the side walls, so no two faces lie on each other (they'd flicker).
+	for b: Array in [[Vector3(0.256, 0.03, 0.136), Vector3(0, 0.015, 0)],
+			[Vector3(0.262, 0.034, 0.03), Vector3(0, 0.043, 0.055)], [Vector3(0.262, 0.034, 0.03), Vector3(0, 0.043, -0.055)],
+			[Vector3(0.03, 0.034, 0.084), Vector3(0.115, 0.043, 0)], [Vector3(0.03, 0.034, 0.084), Vector3(-0.115, 0.043, 0)]]:
 		var box := BoxMesh.new()
 		box.size = b[0]
 		mk.add_primitive(box, Transform3D(Basis(), b[1]), iron, 0.0, 0.03)
 	var mould := _mesh_node(mk.commit(_mat), _props)
-	mould.global_transform = _xf * Transform3D(Basis(Vector3.UP, 0.3), Vector3(0.95, 0.65, -0.2))
+	mould.global_transform = _xf * Transform3D(Basis(Vector3.UP, 0.3), MOULD_AT)
+	# The metal in the mould fills its hollow from the floor up, a hair inside its walls.
 	var fill_box := BoxMesh.new()
-	fill_box.size = Vector3(0.2, 0.03, 0.08)
+	fill_box.size = Vector3(0.196, 1.0, 0.076)
 	_mould_fill = _mesh_node(fill_box, mould, _molten_mat)
-	_mould_fill.position = Vector3(0, 0.045, 0)
+	_set_mould_fill(0.0)
 	var cyl := CylinderMesh.new()
 	cyl.top_radius = 0.008
 	cyl.bottom_radius = 0.012
@@ -433,10 +460,16 @@ func _build_foundry() -> void:
 func _build_bucket() -> void:
 	var k := MeshKit.new(9)
 	var wood := Color(0.45, 0.32, 0.2)
-	k.add_primitive(MeshKit.cylinder(0.16, 0.14, 0.3, 16), Transform3D(Basis(), Vector3(0, 0.15, 0)), wood, 0.0, 0.05)
+	# A hollow staved bucket (darker staves every other one), and iron hoops just proud of its sides.
+	k.lathe(BUCKET_PROFILE, 16, wood, func(t: float, a: float) -> Color:
+		return wood.darkened(0.2) if t > 0.6 else (wood.lightened(0.05) if int(floor(a / TAU * 16.0)) % 2 == 0 else wood))
 	for y in [0.06, 0.24]:
-		k.add_primitive(MeshKit.cylinder(0.165, 0.165, 0.025, 16), Transform3D(Basis(), Vector3(0, y, 0)), Color(0.3, 0.3, 0.32), 0.0, 0.02)
-	k.add_primitive(MeshKit.cylinder(0.145, 0.145, 0.01, 16), Transform3D(Basis(), Vector3(0, 0.285, 0)), Color(0.25, 0.4, 0.5), 0.0, 0.0)
+		var r0: float = 0.14 + 0.022 * y / 0.3 + 0.002
+		var hoop := [Vector2(r0, y - 0.0125), Vector2(r0 + 0.008, y - 0.0125), Vector2(r0 + 0.008, y + 0.0125), Vector2(r0, y + 0.0125), Vector2(r0, y - 0.0125)]
+		k.lathe(hoop, 16, Color(0.3, 0.3, 0.32))
+	# The water: a disc inside, as wide as the bucket is there.
+	var wr := _inner_radius(BUCKET_PROFILE, 0.26) - 0.003
+	k.add_primitive(MeshKit.cylinder(wr, wr, 0.008, 16), Transform3D(Basis(), Vector3(0, 0.26, 0)), Color(0.25, 0.4, 0.5), 0.0, 0.0)
 	var bucket := _mesh_node(k.commit(_mat), _props)
 	bucket.global_position = _xf * BUCKET_AT
 
@@ -595,8 +628,7 @@ func _refresh_smelt(id: String, s: float) -> void:
 		"melt":
 			_dropper.visible = false
 			_pool.visible = s > 0.05
-			_pool.position = Vector3(0, 0.02 + 0.09 * s, 0)
-			_pool.scale = Vector3(lerpf(0.6, 1.1, s), 1.0, lerpf(0.6, 1.1, s))
+			_set_pool_level(0.02 + 0.08 * s)
 			for l in _lumps:
 				l.visible = s < 0.95
 				l.scale = Vector3.ONE * 0.9 * (1.0 - s)
@@ -604,23 +636,33 @@ func _refresh_smelt(id: String, s: float) -> void:
 			for l in _lumps:
 				l.visible = false
 			_pool.visible = true
-			# Held over the mould, tipped by how hard you're pouring; the pool drains as the mould fills.
+			# Held with its pouring lip over the mould, tipped by how hard you're pouring; the melt drains as the
+			# mould fills.
 			var tip := 1.1 if _holding() else 0.25
-			var above := _xf * Vector3(0.95 + 0.06, 0.95, -0.2 - 0.12)
 			var axis := (_xf.basis * Vector3(1, 0, 0)).normalized()
-			_crucible.global_transform = Transform3D(Basis(axis, tip), above)
-			_pool.position = Vector3(0, 0.02 + 0.09 * (1.0 - fill * 0.8), 0)
-			_mould_fill.visible = fill > 0.02
-			_mould_fill.scale = Vector3(1.0, maxf(fill, 0.02), 1.0)
+			var b := Basis(axis, tip) * _xf.basis.orthonormalized()
+			var mould := (_mould_fill.get_parent() as Node3D).global_transform
+			var into := mould * Vector3(0, 0.031 + 0.029 * fill, 0)
+			var lip_at := into + Vector3(0, 0.22, 0)
+			_crucible.global_transform = Transform3D(b, lip_at - b * CRUCIBLE_LIP)
+			# The melt lies level whatever the tilt, low in the crucible, small enough to stay inside it.
+			_pool.visible = fill < 0.97
+			var r := 0.045 * (1.0 - fill * 0.6)
+			_pool.global_transform = Transform3D(Basis.from_scale(Vector3(r, 1.0, r)), _crucible.global_transform * Vector3(0, 0.055, 0.0))
+			_set_mould_fill(fill)
 			_stream.visible = _holding()
 			if _stream.visible:
-				var lip := _crucible.global_transform * Vector3(0, 0.12, 0.08)
-				var into := (_mould_fill.get_parent() as Node3D).global_transform * Vector3(0, 0.05, 0)
-				_stream.global_transform = Transform3D(Basis(Vector3.UP, 0).scaled(Vector3(1, maxf(lip.y - into.y, 0.05), 1)), (lip + into) * 0.5)
+				# From the lip straight down into the mould.
+				var lip: Vector3 = _crucible.global_transform * CRUCIBLE_LIP
+				var dir := lip - into
+				var y := dir.normalized()
+				var x := y.cross(Vector3.FORWARD if absf(y.dot(Vector3.FORWARD)) < 0.9 else Vector3.RIGHT).normalized()
+				_stream.global_transform = Transform3D(Basis(x, y, x.cross(y)).scaled(Vector3(1, dir.length(), 1)), (lip + into) * 0.5)
 		"tap":
 			_stream.visible = false
 			_crucible.global_transform = _xf * Transform3D(Basis(), CRUCIBLE_AT)
 			_pool.visible = false
+			_set_mould_fill(1.0)
 			_mould_fill.visible = s < 0.99
 			_ingot.visible = s > 0.0
 			var m := (_mould_fill.get_parent() as Node3D).global_transform
@@ -1149,3 +1191,31 @@ func autoplay(_delta: float) -> void:
 				_: ready = absf(cue_t - 1.0) < 0.04
 			if ready:
 				strike()
+
+
+
+## How wide the inside of a lathed vessel is at height y (its inner wall: the profile from its rim's peak onward).
+static func _inner_radius(profile: Array, y: float) -> float:
+	var top := 0
+	for i in profile.size():
+		if (profile[i] as Vector2).y > (profile[top] as Vector2).y:
+			top = i
+	for i in range(top, profile.size() - 1):
+		var a: Vector2 = profile[i]
+		var b: Vector2 = profile[i + 1]
+		if (a.y >= y and b.y <= y) and absf(a.y - b.y) > 1e-6:
+			return lerpf(a.x, b.x, (a.y - y) / (a.y - b.y))
+	return (profile[profile.size() - 2] as Vector2).x
+
+
+## The melt standing at height y in the (upright) crucible: a level disc as wide as the inside there.
+func _set_pool_level(y: float) -> void:
+	var r := _inner_radius(CRUCIBLE_PROFILE, y) - 0.002
+	_pool.transform = Transform3D(Basis.from_scale(Vector3(r, 1.0, r)), Vector3(0, y, 0))
+
+
+## The metal in the mould, `f` full: from the hollow's floor up.
+func _set_mould_fill(f: float) -> void:
+	var h := maxf(0.029 * f, 0.0005)
+	_mould_fill.transform = Transform3D(Basis.from_scale(Vector3(1, h, 1)), Vector3(0, 0.0305 + h * 0.5, 0))
+	_mould_fill.visible = f > 0.02

@@ -127,6 +127,46 @@ func _emit(a: Vector3, b: Vector3, c: Vector3, na: Vector3, nb: Vector3, nc: Vec
 	colors.append_array([ca.srgb_to_linear(), cb.srgb_to_linear(), cc.srgb_to_linear()])
 
 
+## A solid of revolution: `profile` is a run of Vector2(radius, height) points, spun round the vertical axis of
+## `xf`. Walk it so the outside is on your right: for a hollow vessel, from the middle of its base out and up the
+## outside, over the rim, down the inside and in to the middle of its floor. Then the outside faces out and the
+## inside faces into the hollow, and it's closed all the way round (no seams, no pretend holes).
+## color_fn: optional Callable(t: float (0..1 along the profile), angle: float) -> Color.
+func lathe(profile: Array, segments: int, color: Color, color_fn := Callable(), xf := Transform3D()) -> void:
+	var n := profile.size()
+	if n < 2:
+		return
+	var seg := maxi(6, roundi(segments * detail))
+	# Each profile point's normal (in the r-y plane): the run's direction turned a quarter to the right, averaged
+	# over the segments either side.
+	var nrm: Array = []
+	for i in n:
+		var t := Vector2.ZERO
+		if i > 0:
+			t += ((profile[i] as Vector2) - (profile[i - 1] as Vector2)).normalized()
+		if i < n - 1:
+			t += ((profile[i + 1] as Vector2) - (profile[i] as Vector2)).normalized()
+		nrm.append(Vector2(t.y, -t.x).normalized())
+	var ring := func(i: int, a: float) -> Array:
+		var p: Vector2 = profile[i]
+		var q: Vector2 = nrm[i]
+		var pos := xf * Vector3(cos(a) * p.x, p.y, sin(a) * p.x)
+		var nn := (xf.basis * Vector3(cos(a) * q.x, q.y, sin(a) * q.x)).normalized()
+		var c: Color = color_fn.call(float(i) / (n - 1), a) if color_fn.is_valid() else color
+		return [pos, nn, c]
+	for i in n - 1:
+		for j in seg:
+			var a0 := TAU * j / seg
+			var a1 := TAU * (j + 1) / seg
+			var p00: Array = ring.call(i, a0)
+			var p01: Array = ring.call(i, a1)
+			var p10: Array = ring.call(i + 1, a0)
+			var p11: Array = ring.call(i + 1, a1)
+			var out: Vector3 = (p00[1] as Vector3) + (p01[1] as Vector3) + (p10[1] as Vector3) + (p11[1] as Vector3)
+			_emit(p00[0], p10[0], p11[0], p00[1], p10[1], p11[1], p00[2], p10[2], p11[2], out)
+			_emit(p00[0], p11[0], p01[0], p00[1], p11[1], p01[1], p00[2], p11[2], p01[2], out)
+
+
 ## A tube along a path: handles, branches, horns, stems, logs, curved pick heads.
 ## radii:    one radius per path point (tapers, bulges).
 ## shape_fn: optional Callable(t: float, angle: float) -> Vector2 cross-section scale (ovals, flats).
