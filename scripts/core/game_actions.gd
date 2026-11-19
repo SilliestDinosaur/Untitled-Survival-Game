@@ -649,6 +649,14 @@ const STATION_GAP := 1.6      ## stations keep this far apart (centre to centre)
 const STATION_RADIUS := 0.7   ## and this far from a wall
 
 
+## Something set down on a floor stands exactly on its top (a hand's breadth either way is taken as meant).
+static func on_floor_top(pos: Vector3) -> Vector3:
+	var under := floor_under(pos)
+	if not under.is_empty():
+		pos.y = _pos(under).y + FLOOR_TOP
+	return pos
+
+
 ## The finished floor a station at `pos` would stand on (its top within a hand's breadth of pos), or {}.
 static func floor_under(pos: Vector3) -> Dictionary:
 	var cell := cell_of(pos)
@@ -712,6 +720,7 @@ static func place_structure(player_id: int, slot: int, pos: Vector3, yaw: float)
 		return {"ok": false, "reason": problem}
 	inv.take_from_slot(slot, 1)
 	var id := Game.new_entity_id("s")
+	pos = on_floor_top(pos)
 	Game.structures[id] = {"id": id, "kind": kind, "pos": [pos.x, pos.y, pos.z], "yaw": yaw, "hp": 3, "level": 0}
 	Game.structures_changed.emit()
 	return {"ok": true, "id": id, "kind": kind, "level": 0, "pos": pos, "yaw": yaw}
@@ -739,6 +748,7 @@ static func place_blueprint(player_id: int, kind: String, pos: Vector3, yaw: flo
 		level = int(sn_s.level)
 	elif is_decor(kind):
 		level = 0
+		pos = on_floor_top(pos)
 	else:
 		level = level_of(kind, pos.y, wall_base(pos, yaw) if kind in EDGE_KINDS else base_y(cell_of(pos)))
 	var id := Game.new_entity_id("s")

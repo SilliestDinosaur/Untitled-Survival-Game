@@ -64,11 +64,14 @@ static func generate(job: Dictionary) -> void:
 			"collision_width": FINE_SEGS + 1,
 			"step": FINE,
 		}
-	var resources := _place_resources(coord, origin, gen, flora, job.removed)
+	var covered: Array = job.get("covered", [])
+	var resources := _place_resources(coord, origin, gen, flora, job.removed, covered)
 	result.resources = resources
 	result.multimesh = _resource_buffers(resources, origin, tier)
 	if tier == 0 and job.grass_density > 0.0:
 		_place_ground_cover(coord, origin, gen, flora, job.grass_density, result.multimesh)
+		if not covered.is_empty():
+			_clear_covered(result.multimesh, origin, covered)
 	job.result = result
 
 
@@ -195,7 +198,27 @@ static func _pick_weighted(table: Array, roll: float) -> String:
 	return table[-1][0]
 
 
-static func _place_resources(coord: Vector2i, origin: Vector3, gen: WorldGen, flora: FloraLibrary, removed: Dictionary) -> Array[Dictionary]:
+## Whether a spot is under a floor at ground level (covered: the floors' footprints, world xz).
+static func _is_covered(covered: Array, x: float, z: float) -> bool:
+	for r: Rect2 in covered:
+		if r.has_point(Vector2(x, z)):
+			return true
+	return false
+
+
+## Take out the grass, flowers and the like that came up under a floor (they'd poke through it).
+static func _clear_covered(buffers: Dictionary, origin: Vector3, covered: Array) -> void:
+	for key: String in buffers:
+		var b: PackedFloat32Array = buffers[key]
+		var kept := PackedFloat32Array()
+		for i in range(0, b.size(), 16):
+			if not _is_covered(covered, origin.x + b[i + 3], origin.z + b[i + 11]):
+				kept.append_array(b.slice(i, i + 16))
+		if kept.size() != b.size():
+			buffers[key] = kept
+
+
+static func _place_resources(coord: Vector2i, origin: Vector3, gen: WorldGen, flora: FloraLibrary, removed: Dictionary, covered := []) -> Array[Dictionary]:
 	var out: Array[Dictionary] = []
 	var rng := RandomNumberGenerator.new()
 	rng.seed = hash([Game.world_seed, coord.x, coord.y, "res"])
@@ -206,7 +229,7 @@ static func _place_resources(coord: Vector2i, origin: Vector3, gen: WorldGen, fl
 		var id := "%d_%d_%d" % [coord.x, coord.y, counter[0]]
 		counter[0] += 1
 		# Nothing grows over a cave opening or inside a tunnel (the draws above still happen).
-		if removed.has(id) or Caves.void_distance(gen.caves, pos) < 1.0:
+		if removed.has(id) or Caves.void_distance(gen.caves, pos) < 1.0 or (not covered.is_empty() and _is_covered(covered, pos.x, pos.z)):
 			return
 		out.append({
 			"id": id,

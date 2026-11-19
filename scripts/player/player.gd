@@ -732,8 +732,10 @@ func _update_placement() -> void:
 		if ray.is_colliding() and ray.get_collider().has_meta("structure") and ray.get_collision_normal().y > 0.7 \
 				and ray.get_collision_point().distance_to(from) <= REACH + 2.0:
 			var top := ray.get_collision_point()
-			if not GameActions.floor_under(top).is_empty():
+			var under := GameActions.floor_under(top)
+			if not under.is_empty():
 				pos = top
+				pos.y = float(under.pos[1]) + GameActions.FLOOR_TOP   # exactly on its top, not in it
 	if Input.is_action_just_pressed("rotate_piece"):
 		_place_turns = (_place_turns + 1) % 4
 	var yaw := rotation.y + PI + _place_turns * PI * 0.5

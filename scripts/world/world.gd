@@ -14,12 +14,14 @@ var view_radius := 6
 
 var _chunks := {}     # Vector2i -> TerrainChunk
 var _jobs := {}       # Vector2i -> {task, job}
+var _floors_seen := {}   # Rect2 -> true: the ground floors last seen (see _on_structures_changed)
 var _dirty := {}      # chunk coords whose ground changed and must be rebuilt
 var _water: MeshInstance3D
 
 
 func _ready() -> void:
 	Game.terrain_changed.connect(_on_terrain_changed)
+	Game.structures_changed.connect(_on_structures_changed)
 	view_radius = Settings.view_radius()
 	_build_water()
 	Game.assets_rebuilt.connect(func() -> void:
@@ -151,6 +153,7 @@ func _start_job(c: Vector2i, tier: int) -> void:
 		"flora": Game.flora,
 		"removed": _removed_snapshot(),
 		"grass_density": Settings.grass_density(),
+		"covered": _covered_in(c),
 	}
 	var task := WorkerThreadPool.add_task(ChunkGenerator.generate.bind(job), false, "chunk")
 	_jobs[c] = {"task": task, "job": job}
@@ -192,6 +195,51 @@ func _collect_jobs() -> void:
 		_chunks[c] = chunk
 		add_child(chunk)
 		applied += 1
+
+
+## The footprints (world xz) of floors at ground level over chunk c: nothing grows under them.
+func _covered_in(c: Vector2i) -> Array:
+	var out: Array = []
+	var size := float(Game.CHUNK_SIZE)
+	var area := Rect2(c.x * size - 3.0, c.y * size - 3.0, size + 6.0, size + 6.0)
+	for r: Rect2 in _floor_rects():
+		if area.intersects(r):
+			out.append(r)
+	return out
+
+
+func _floor_rects() -> Array:
+	var out: Array = []
+	var h := GameActions.CELL * 0.5 + 0.1
+	for id: String in Game.structures:
+		var st: Dictionary = Game.structures[id]
+		if st.kind in GameActions.FLOOR_KINDS and int(st.get("level", 0)) == 0:
+			var p: Array = st.pos
+			out.append(Rect2(float(p[0]) - h, float(p[2]) - h, h * 2.0, h * 2.0))
+	return out
+
+
+## A ground floor was laid or taken up: the chunks under it are built again (grass under it goes, or comes back).
+func _on_structures_changed() -> void:
+	var now := {}
+	for r: Rect2 in _floor_rects():
+		now[r] = true
+	var touched := {}
+	for r: Rect2 in now:
+		if not _floors_seen.has(r):
+			touched[r] = true
+	for r: Rect2 in _floors_seen:
+		if not now.has(r):
+			touched[r] = true
+	_floors_seen = now
+	var size := float(Game.CHUNK_SIZE)
+	for r: Rect2 in touched:
+		for cz in range(floori(r.position.y / size), floori(r.end.y / size) + 1):
+			for cx in range(floori(r.position.x / size), floori(r.end.x / size) + 1):
+				var c := Vector2i(cx, cz)
+				_dirty[c] = true
+				if _jobs.has(c):
+					_jobs[c].job.stale = true
 
 
 ## Shovel work changed these cells: mark the chunks around them for rebuilding. Chunks being

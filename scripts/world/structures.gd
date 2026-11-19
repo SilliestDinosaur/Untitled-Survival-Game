@@ -181,6 +181,11 @@ func _make(st: Dictionary) -> Node3D:
 	var root := Node3D.new()
 	var pos: Array = st.pos
 	root.position = Vector3(pos[0], pos[1], pos[2])
+	# Things standing on a floor stand on its top (older saves put them on its collider, a little lower).
+	if not GameActions.is_building(st.kind) or GameActions.is_decor(st.kind):
+		var under := GameActions.floor_under(root.position)
+		if not under.is_empty():
+			root.position.y = float(under.pos[1]) + GameActions.FLOOR_TOP
 	root.rotation.y = float(st.get("yaw", 0.0))
 	var ends := StructureModels.wall_ends(st, _corners) if st.kind in GameActions.EDGE_KINDS else Vector2.ZERO
 	root.set_meta("ends", ends)
@@ -292,7 +297,8 @@ func _add_piece_colliders(body: StaticBody3D, kind: String) -> CollisionShape3D:
 	var panel: CollisionShape3D = null
 	match shape:
 		"floor":
-			_box_collider(body, Vector3(GameActions.CELL, 0.5, GameActions.CELL), Vector3.ZERO)
+			# Its top is the floor's drawn walking surface (it was 9 cm under it: feet and placed things sank in).
+			_box_collider(body, Vector3(GameActions.CELL, 0.5, GameActions.CELL), Vector3(0, GameActions.FLOOR_TOP - 0.25, 0))
 		"roof":
 			_box_collider(body, Vector3(GameActions.CELL, 0.3, GameActions.CELL), Vector3.ZERO)
 		"half":
