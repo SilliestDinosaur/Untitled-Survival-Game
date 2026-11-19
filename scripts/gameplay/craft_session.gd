@@ -217,16 +217,15 @@ func begin(p: Node, r: Dictionary, times: int) -> void:
 	_overlay = CraftOverlay.new()
 	_overlay.session = self
 	_layer.add_child(_overlay)
-	_build_props()
-	_start_item()
-	if mode == Mode.KNAP:
-		_busy = false   # by hand: you're already looking at it
-		return
+	# The minigame's own camera (knapping too: it looks down at the stone in your hands), made first so the pieces
+	# held in front of it can hang from it.
 	_cam = Camera3D.new()
 	add_child(_cam)
 	_cam.global_transform = player.camera.global_transform
 	_cam.fov = player.camera.fov
 	_cam.current = true
+	_build_props()
+	_start_item()
 	_go_to_view(func() -> void: _busy = false)
 
 
@@ -253,25 +252,47 @@ func _start_item() -> void:
 
 # --- Views ----------------------------------------------------------------------------------
 
-## Where the camera looks from and at for a view, as a global transform.
+## Field of view at a station: narrower than walking about, so the work fills a medium shot (the station stays in
+## view around it) without the camera crowding in.
+const STATION_FOV := 50.0
+## Knapping by hand: the view drops a little and tips down to the stone held low in front of you.
+const HAND_DROP := 0.12
+const HAND_PITCH := -0.62
+
+
+## Where the camera looks from and at for a view, as a global transform. Each one is aimed at the middle of the work.
 func _view(key: String) -> Transform3D:
 	var from := Vector3.ZERO
 	var at := Vector3.ZERO
 	match key:
-		"fire":
+		"hand":
+			var pc: Transform3D = player.camera.global_transform
+			var fwd := -pc.basis.z
+			var yaw := atan2(-fwd.x, -fwd.z)
+			return Transform3D(Basis(Vector3.UP, yaw) * Basis(Vector3.RIGHT, HAND_PITCH), pc.origin - Vector3(0, HAND_DROP, 0))
+		"fire":   # the spit and the fire under it
 			var c: Vector3 = _station.pos
-			return _look(c + _side * 1.35 + Vector3(0, 1.2, 0), c + Vector3(0, 0.66, 0))
+			return _look(c + _side * 1.45 + Vector3(0, 1.25, 0), c + Vector3(0, 0.7, 0))
 		"mouth":   # over the hearth's fire, from the front
-			from = Vector3(0.3, 1.65, -1.3)
-			at = Vector3(0.0, 0.82, -0.05)
-		"anvil":
-			from = Vector3(1.3, 1.4, -1.05)
-			at = Vector3(0.95, 0.67, -0.2)
-		"bench":
+			from = Vector3(0.28, 1.7, -1.35)
+			at = Vector3(0.0, 0.86, -0.05)
+		"anvil":   # the anvil's face, with the stump and the hearth's corner around it
+			from = Vector3(1.38, 1.42, -1.12)
+			at = Vector3(0.93, 0.7, -0.2)
+		"bench":   # the piece on the bench top, the bench around it
 			var s := _bench_side()
-			from = Vector3(0.0, 1.62, s * 1.0)
-			at = Vector3(0.0, 0.84, s * 0.05)
+			from = Vector3(0.06, 1.62, s * 1.08)
+			at = Vector3(0.06, 0.87, s * 0.07)
 	return _look(_xf * from, _xf * at)
+
+
+func _view_fov(key: String) -> float:
+	return player.camera.fov if key == "hand" else STATION_FOV
+
+
+## What hand-held pieces hang from: the minigame's camera (or the player's, before it exists).
+func _holder() -> Node3D:
+	return _cam if _cam else player.camera
 
 
 static func _look(from: Vector3, at: Vector3) -> Transform3D:
@@ -287,18 +308,22 @@ func _bench_side() -> float:
 ## Glide to the current step's view (if it's a different one), then carry on.
 func _go_to_view(then: Callable) -> void:
 	var key := String(cur().get("view", ""))
-	if _cam == null or key == "hand" or key == _view_key:
+	if _cam == null or key == _view_key:
 		_view_key = key
 		then.call()
 		return
 	_view_key = key
-	_glide(_view(key), then)
+	_glide(_view(key), then, _view_fov(key))
 
 
-func _glide(to: Transform3D, then: Callable) -> void:
+func _glide(to: Transform3D, then: Callable, fov := -1.0) -> void:
 	var from := _cam.global_transform
+	var fov_from := _cam.fov
+	var fov_to := fov if fov > 0.0 else fov_from
 	var tw := create_tween()
-	tw.tween_method(func(w: float) -> void: _cam.global_transform = from.interpolate_with(to, w), 0.0, 1.0, 0.55) \
+	tw.tween_method(func(w: float) -> void:
+		_cam.global_transform = from.interpolate_with(to, w)
+		_cam.fov = lerpf(fov_from, fov_to, w), 0.0, 1.0, 0.55) \
 		.set_trans(Tween.TRANS_SINE).set_ease(Tween.EASE_IN_OUT)
 	tw.tween_callback(then)
 
@@ -449,14 +474,14 @@ func _refresh() -> void:
 		_piece.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
 		_piece.material_override = null
 		if mode == Mode.KNAP:
-			player.camera.add_child(_piece)
+			_holder().add_child(_piece)
 		else:
 			add_child(_piece)
 	if not _part:
 		_part = MeshInstance3D.new()
 		_part.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
 		if mode == Mode.KNAP:
-			player.camera.add_child(_part)
+			_holder().add_child(_part)
 		else:
 			add_child(_part)
 	_part.visible = false
@@ -526,10 +551,10 @@ func _tool_place(where: String) -> Transform3D:
 	var head := _head_y()
 	match where:
 		"hand":
-			var sc := 1.1 if step_id() == "knap" else 0.5
+			var sc := 1.2 if step_id() == "knap" else 0.55
 			var b := (Basis(Vector3.FORWARD, -0.35) * Basis(Vector3.RIGHT, 0.25)).scaled(Vector3.ONE * sc)
-			# The head sits a little below the middle of the view.
-			return Transform3D(b, Vector3(0.0, -0.1, -0.45) - b * Vector3(0, head, 0))
+			# The head sits in the middle of the view (the view looks down at your hands).
+			return Transform3D(b, Vector3(0.0, -0.03, -0.42) - b * Vector3(0, head, 0))
 		"bench":
 			return _global_to_local(_xf * Transform3D(_lying(), Vector3(head - 0.12, 0.875, _bench_side() * 0.08)))
 		"coals":
@@ -722,7 +747,7 @@ func _setup_striker() -> void:
 	_striker_pivot.add_child(mi)
 	if mode == Mode.KNAP:
 		# The striking rock in your other hand, off to the right.
-		player.camera.add_child(_striker_pivot)
+		_holder().add_child(_striker_pivot)
 		_striker_pivot.position = Vector3(0.17, -0.16, -0.4)
 		mi.scale = Vector3.ONE * 0.55
 		_striker_pivot.basis = Basis(Vector3.FORWARD, 0.6)
@@ -959,7 +984,7 @@ func _show_strike(good: bool) -> void:
 	if _striker_pivot and mode == Mode.KNAP:
 		# The rock knocks against the edge of the stone and comes back.
 		var rest := _striker_pivot.position
-		var hit_at: Vector3 = player.camera.to_local(at) + Vector3(0.05, 0.0, 0.0)
+		var hit_at: Vector3 = _holder().to_local(at) + Vector3(0.05, 0.0, 0.0)
 		var tw := create_tween()
 		tw.tween_property(_striker_pivot, "position", hit_at, 0.07).set_trans(Tween.TRANS_QUAD).set_ease(Tween.EASE_IN)
 		tw.tween_property(_striker_pivot, "position", rest, 0.18).set_trans(Tween.TRANS_SINE)
@@ -979,7 +1004,7 @@ func _show_strike(good: bool) -> void:
 				Audio.play_3d("thud", at, -4.0, 1.2)
 		Mode.KNAP:
 			Audio.play("clink", -6.0, randf_range(1.3, 1.5) if good else 1.0)
-			Effects.chips(player.camera, at, Color(0.55, 0.56, 0.6), 6 if good else 2, 0.015, 1.2)   # flakes
+			Effects.chips(_holder(), at, Color(0.55, 0.56, 0.6), 6 if good else 2, 0.015, 1.2)   # flakes
 
 
 ## On to the next step (the view moves if it needs to), or the item's done.
@@ -1090,7 +1115,7 @@ func stop(at_once := false) -> void:
 		ended.emit()
 		queue_free()
 	if _cam and not at_once:
-		_glide(player.camera.global_transform, finish)
+		_glide(player.camera.global_transform, finish, player.camera.fov)
 	else:
 		finish.call()
 
