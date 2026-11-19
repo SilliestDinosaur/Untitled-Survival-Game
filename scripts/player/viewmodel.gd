@@ -7,6 +7,10 @@ signal strike   ## the moment a swing connects
 signal grab     ## the moment an Interact reach arrives
 
 const REST := Vector3(0.25, -0.24, -0.42)
+## How long tools sit in the hand: a slight lean in toward the middle of the view, and barely tipped forward,
+## so they stand close to upright.
+const TOOL_LEAN := 0.22
+const TOOL_TIP := -0.1
 
 ## How big each long tool is in the hand (1.0 is the model's real size: a hatchet is 0.5 m, a spear 1.3 m).
 const HELD_SCALE := {"hatchet": 0.62, "pickaxe": 0.62, "hammer": 0.62, "knife": 0.9, "spear": 0.6, "plan": 0.6}   ## (the torch stays full size: its flame is a child of the model)
@@ -56,18 +60,18 @@ func hold(item_id: String) -> void:
 	# A head's blade runs along the model's -Z, so it's turned a quarter turn to put the blade's face toward you.
 	if _held_type == "pickaxe":
 		# The arms point away and the broad face turns a little toward you, so the blade reads as wide.
-		_pose_tool(Vector3(0.06, -0.08, 0.0), 0.5, 0.7, -0.3)
+		_pose_tool(Vector3(0.05, -0.1, 0.0), TOOL_LEAN, 0.7, TOOL_TIP)
 	elif _held_type in ["hatchet", "hammer"]:
 		# The head points away from you, as a Minecraft tool does, and tips up a little.
-		_pose_tool(Vector3(0.06, -0.08, 0.0), 0.5, 0.0, -0.3)
+		_pose_tool(Vector3(0.05, -0.1, 0.0), TOOL_LEAN, 0.0, TOOL_TIP)
 	elif _held_type in ["knife", "torch", "plan"]:
 		# Turned so you see the face of the head, not just its edge.
-		_item.position = Vector3(0, -0.06, 0)
-		_item.rotation = Vector3(-0.15, 0.9, 0.3)
+		_item.position = Vector3(0, -0.07, 0)
+		_item.rotation = Vector3(-0.05, 0.9, 0.12)
 	elif _held_type == "spear":
 		# Upright and leaning left, so the head stays in view.
-		_item.position = Vector3(0.06, -0.2, 0.05)
-		_item.rotation = Vector3(-0.2, 0.3, 0.55)
+		_item.position = Vector3(0.05, -0.22, 0.05)
+		_item.rotation = Vector3(-0.08, 0.3, 0.3)
 	else:
 		_item.position = Vector3(0, 0.03, 0)
 		_item.rotation = Vector3(0.2, 0.5, 0.0)
