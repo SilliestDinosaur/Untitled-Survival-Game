@@ -113,6 +113,7 @@ func begin(p: Node, r: Dictionary, times: int) -> void:
 	player.crafting = self
 	player.viewmodel.visible = false
 	player.stats.damaged.connect(_on_hurt)
+	player.stats.died.connect(_on_died)
 	_layer = CanvasLayer.new()
 	_layer.layer = 3
 	add_child(_layer)
@@ -602,16 +603,24 @@ func _on_hurt(_amount: float) -> void:
 	stop()
 
 
-## Leave the station: the view glides back to your eyes and you're free to move.
-func stop() -> void:
+func _on_died() -> void:
+	stop(true)
+
+
+## Leave the station: the view glides back to your eyes and you're free to move. `at_once` skips the glide (dying,
+## or leaving the world, when the camera is about to be taken over anyway).
+func stop(at_once := false) -> void:
 	if _closing:
 		return
 	_closing = true
 	if player.stats.damaged.is_connected(_on_hurt):
 		player.stats.damaged.disconnect(_on_hurt)
+	if player.stats.died.is_connected(_on_died):
+		player.stats.died.disconnect(_on_died)
 	_layer.visible = false
 	var finish := func() -> void:
-		player.camera.current = true
+		if player.active:
+			player.camera.current = true
 		player.crafting = null
 		player.viewmodel.visible = true
 		if is_instance_valid(_work):
@@ -620,7 +629,7 @@ func stop() -> void:
 			_striker_pivot.queue_free()
 		ended.emit()
 		queue_free()
-	if _cam:
+	if _cam and not at_once:
 		_glide(player.camera.global_transform, finish)
 	else:
 		finish.call()

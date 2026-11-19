@@ -16,6 +16,8 @@ var _last_us := 0
 var _placed := 0
 var _toggled := 0
 var _teleports := 0
+var _reload_frame := false
+var _reload_ms: Array[float] = []
 var _roundtrips := 0
 var _max_chunks := 0
 var _fails: Array[String] = []
@@ -44,7 +46,12 @@ func _initialize() -> void:
 func _process(_d: float) -> bool:
 	_f += 1
 	var now := Time.get_ticks_usec()
-	if _last_us > 0 and _state == "play":
+	if _last_us > 0 and _state == "play" and _reload_frame:
+		# A snapshot round trip regenerates the world (what a guest's join or a save's load does behind the
+		# loading screen): timed on its own, not as a play frame.
+		_reload_ms.append((now - _last_us) / 1000.0)
+		_reload_frame = false
+	elif _last_us > 0 and _state == "play":
 		_frame_ms.append((now - _last_us) / 1000.0)
 		var built: int = _game.flora.meshes.size() if _game.flora else 0
 		_frame_builds.append(built - _last_built)
@@ -96,7 +103,9 @@ func _tick() -> void:
 	if _f % 500 == 250 and OS.get_environment("ROUNDTRIP") != "0":
 		var snap: Dictionary = _game.snapshot()
 		_game.apply_snapshot(snap)
+		_game.net_client = false   # apply_snapshot is the guest's path; this run is still the host
 		_roundtrips += 1
+		_reload_frame = true
 
 
 func _pick_kind() -> String:
@@ -129,15 +138,41 @@ func _try_place(player: CharacterBody3D, inv, kind: String) -> bool:
 		if inv.slots[i].get("id", "") == kind:
 			slot = i
 			break
-	if slot < 0:
+	if slot < 0 and not _GA.is_building(kind):
 		return false
 	var fwd := -player.global_transform.basis.z
 	var aim: Vector3 = player.global_position + fwd * 3.0
 	var snap: Dictionary = _GA.snap_piece(kind, aim)
-	var result: Dictionary = _GA.place_structure(1, slot, snap.pos, snap.yaw)
+	var result: Dictionary
+	if _GA.is_building(kind):
+		# Building pieces: lay the blueprint with the plan, then build it up with the hammer, as a player does.
+		if inv.count("building_plan") < 1:
+			inv.add("building_plan", 1, true)
+		result = _GA.place_blueprint(1, kind, snap.pos, snap.yaw)
+		if result.get("ok", false):
+			_build(inv, String(result.id))
+	else:
+		result = _GA.place_structure(1, slot, snap.pos, snap.yaw)
 	var why: String = result.get("reason", "") if not result.get("ok", false) else "placed"
 	_reasons[why] = int(_reasons.get(why, 0)) + 1
 	return result.get("ok", false)
+
+
+func _build(inv, id: String) -> void:
+	var st: Dictionary = _game.structures[id]
+	for item: String in _GA.PIECE_COSTS[st.kind]:
+		inv.add(item, int(_GA.PIECE_COSTS[st.kind][item]), true)
+	if inv.count("hammer") < 1:
+		inv.add("hammer", 1, true)
+	var keep: int = inv.selected
+	for i in inv.slots.size():
+		if inv.slots[i].get("id", "") == "hammer":
+			inv.select(i)
+	for i in 20:
+		if not _game.structures.has(id) or not _GA.is_blueprint(_game.structures[id]):
+			break
+		_GA.hit_structure(1, id)
+	inv.select(keep)
 
 
 func _finish() -> bool:
@@ -154,6 +189,8 @@ func _finish() -> bool:
 	var p99: float = times[int(n * 0.99)] if n > 0 else 0.0
 	var worst: float = times[n - 1] if n > 0 else 0.0
 	print("SOAK frames %d  mean %.2f ms  p99 %.2f ms  worst %.2f ms  over 50 ms: %d" % [n, mean, p99, worst, over50])
+	if not _reload_ms.is_empty():
+		print("SOAK snapshot reloads (world regenerated, like a load): %s ms" % ", ".join(_reload_ms.map(func(t: float) -> String: return "%.0f" % t)))
 	print("SOAK teleports %d  placed %d  door toggles %d  snapshot round trips %d  max chunks %d" % [_teleports, _placed, _toggled, _roundtrips, _max_chunks])
 	for i in _frame_ms.size():
 		if _frame_ms[i] > 50.0:

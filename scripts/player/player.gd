@@ -161,6 +161,8 @@ func craft(r: Dictionary, times: int, done: Callable) -> void:
 
 
 func set_active(on: bool) -> void:
+	if not on and crafting:
+		crafting.stop(true)   # leaving the world: drop the crafting view straight away
 	active = on
 	looking_at = {}
 	set_physics_process(on)

@@ -4,6 +4,10 @@ extends Node3D
 ## the cave plan put them. The rock itself comes from VoxelTerrain, so these simply stand in the
 ## real caves. Built once per world.
 
+## Cave things are only seen from inside the caves: past this they aren't drawn (from the surface they were drawn
+## through the ground).
+const SEEN_WITHIN := 50.0
+
 var _lights: Array = []
 var _time := 0.0
 
@@ -38,6 +42,7 @@ func _build_chests(chests: Array) -> void:
 		kit.add_primitive(_cube(Vector3(0.12, 0.2, 0.06)), Transform3D(Basis(), Vector3(0, 0.45, 0.37)), Color(0.8, 0.66, 0.3), 0.0, 0.0)
 		var mi := MeshInstance3D.new()
 		mi.mesh = kit.commit(ArtStyle.painted({"brush_strength": 0.2, "rim_amount": 0.3}))
+		mi.visibility_range_end = SEEN_WITHIN
 		body.add_child(mi)
 		add_child(body)
 
@@ -54,6 +59,7 @@ func _build_glowcaps(glow: Array, rng: RandomNumberGenerator) -> void:
 		mi.position = g
 		mi.rotation.y = rng.randf() * TAU
 		mi.scale = Vector3.ONE * rng.randf_range(0.8, 1.3)
+		mi.visibility_range_end = SEEN_WITHIN
 		add_child(mi)
 		if k % 10 == 0 and _lights.size() < 12:   # a few of them light the place up
 			var light := OmniLight3D.new()
@@ -62,6 +68,9 @@ func _build_glowcaps(glow: Array, rng: RandomNumberGenerator) -> void:
 			light.omni_range = 7.0
 			light.omni_attenuation = 1.5
 			light.position = g + Vector3(0, 0.5, 0)
+			light.distance_fade_enabled = true   # off the lighting work when you're nowhere near
+			light.distance_fade_begin = SEEN_WITHIN - 10.0
+			light.distance_fade_length = 10.0
 			add_child(light)
 			_lights.append(light)
 		k += 1

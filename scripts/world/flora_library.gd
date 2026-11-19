@@ -223,8 +223,9 @@ static func category_of(kind: String) -> String:
 	return KINDS[kind].category
 
 
+## "pine_1" / "pine_1_lod" / "pine_1_shadow" (a mesh key or the node drawn from it) -> "pine".
 static func kind_of_key(key: String) -> String:
-	var k := key.trim_suffix("_lod")
+	var k := key.trim_suffix("_shadow").trim_suffix("_lod")
 	return k.substr(0, k.rfind("_"))
 
 

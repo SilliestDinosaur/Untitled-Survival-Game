@@ -7,6 +7,7 @@ extends RefCounted
 
 
 static var _ico_cache := {}
+const FAR_MIN_BRANCH := 0.09   ## far versions skip branch tubes thinner than this (m)
 
 
 # --- Triangles ----------------------------------------------------------------------------------
@@ -75,6 +76,16 @@ static func _midpoint(v: Array, cache: Dictionary, a: int, b: int) -> int:
 
 ## Subdivision level for blobs: finer when the detail is high. The far twins are built at low detail, which gets
 ## the plain 20-face icosahedron; full trees get one subdivision.
+## Far versions (the low-poly twins drawn past the nearest chunks and used for shadows): round sections need few
+## sides at that distance, and leaf cards are too small to see.
+static func _far() -> bool:
+	return MeshKit.detail < 0.4
+
+
+static func _sides(n: int) -> int:
+	return maxi(4, roundi(n * 0.6)) if _far() else n
+
+
 static func _level() -> int:
 	if MeshKit.detail >= 0.7:
 		return 2
@@ -131,7 +142,7 @@ static func blob(kit: MeshKit, rng: RandomNumberGenerator, center: Vector3, radi
 		var outward := centroid - center
 		_tri(kit, a, b, c, nrm[f[0]], nrm[f[1]], nrm[f[2]], cols[f[0]], cols[f[1]], cols[f[2]])
 		# Leaves on some faces, pointing out of the surface. Fewer at lower detail (leaf cards are most of a crown's triangles).
-		if rng.randf() < leaf_density * MeshKit.detail:
+		if rng.randf() < leaf_density * MeshKit.detail and not _far():
 			var fn := (c - a).cross(b - a).normalized()
 			if fn.dot(outward) < 0.0:
 				fn = -fn
@@ -140,7 +151,7 @@ static func blob(kit: MeshKit, rng: RandomNumberGenerator, center: Vector3, radi
 
 ## A leaf card: a pointed quad, double-sided so it reads from above and below.
 static func leaf(kit: MeshKit, rng: RandomNumberGenerator, at: Vector3, n: Vector3, size: float, color: Color) -> void:
-	if not MeshKit.leaves:
+	if not MeshKit.leaves or _far():
 		return
 	var helper := Vector3.UP if absf(n.y) < 0.9 else Vector3.RIGHT
 	var t := n.cross(helper).normalized().rotated(n, rng.randf() * TAU)
@@ -177,7 +188,11 @@ static func branch(kit: MeshKit, rng: RandomNumberGenerator, start: Vector3, dir
 		var t := float(i) / seg
 		path.append(start + dir * length * t + bend * t * t)
 		radii.append(radius * lerpf(1.0, 0.3, t))
-	kit.loft(path, radii, sides, bark, bark_fn(bark, rng.randf() * 10.0), Callable(), true, true, 0.035)
+	var phase := rng.randf() * 10.0
+	# Far away the thin twigs are a pixel wide or inside the canopy: skip their tubes, but still grow the tree the
+	# same way, so the canopy blobs sit where they do up close.
+	if not (_far() and radius < FAR_MIN_BRANCH):
+		kit.loft(path, radii, _sides(sides), bark, bark_fn(bark, phase), Callable(), true, true, 0.035)
 	var end: Vector3 = path[seg]
 	if depth <= 0 or radius < 0.035:
 		tips.append(end)
@@ -201,7 +216,7 @@ static func trunk(kit: MeshKit, rng: RandomNumberGenerator, base: Vector3, heigh
 		path.append(base + Vector3(0, height * t, 0) + lean * t * t)
 		var foot := 1.0 + flare * maxf(0.0, 1.0 - t * 4.0)   # buttressed foot
 		radii.append(radius * (1.0 - 0.28 * t) * foot)
-	kit.loft(path, radii, sides, bark, bark_fn(bark, rng.randf() * 10.0), Callable(), true, false, 0.05)
+	kit.loft(path, radii, _sides(sides), bark, bark_fn(bark, rng.randf() * 10.0), Callable(), true, false, 0.05)
 	return path[seg]
 
 
