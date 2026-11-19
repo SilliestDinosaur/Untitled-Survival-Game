@@ -296,6 +296,24 @@ func _piece(info: Dictionary, c: Vector2, s: float) -> void:
 			for i in steps:   # each tread's lighter nosing
 				draw_line(Vector2(x0 + i * w, y0 - (i + 1) * hh), Vector2(x0 + (i + 1) * w, y0 - (i + 1) * hh), base.lightened(0.25), 2.0)
 			draw_polyline(pts + PackedVector2Array([pts[0]]), line, 1.2)
+		"fence":   # posts and two rails
+			for px in [-0.32, 0.0, 0.32]:
+				draw_rect(Rect2(c + Vector2(px * s - s * 0.05, -s * 0.22), Vector2(s * 0.1, s * 0.5)), base)
+				draw_rect(Rect2(c + Vector2(px * s - s * 0.06, -s * 0.25), Vector2(s * 0.12, s * 0.05)), base.lightened(0.15))
+			for ry in [-0.08, 0.14]:
+				draw_rect(Rect2(c + Vector2(-s * 0.34, ry * s), Vector2(s * 0.68, s * 0.06)), Color(0.6, 0.45, 0.3))
+		"arch":   # a wall with a round-topped opening and its voussoirs
+			draw_rect(Rect2(c + Vector2(-s * 0.34, -s * 0.36), Vector2(s * 0.68, s * 0.72)), base)
+			var top := c + Vector2(0, -s * 0.04)
+			draw_rect(Rect2(c + Vector2(-s * 0.15, -s * 0.04), Vector2(s * 0.3, s * 0.4)), Color(0.2, 0.14, 0.1))
+			draw_circle(top, s * 0.15, Color(0.2, 0.14, 0.1))
+			draw_arc(top, s * 0.19, PI, TAU, 14, base.lightened(0.2), s * 0.07)
+		"shutters":   # a window with blue-green shutters folded open
+			draw_rect(Rect2(c + Vector2(-s * 0.34, -s * 0.36), Vector2(s * 0.68, s * 0.72)), base)
+			draw_rect(Rect2(c + Vector2(-s * 0.13, -s * 0.16), Vector2(s * 0.26, s * 0.32)), Color(0.72, 0.84, 0.88))
+			for sx in [-1.0, 1.0]:
+				draw_rect(Rect2(c + Vector2(sx * s * 0.135 - (s * 0.13 if sx < 0 else 0.0), -s * 0.18), Vector2(s * 0.13, s * 0.36)), Color(0.36, 0.5, 0.52))
+			draw_rect(Rect2(c + Vector2(-s * 0.18, s * 0.17), Vector2(s * 0.36, s * 0.06)), Color(0.86, 0.36, 0.34))
 		"roof":
 			for i in 3:
 				draw_colored_polygon(PackedVector2Array([c + Vector2(-s * 0.36, -s * 0.12 + i * s * 0.2), c + Vector2(s * 0.36, -s * 0.12 + i * s * 0.2), c + Vector2(s * 0.28, s * 0.06 + i * s * 0.2), c + Vector2(-s * 0.28, s * 0.06 + i * s * 0.2)]), base.lightened(i * 0.06))

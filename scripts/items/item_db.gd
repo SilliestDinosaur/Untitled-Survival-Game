@@ -176,10 +176,29 @@ static var fruit_tree := "oak"   ## which tree kind bears fruit on this world
 
 # --- Building the per-world registry ------------------------------------------------
 
+## Names and descriptions for building pieces that aren't listed above by hand (from GameActions.PIECES).
+const PIECE_MAT_NAMES := {"wood": "Plank", "stone": "Stone", "brick": "Brick"}
+const PIECE_SHAPES := {
+	"fence": ["Fence", "A rail fence between posts. Fences a floor's edge; it doesn't hold a roof up."],
+	"arch": ["Archway", "A wall with a tall arched opening to walk through. Holds a roof up."],
+	"shutters": ["Shuttered Window", "A wall with a glazed window and painted shutters folded open beside it."],
+}
+
+
+static func _piece_items() -> void:
+	for kind: String in GameActions.PIECES:
+		if _items.has(kind):
+			continue
+		var spec: Dictionary = GameActions.PIECES[kind]
+		var shape: Array = PIECE_SHAPES.get(spec.shape, [String(spec.shape).capitalize(), ""])
+		_items[kind] = {"name": "%s %s" % [PIECE_MAT_NAMES.get(spec.mat, ""), shape[0]], "kind": "piece", "stack": 10, "icon": "piece",
+			"shape": spec.shape, "mat": spec.mat, "station": kind, "desc": shape[1]}
+
 static func build(seed_value: int, pal: WorldPalette) -> void:
 	var rng := RandomNumberGenerator.new()
 	rng.seed = seed_value * 613 + 29
 	_items = BASE_ITEMS.duplicate(true)
+	_piece_items()
 	_tiers = []
 
 	# Tiers 0 (rock) and 1 (stone) are fixed; 2-4 are this world's own materials.

@@ -56,7 +56,10 @@ func _run() -> void:
 	var verbose := OS.get_environment("VERBOSE") != ""
 	var total_bad := 0
 	for id: String in ids:
-		var mesh: ArrayMesh = ItemModels.mesh_for(id, mat)
+		# Building pieces are checked as built (their item's model is only a stand-in).
+		var mesh: ArrayMesh = load("res://scripts/world/structure_models.gd").get_model(id, mat, mat).body \
+			if load("res://scripts/items/item_db.gd").info(id).get("kind", "") == "piece" and load("res://scripts/core/game_actions.gd").PIECES.has(id) \
+			else ItemModels.mesh_for(id, mat)
 		var report := _check(mesh, verbose, id)
 		var bad: int = report.inverted + report.degenerate + report.nan + report.open + report.nonmanifold
 		total_bad += bad

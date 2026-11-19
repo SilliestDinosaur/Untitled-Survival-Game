@@ -282,6 +282,16 @@ func _add_piece_colliders(body: StaticBody3D, kind: String) -> CollisionShape3D:
 			_box_collider(body, Vector3(GameActions.CELL, 0.3, GameActions.CELL), Vector3.ZERO)
 		"half":
 			_box_collider(body, Vector3(GameActions.CELL, 1.0, 0.3), Vector3(0, 0.5, 0))
+		"fence":
+			_box_collider(body, Vector3(GameActions.CELL, 1.1, 0.2), Vector3(0, 0.55, 0))
+		"arch":
+			# Two sides and the crown over the arch: walkable through the opening (its top is round; the crown's
+			# box starts where the opening is still wide enough to walk under).
+			var side_w := h - StructureModels.ARCH_R
+			for s in [-1.0, 1.0]:
+				_box_collider(body, Vector3(side_w, GameActions.WALL_H, 0.3), Vector3(s * (StructureModels.ARCH_R + side_w * 0.5), GameActions.WALL_H * 0.5, 0))
+			var crown := StructureModels.ARCH_SPRING + StructureModels.ARCH_R * 0.75
+			_box_collider(body, Vector3(StructureModels.ARCH_R * 2.0, GameActions.WALL_H - crown, 0.3), Vector3(0, (crown + GameActions.WALL_H) * 0.5, 0))
 		"stairs":
 			var rise := GameActions.STACK_H / GameActions.STAIR_STEPS
 			var run := GameActions.CELL / GameActions.STAIR_STEPS

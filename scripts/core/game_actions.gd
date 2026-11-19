@@ -257,16 +257,28 @@ const PIECES := {
 	"roof": {"shape": "roof", "mat": "brick"},
 	"wood_roof": {"shape": "roof", "mat": "wood"},
 	"stone_roof": {"shape": "roof", "mat": "stone"},
+	"wood_fence": {"shape": "fence", "mat": "wood"},
+	"stone_fence": {"shape": "fence", "mat": "stone"},
+	"brick_fence": {"shape": "fence", "mat": "brick"},
+	"wood_arch": {"shape": "arch", "mat": "wood"},
+	"stone_arch": {"shape": "arch", "mat": "stone"},
+	"brick_arch": {"shape": "arch", "mat": "brick"},
+	"wood_shutters": {"shape": "shutters", "mat": "wood"},
+	"stone_shutters": {"shape": "shutters", "mat": "stone"},
+	"brick_shutters": {"shape": "shutters", "mat": "brick"},
 }
 const FLOOR_KINDS := ["foundation", "wood_floor", "brick_floor"]
 ## Full-height walls, windows, doorways and doors. Roofs need two of these under them.
 const WALL_KINDS := ["wall", "wood_wall", "stone_wall", "window_wall", "wood_window", "stone_window",
-	"doorway", "wood_doorway", "stone_doorway", "brick_door", "wood_door", "stone_door"]
-const HALF_KINDS := ["brick_half", "wood_half", "stone_half"]
+	"doorway", "wood_doorway", "stone_doorway", "brick_door", "wood_door", "stone_door",
+	"wood_arch", "stone_arch", "brick_arch", "wood_shutters", "stone_shutters", "brick_shutters"]
+## Knee-high edge pieces: they fence a floor's edge but don't hold a roof up.
+const HALF_KINDS := ["brick_half", "wood_half", "stone_half", "wood_fence", "stone_fence", "brick_fence"]
 ## Everything that stands on a floor's edge.
 const EDGE_KINDS := ["wall", "wood_wall", "stone_wall", "window_wall", "wood_window", "stone_window",
 	"doorway", "wood_doorway", "stone_doorway", "brick_door", "wood_door", "stone_door",
-	"brick_half", "wood_half", "stone_half"]
+	"brick_half", "wood_half", "stone_half", "wood_fence", "stone_fence", "brick_fence",
+	"wood_arch", "stone_arch", "brick_arch", "wood_shutters", "stone_shutters", "brick_shutters"]
 const DOOR_KINDS := ["brick_door", "wood_door", "stone_door"]
 const STAIR_KINDS := ["brick_stairs", "wood_stairs", "stone_stairs"]
 const COVER_KINDS := ["roof", "wood_roof", "stone_roof"]
@@ -274,7 +286,7 @@ const COVER_KINDS := ["roof", "wood_roof", "stone_roof"]
 ## Building pieces aren't items. The Building Plan lays a free blueprint of any shape in any material; the hammer
 ## builds it a share at a time, taking that share of its cost with each hit, and repairs it the same way.
 const MATERIALS := ["wood", "stone", "brick"]
-const SHAPES := ["floor", "wall", "half", "window", "doorway", "door", "stairs", "roof"]
+const SHAPES := ["floor", "wall", "half", "window", "doorway", "door", "stairs", "roof", "fence", "arch", "shutters"]
 ## Health of a finished piece, by material.
 const MAT_HP := {"wood": 200.0, "stone": 400.0, "brick": 320.0}
 ## Hammer hits to finish a blueprint; a repair hit restores the same share of health.
@@ -292,6 +304,9 @@ const PIECE_COSTS := {
 	"brick_door": {"brick": 3, "plank": 3}, "wood_door": {"plank": 6, "rope": 1}, "stone_door": {"stone": 6, "plank": 2},
 	"brick_stairs": {"brick": 8}, "wood_stairs": {"plank": 8}, "stone_stairs": {"stone": 12},
 	"roof": {"plank": 6}, "wood_roof": {"plank": 8}, "stone_roof": {"stone": 10, "plank": 2},
+	"wood_fence": {"plank": 2}, "stone_fence": {"stone": 3, "plank": 1}, "brick_fence": {"brick": 2, "plank": 1},
+	"wood_arch": {"plank": 4}, "stone_arch": {"stone": 7}, "brick_arch": {"brick": 4},
+	"wood_shutters": {"plank": 6}, "stone_shutters": {"stone": 6, "plank": 3}, "brick_shutters": {"brick": 3, "plank": 3},
 }
 
 

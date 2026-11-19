@@ -9,7 +9,7 @@ const R_PREVIEW := 92.0      ## the preview's radius
 const R_MAT := Vector2(104.0, 150.0)     ## inner ring (materials)
 const R_SHAPE := Vector2(166.0, 268.0)   ## outer ring (shapes)
 const SHAPE_NAMES := {"floor": "Floor", "wall": "Wall", "half": "Half wall", "window": "Window", "doorway": "Doorway",
-	"door": "Door", "stairs": "Stairs", "roof": "Roof"}
+	"door": "Door", "stairs": "Stairs", "roof": "Roof", "fence": "Fence", "arch": "Archway", "shutters": "Shutters"}
 const MAT_NAMES := {"wood": "Wood", "stone": "Stone", "brick": "Brick"}
 const MAT_COLORS := {"wood": Color(0.62, 0.45, 0.29), "stone": Color(0.55, 0.56, 0.6), "brick": Color(0.72, 0.4, 0.3)}
 

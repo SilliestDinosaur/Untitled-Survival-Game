@@ -217,7 +217,123 @@ static func _build_piece(kind: String, ends := Vector2.ZERO) -> Dictionary:
 			_stairs(k, mat)
 		"roof":
 			_roof(k, mat, rng)
+		"fence":
+			_fence(k, mat, rng, x0, x1)
+		"arch":
+			_edge(k, mat, GameActions.WALL_H, _arch_openings(), rng, x0, x1)
+			_arch_ring(k, mat, rng)
+		"shutters":
+			_edge(k, mat, GameActions.WALL_H, [Rect2(-0.55, 1.0, 1.1, 1.0)], rng, x0, x1)
+			glass = MeshKit.new(hash(kind) + 5)
+			_window_fittings(k, glass)
+			_shutters(k, rng)
 	return {"body": k, "door": door, "glass": glass}
+
+
+## A rail fence: posts at the ends and the middle in the piece's material (timber posts, piers of stacked stones,
+## brick piers with a cap), and two timber rails between them.
+static func _fence(k: MeshKit, mat: String, rng: RandomNumberGenerator, x0: float, x1: float) -> void:
+	var col := _mat_colour(mat)
+	var posts := [x0 + 0.12, (x0 + x1) * 0.5, x1 - 0.12]
+	for px: float in posts:
+		match mat:
+			"wood":
+				_board(k, Vector3(0.14, 1.06, 0.14), Transform3D(Basis(), Vector3(px, 0.53, 0.0)), WOOD_DARK, 0.004)
+				k.add_primitive(_box(Vector3(0.18, 0.05, 0.18)), Transform3D(Basis(), Vector3(px, 1.08, 0.0)), WOOD_DARK.darkened(0.1), 0.0, 0.03)
+			"stone":
+				for i in 4:   # rough stones stacked, a little off true
+					var s := col.lightened(rng.randf_range(-0.08, 0.06))
+					var w := rng.randf_range(0.26, 0.32)
+					k.extrude(_rounded_rect(w * 0.5, 0.12, 0.05, 2), Transform3D(Basis(Vector3.UP, rng.randf_range(-0.15, 0.15)), Vector3(px + rng.randf_range(-0.02, 0.02), 0.13 + i * 0.26, 0.0)),
+						0.28, 0.04, s, s.darkened(0.15))
+			_:
+				k.add_primitive(_box(Vector3(0.3, 1.0, 0.3)), Transform3D(Basis(), Vector3(px, 0.5, 0.0)), MORTAR, 0.0, 0.02)
+				for i in 8:   # brick courses round the pier's faces
+					var b := col.lightened(rng.randf_range(-0.07, 0.05))
+					for side in [-1.0, 1.0]:
+						k.extrude(_rounded_rect(0.15, 0.05, 0.02, 2), Transform3D(Basis(), Vector3(px, 0.07 + i * 0.125, side * 0.13)), 0.06, 0.015, b, b.darkened(0.14))
+				k.add_primitive(_box(Vector3(0.38, 0.08, 0.38)), Transform3D(Basis(), Vector3(px, 1.04, 0.0)), col.darkened(0.1), 0.0, 0.03)
+	for i in 2:   # the rails, a little bowed and weathered
+		var ry := 0.42 + i * 0.4
+		for seg in 2:
+			var a: float = posts[seg]
+			var b: float = posts[seg + 1]
+			var rc := WOOD.lightened(rng.randf_range(-0.06, 0.04))
+			_board(k, Vector3(b - a, 0.11, 0.06), Transform3D(Basis(), Vector3((a + b) * 0.5, ry, 0.0)), rc, 0.006)
+
+
+## An archway's opening: the doorway's width, its top rounded by stepped bands (the arch ring over it hides the
+## steps' corners).
+static func _arch_openings() -> Array:
+	var out: Array = [Rect2(-ARCH_R, 0.0, ARCH_R * 2.0, ARCH_SPRING)]
+	var bands := 5
+	for i in bands:
+		var y0 := ARCH_SPRING + i * ARCH_R / bands
+		var y1 := ARCH_SPRING + (i + 1) * ARCH_R / bands
+		var half := sqrt(maxf(ARCH_R * ARCH_R - pow(y1 - ARCH_SPRING, 2.0), 0.0))
+		half = maxf(half, 0.08)
+		out.append(Rect2(-half, y0 - 0.001, half * 2.0, y1 - y0 + 0.002))
+	return out
+
+
+const ARCH_R := 0.72        ## an arch's inner radius (half the opening's width)
+const ARCH_SPRING := 1.9    ## where the arch springs from its sides
+
+
+## The ring of an arch: wedge-shaped voussoirs of stone or brick with a keystone, or for timber a curved frame,
+## through the wall's whole depth.
+static func _arch_ring(k: MeshKit, mat: String, rng: RandomNumberGenerator) -> void:
+	var col := _mat_colour(mat) if mat != "wood" else WOOD_DARK
+	var n := 9 if mat != "wood" else 6
+	var outer := ARCH_R + (0.24 if mat != "wood" else 0.14)
+	for i in n:
+		var a0 := PI * float(i) / n
+		var a1 := PI * float(i + 1) / n
+		var gap := 0.012 if mat != "wood" else 0.004   # (a hairline even in timber: no two segments share an edge)
+		var pts := PackedVector2Array()
+		for a in [a0 + gap, a1 - gap]:
+			pts.append(Vector2(cos(a) * ARCH_R, ARCH_SPRING + sin(a) * ARCH_R))
+		for a in [a1 - gap, a0 + gap]:
+			pts.append(Vector2(cos(a) * outer, ARCH_SPRING + sin(a) * outer))
+		var keystone := mat != "wood" and i == n / 2
+		var c: Color = col.lightened(0.08 if keystone else rng.randf_range(-0.06, 0.05))
+		var thick := 0.36 if keystone else 0.32
+		k.extrude(pts, Transform3D(Basis(), Vector3(0.0, 0.0, 0.06)), thick, 0.02, c, c.darkened(0.15))
+	# The jambs below the spring, framing the sides of the opening.
+	for side in [-1.0, 1.0]:
+		var jc := col.lightened(rng.randf_range(-0.04, 0.04))
+		k.add_primitive(_box(Vector3(0.14, ARCH_SPRING, 0.32)), Transform3D(Basis(), Vector3(side * (ARCH_R + 0.07), ARCH_SPRING * 0.5, 0.06)), jc, 0.0, 0.03)
+
+
+## A shuttered window's shutters: two painted plank shutters folded open against the wall's outer face, each
+## with a Z brace and iron hinges, standing a little proud of the wall.
+static func _shutters(k: MeshKit, rng: RandomNumberGenerator) -> void:
+	var paint := SHUTTER_PAINT
+	var lo := 1.0
+	var hi := 2.0
+	var w := 0.56
+	for side in [-1.0, 1.0]:
+		var hinge := Vector3(side * 0.62, 0.0, 0.25)
+		var b := Basis(Vector3.UP, side * 0.22)   # opened out a touch past flat
+		for i in 4:
+			var bx: float = side * (w * (i + 0.5) / 4.0)
+			var pc := paint.lightened(rng.randf_range(-0.05, 0.05))
+			_board(k, Vector3(hi - lo + 0.04, w / 4.0 - 0.012, 0.035), Transform3D(b * Basis(Vector3.BACK, PI * 0.5), hinge + b * Vector3(bx, (lo + hi) * 0.5, 0.0)), pc, 0.004)
+		for y in [lo + 0.14, hi - 0.14]:   # ledges and the brace between them
+			_board(k, Vector3(w - 0.06, 0.08, 0.03), Transform3D(b, hinge + b * Vector3(side * w * 0.5, y, 0.03)), paint.darkened(0.2), 0.0)
+			k.add_primitive(_box(Vector3(0.16, 0.035, 0.02)), Transform3D(b, hinge + b * Vector3(side * 0.08, y, 0.05)), IRON, 0.0, 0.02)
+		var brace := Basis(Vector3.BACK, side * atan2(hi - lo - 0.28, w - 0.1))
+		_board(k, Vector3(sqrt(pow(w - 0.1, 2.0) + pow(hi - lo - 0.28, 2.0)), 0.07, 0.03), Transform3D(b * brace, hinge + b * Vector3(side * w * 0.5, (lo + hi) * 0.5, 0.03)), paint.darkened(0.2), 0.0)
+	# A little window box of flowers on the sill, for colour.
+	k.add_primitive(_box(Vector3(1.0, 0.12, 0.16)), Transform3D(Basis(), Vector3(0.0, lo - 0.1, 0.3)), WOOD_DARK, 0.0, 0.03)
+	for i in 7:
+		var fx := -0.42 + i * 0.14 + rng.randf_range(-0.02, 0.02)
+		var fc: Color = [Color(0.86, 0.36, 0.34), Color(0.93, 0.78, 0.36), Color(0.82, 0.55, 0.78)][i % 3]
+		k.add_primitive(MeshKit.sphere(0.045, 6, 4), Transform3D(Basis(), Vector3(fx, lo - 0.0, 0.3 + rng.randf_range(-0.03, 0.03))), fc, 0.01, 0.1)
+		k.add_primitive(MeshKit.sphere(0.04, 6, 4), Transform3D(Basis.from_scale(Vector3(1.2, 0.6, 1.2)), Vector3(fx + 0.05, lo - 0.03, 0.3)), Color(0.36, 0.55, 0.3), 0.01, 0.1)
+
+
+const SHUTTER_PAINT := Color(0.36, 0.5, 0.52)   ## a weathered blue-green
 
 
 static func _mat_colour(mat: String) -> Color:
