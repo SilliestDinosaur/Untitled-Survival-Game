@@ -226,7 +226,7 @@ static func build(gen: WorldGen, origin: Vector3, size: float, step: float, segs
 					_quad(indices, faces, verts, normals, cell_vert, [
 						k * ncy * ncx + (j - 1) * ncx + (i - 1), k * ncy * ncx + (j - 1) * ncx + i,
 						k * ncy * ncx + j * ncx + i, k * ncy * ncx + j * ncx + (i - 1)])
-	return _match_borders(_clip_to_chunk(verts, normals, colors, indices, size), gen, plan, origin, size)
+	return _shared(_match_borders(_clip_to_chunk(verts, normals, colors, indices, size), gen, plan, origin, size))
 
 
 ## Keeps only the part of the surface inside the chunk's square (x and z from 0 to size). Each chunk makes faces a
@@ -294,6 +294,34 @@ static func _match_borders(m: Dictionary, gen: WorldGen, plan: Dictionary, origi
 				out_c.append(corner[2])
 				faces.append(corner[0])
 	return {"verts": out_v, "normals": out_n, "colors": out_c, "indices": out_i, "faces": faces}
+
+
+## The same surface with each corner stored once and the triangles indexing them (about a third of the vertices to
+## hand to the renderer, which is done on the main thread). The collider keeps its flat list of faces.
+static func _shared(m: Dictionary) -> Dictionary:
+	var v_in: PackedVector3Array = m.verts
+	var n_in: PackedVector3Array = m.normals
+	var c_in: PackedColorArray = m.colors
+	var out_v := PackedVector3Array()
+	var out_n := PackedVector3Array()
+	var out_c := PackedColorArray()
+	var out_i := PackedInt32Array()
+	out_i.resize(v_in.size())
+	var seen := {}   # position -> index
+	for i in v_in.size():
+		var p := v_in[i]
+		var at: int = seen.get(p, -1)
+		if at >= 0 and out_n[at].dot(n_in[i]) > 0.999:
+			out_i[i] = at
+			continue
+		at = out_v.size()
+		if not seen.has(p):
+			seen[p] = at
+		out_v.append(p)
+		out_n.append(n_in[i])
+		out_c.append(c_in[i])
+		out_i[i] = at
+	return {"verts": out_v, "normals": out_n, "colors": out_c, "indices": out_i, "faces": m.faces}
 
 
 ## Which border a local point is on: 0 = x 0, 1 = x size, 2 = z 0, 3 = z size; -1 for none.

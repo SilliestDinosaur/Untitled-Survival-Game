@@ -6,7 +6,8 @@ signal world_reset
 
 const TIER_DISTANCE := [1, 3]   ## chunks within 1 -> tier 0 (full detail), within 3 -> tier 1, else tier 2
 const MAX_JOBS := 4             ## worker threads busy at once
-const APPLY_PER_FRAME := 2      ## finished chunks turned into nodes per frame
+const APPLY_PER_FRAME := 2      ## finished chunks turned into nodes per frame (at most)
+const APPLY_BUDGET_US := 6000   ## and no more once this much of the frame has gone on them
 
 var focus: Node3D
 var view_radius := 6
@@ -168,8 +169,10 @@ func _removed_snapshot() -> Dictionary:
 
 func _collect_jobs() -> void:
 	var applied := 0
+	var start := Time.get_ticks_usec()
 	for c: Vector2i in _jobs.keys():
-		if applied >= APPLY_PER_FRAME:
+		# A couple a frame, but stop early once the frame's share is used.
+		if applied >= APPLY_PER_FRAME or (applied > 0 and Time.get_ticks_usec() - start > APPLY_BUDGET_US):
 			break
 		var entry: Dictionary = _jobs[c]
 		if not WorkerThreadPool.is_task_completed(entry.task):

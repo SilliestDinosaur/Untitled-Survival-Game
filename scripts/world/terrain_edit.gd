@@ -15,6 +15,19 @@ const RIM := 2.0   ## metres over which levelled ground blends back into the nat
 static var _tree_cache := {}
 
 
+## A loaded chunk's trees, from what its generator already placed (on a worker thread): placing them again here,
+## on the main thread, the first time someone aimed a building into the chunk took tens of milliseconds.
+static func remember_trees(c: Vector2i, resources: Array[Dictionary]) -> void:
+	var key := "%d_%d_%d" % [Game.world_seed, c.x, c.y]
+	if _tree_cache.has(key):
+		return
+	var out := []
+	for r: Dictionary in resources:
+		if FloraLibrary.category_of(r.kind) == "tree":
+			out.append([r.transform.origin, r.id])
+	_tree_cache[key] = out
+
+
 ## Trunk positions in one chunk, gathered trees excluded at query time.
 static func _trees_in_chunk(c: Vector2i) -> Array:
 	var key := "%d_%d_%d" % [Game.world_seed, c.x, c.y]

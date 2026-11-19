@@ -27,6 +27,7 @@ func apply(c: Vector2i, t: int, data: Dictionary, flora: FloraLibrary) -> void:
 	name = "Chunk_%d_%d" % [c.x, c.y]
 	position = Vector3(c.x * Game.CHUNK_SIZE, 0.0, c.y * Game.CHUNK_SIZE)
 	resources = data.resources
+	TerrainEdit.remember_trees(c, resources)   # so aiming a building here needn't place the chunk's trees again
 	_by_id.clear()
 	for k in resources.size():
 		var r := resources[k]
@@ -65,12 +66,10 @@ func _build_terrain(data: Dictionary, flora: FloraLibrary) -> void:
 		mi.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
 	add_child(mi)
 
-	var faces: PackedVector3Array = data.get("collision_faces", PackedVector3Array())
-	if not faces.is_empty():
-		# Solid ground near caves: the collider is the same triangles as the mesh.
-		var tri := ConcavePolygonShape3D.new()
-		tri.backface_collision = true   # solid from both sides: a steep face can't be walked through from behind
-		tri.set_faces(faces)
+	var tri: ConcavePolygonShape3D = data.get("collision_shape")
+	if tri != null:
+		# Solid ground near caves: the collider is the same triangles as the mesh, made on the worker thread
+		# (see ChunkGenerator.generate).
 		var tbody := StaticBody3D.new()
 		tbody.name = "TerrainBody"
 		tbody.collision_layer = LAYER_SOLID
