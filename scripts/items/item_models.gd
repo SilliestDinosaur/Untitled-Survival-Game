@@ -482,23 +482,33 @@ static func _knife(k: MeshKit, tier: int, col: Color) -> void:
 ## A branch with a resin-soaked fiber wrap at the top (the flame is a separate glowing mesh).
 ## A builder's hammer: a wooden haft with a squared stone head, its striking face forward (-Z).
 static func _hammer_tool(k: MeshKit) -> void:
-	# Built like the axe: a trimmed branch with a knapped stone head across its top, but the head is a blunt,
-	# chunky block, broad at both ends, for driving pegs and knocking pieces into place.
+	# A builder's mallet on the same crooked branch as the axes: a chunky round head of wood, iron hoops near each
+	# end to stop it splitting, pale end grain on its two striking faces (along the model's forward axis).
 	var top := 0.33
 	_handle(k, top + 0.045, 1, 0.02)
-	var outline := _knap(PackedVector2Array([Vector2(-0.085, 0.03), Vector2(-0.095, 0.0), Vector2(-0.085, -0.035),
-		Vector2(-0.02, -0.042), Vector2(0.02, -0.042), Vector2(0.09, -0.04), Vector2(0.105, 0.0), Vector2(0.09, 0.04),
-		Vector2(0.02, 0.044), Vector2(-0.02, 0.044)]), 23, 0.003)
-	var ridge := PackedVector2Array(outline)
-	ridge.append(outline[0])
-	var m := _metal(1, Color.WHITE)
-	# Thick right out to the rim (no cutting edge): a rounded block, not a blade.
-	k.sculpt(outline, Transform3D(FORWARD_PLANE, Vector3(0, top, 0)), _head_thickness(ridge, 0.042, 0.022, 0.046, 0.022, 0.02),
-		_head_color(1, m, PackedVector2Array()), 3, 0.0055)
-	# The haft's end: a wooden wedge driven into the top of it, standing proud of the head.
+	var r := 0.046
+	var half := 0.085
+	var hoop := Color(0.34, 0.33, 0.36)
+	var wood := Color(0.66, 0.49, 0.31)   # worked wood: paler than the bark of the haft
+	var path: Array = []
+	var radii: Array = []
+	var steps := 16
+	for i in steps + 1:
+		var t := float(i) / steps
+		path.append(Vector3(0, top, lerpf(-half, half, t)))
+		var band := absf(t - 0.14) < 0.045 or absf(t - 0.86) < 0.045
+		radii.append(r * (1.0 + 0.05 * sin(t * PI)) + (0.003 if band else 0.0))   # a slight belly; the hoops stand proud
+	var col := func(t: float, a: float) -> Color:
+		if absf(t - 0.14) < 0.045 or absf(t - 0.86) < 0.045:
+			return hoop.lightened(0.12 * sin(a * 2.0))
+		if t < 0.02 or t > 0.98:
+			return wood.lightened(0.18)   # end grain
+		return wood.darkened(0.06 * (sin(a * 3.0 + t * 9.0) * 0.5 + 0.5))   # grain along the head
+	k.loft(path, radii, 16, wood, col, Callable(), true, true, 0.0)
+	# The haft comes up through the head; its wedge shows on top.
 	var wedge := BoxMesh.new()
-	wedge.size = Vector3(0.03, 0.012, 0.014)
-	k.add_primitive(wedge, Transform3D(Basis(), Vector3(0, top + 0.046, 0)), WOOD.darkened(0.15), 0.0, 0.04)
+	wedge.size = Vector3(0.03, 0.01, 0.014)
+	k.add_primitive(wedge, Transform3D(Basis(), Vector3(0, top + r + 0.004, 0)), WOOD.darkened(0.15), 0.0, 0.04)
 
 
 ## The Building Plan: a rolled sheet of blue drafting paper, tied with cord, held at its middle.

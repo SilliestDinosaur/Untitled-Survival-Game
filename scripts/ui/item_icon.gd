@@ -116,10 +116,23 @@ func _draw() -> void:
 				draw_circle(c, s * (0.3 - i * 0.08), Color(0.45, 0.25, 0.7, 0.35 + i * 0.25))
 		"tool":
 			_tool(info, c, s)
-		"hammer":
-			_capsule(c + Vector2(-s * 0.3, s * 0.32), c + Vector2(s * 0.14, -s * 0.16), s * 0.045, Color(0.55, 0.4, 0.26))
-			draw_colored_polygon(PackedVector2Array([c + Vector2(-0.04, -0.4) * s, c + Vector2(0.36, -0.02) * s,
-				c + Vector2(0.24, 0.1) * s, c + Vector2(-0.16, -0.28) * s]), Color(0.45, 0.45, 0.5))
+		"hammer":   # a wooden mallet: a round head across the top of the haft, with iron hoops
+			var hb := c + Vector2(s * 0.12, -s * 0.14)
+			_capsule(c + Vector2(-s * 0.3, s * 0.32), hb, s * 0.045, Color(0.55, 0.4, 0.26))
+			var across := Vector2(0.7, 0.7).normalized()   # square to the haft
+			var head := PackedVector2Array()
+			var w := s * 0.17
+			var hh := s * 0.11
+			var along := Vector2(across.y, -across.x)
+			for corner in [Vector2(-1, -1), Vector2(1, -1), Vector2(1, 1), Vector2(-1, 1)]:
+				head.append(hb + across * corner.x * w + along * corner.y * hh)
+			draw_colored_polygon(head, Color(0.6, 0.45, 0.3))
+			for f in [-0.62, 0.62]:
+				var m: Vector2 = hb + across * f * w
+				draw_line(m + along * hh, m - along * hh, Color(0.36, 0.35, 0.38), s * 0.05)
+			for f in [-1.0, 1.0]:
+				var e: Vector2 = hb + across * f * w
+				draw_line(e + along * hh, e - along * hh, Color(0.74, 0.6, 0.42), s * 0.035)
 		"plan":
 			_capsule(c + Vector2(-s * 0.3, s * 0.28), c + Vector2(s * 0.3, -s * 0.28), s * 0.12, Color(0.3, 0.46, 0.74))
 			for p: Vector2 in [c + Vector2(-s * 0.3, s * 0.28), c + Vector2(s * 0.3, -s * 0.28)]:
