@@ -32,6 +32,121 @@ static func clear_cache() -> void:
 	_cache.clear()
 
 
+# --- Tools part-way through being made (the crafting minigames) ----------------------------------
+
+## The stage the tool being built is at. Set only while tool_stage() builds one; empty means finished. Keys, all
+## optional (missing = done):
+##   head    -1: no head yet. 0..1: from a rough blank (a rounded lump of the material) to the finished head
+##   handle  -1: no handle yet. 0..1: from an oversized, square-hewn haft to the finished one
+##   lash    0..1: how much of the binding is on (cord wraps, a spear's socket sleeve, a stone knife's wound grip)
+##   wedge   0..1: the wedge (or a knife's guard and pommel): 0 not there, rising out of the top until driven home at 1
+static var _st := {}
+
+
+## A tool part-way through being made (see _st for the stage keys). With every key at 1 it's the finished tool.
+static func tool_stage(id: String, stage: Dictionary, material: Material) -> ArrayMesh:
+	var key := "%s|%s|%d" % [id, str(stage), material.get_instance_id()]
+	if _cache.has(key):
+		return _cache[key]
+	var info := ItemDB.info(id)
+	var t: Dictionary = info.get("tool", {})
+	var k := MeshKit.new(hash(id))
+	_st = stage
+	var tier := int(t.get("tier", 1))
+	var col: Color = info.get("color", STONE)
+	match String(t.get("type", "")):
+		"hatchet": _hatchet(k, tier, col)
+		"pickaxe": _pickaxe(k, tier, col)
+		"spear": _spear(k, tier, col)
+		"knife": _knife(k, tier, col)
+	_st = {}
+	var mesh := k.commit(material)
+	_cache[key] = mesh
+	return mesh
+
+
+static func _s(key: String) -> float:
+	return float(_st.get(key, 1.0))
+
+
+static func _smooth(x: float) -> float:
+	x = clampf(x, 0.0, 1.0)
+	return x * x * (3.0 - 2.0 * x)
+
+
+## The head's outline at its stage: from the outline's bounding ellipse (a rough blank) to the real shape.
+static func _stage_outline(outline: PackedVector2Array) -> PackedVector2Array:
+	var s := _s("head")
+	if s >= 1.0:
+		return outline
+	var c := Vector2.ZERO
+	var lo := outline[0]
+	var hi := outline[0]
+	for p in outline:
+		c += p
+		lo = Vector2(minf(lo.x, p.x), minf(lo.y, p.y))
+		hi = Vector2(maxf(hi.x, p.x), maxf(hi.y, p.y))
+	c /= outline.size()
+	var e := ((hi - lo) * 0.5 * 0.8).max(Vector2(0.008, 0.008))
+	var w := _smooth(s)
+	var out := PackedVector2Array()
+	for p in outline:
+		var d := p - c
+		if d.length() < 0.00001:
+			out.append(p)
+			continue
+		var blank := c + d / sqrt(pow(d.x / e.x, 2.0) + pow(d.y / e.y, 2.0))
+		out.append(blank.lerp(p, w))
+	return out
+
+
+## The head's thickness at its stage: a blank is a chunky, even lump; it thins to the real edge as it's worked.
+static func _stage_thick(fn: Callable, body: float) -> Callable:
+	var s := _s("head")
+	if s >= 1.0:
+		return fn
+	var w := _smooth(s)
+	return func(p: Vector2) -> float: return lerpf(body * 1.5, float(fn.call(p)), w)
+
+
+## The head's colour at its stage: plain material until the edge is worked in near the end.
+static func _stage_color(fn: Callable, tier: int, m: Dictionary) -> Callable:
+	var s := _s("head")
+	if s >= 1.0:
+		return fn
+	var plain := _head_color(tier, m, PackedVector2Array())
+	var w := smoothstep(0.55, 1.0, s)
+	return func(p: Vector2, th: float) -> Color: return (plain.call(p, th) as Color).lerp(fn.call(p, th), w)
+
+
+## A cord binding wound round the haft, from `low` up `height` metres, `amount` of the way on.
+static func _lashing(k: MeshKit, low: float, height: float, radius: float) -> void:
+	var amount := _s("lash")
+	if amount <= 0.02:
+		return
+	var turns := 4.5 * amount
+	var steps := maxi(3, roundi(turns * 8.0))
+	var cord_r := 0.0055
+	var path: Array = []
+	var radii: Array = []
+	for i in steps + 1:
+		var t := float(i) / steps
+		var a := t * turns * TAU
+		path.append(Vector3(cos(a) * (radius + cord_r), low + height * amount * t, sin(a) * (radius + cord_r)))
+		radii.append(cord_r)
+	k.loft(path, radii, 4, CORD, func(t: float, _a: float) -> Color: return CORD.darkened(0.08 * sin(t * 40.0) + 0.04), Callable(), true, true)
+
+
+## The wedge at its stage: proud of the haft's top until driven home (`rise` m higher at the start).
+static func _wedge(k: MeshKit, size: Vector3, at: Vector3, col: Color, rise := 0.035) -> void:
+	var w := _s("wedge")
+	if w <= 0.0:
+		return
+	var box := BoxMesh.new()
+	box.size = size
+	k.add_primitive(box, Transform3D(Basis(), at + Vector3(0, (1.0 - w) * rise, 0)), col, 0.0, 0.04)
+
+
 static func mesh_for(id: String, material: Material) -> ArrayMesh:
 	var key := id + str(material.get_instance_id())
 	if _cache.has(key):
@@ -126,6 +241,12 @@ static func _head_thickness(edge: PackedVector2Array, body: float, falloff: floa
 ## A handle from y = -0.1 (butt) to `length`: oval section, swelling knob at the butt, a gentle
 ## curve (`curve` > 0 bows it forward like an axe haft), wood grain, and per-tier grip work.
 static func _handle(k: MeshKit, length: float, tier: int, radius := 0.016, curve := 0.0, square := false) -> void:
+	var hs := _s("handle")
+	if hs < 0.0:
+		return   # not made yet
+	if hs < 1.0:   # still being shaped: oversized and square-hewn at first
+		radius *= 1.0 + 0.45 * (1.0 - hs)
+		square = square or hs < 0.55
 	var rng := RandomNumberGenerator.new()
 	rng.seed = tier * 31 + int(length * 1000)
 	var path: Array = []
@@ -175,7 +296,7 @@ static func _handle(k: MeshKit, length: float, tier: int, radius := 0.016, curve
 		var base: Vector3 = path[int(clampf((y + 0.1) / (length + 0.1), 0.0, 1.0) * steps)]
 		k.loft([Vector3(base.x, y - 0.005, base.z), Vector3(base.x, y + 0.005, base.z)], [radius * 1.3 * 1.22, radius * 1.3 * 1.22], 14, band,
 			Callable(), func(_t: float, _a: float) -> Vector2: return Vector2(1.0, 0.84), true, true)
-	if tier >= 3:   # pommel cap
+	if tier >= 3 and _s("wedge") > 0.5 and hs >= 0.0:   # pommel cap
 		var pc: Color = GOLD if tier == 4 else (DUSK_GLOW if tier == 5 else Color(0.5, 0.49, 0.52))
 		k.loft([Vector3(0, -0.122, 0), Vector3(0, -0.112, 0), Vector3(0, -0.098, 0)], [0.008, radius * 1.45, radius * 1.3], 16, pc)
 
@@ -219,6 +340,11 @@ static func _hatchet(k: MeshKit, tier: int, col: Color) -> void:
 	var m := _metal(tier, col)
 	var hr := 0.016
 	_handle(k, top + 0.045, 1, hr * 1.25)
+	if _s("handle") >= 0.0:
+		_lashing(k, top - 0.115, 0.06, hr * 1.25 * 1.3)
+	if _s("head") < 0.0:
+		_wedge(k, Vector3(0.03, 0.012, 0.014), Vector3(0, top + 0.046, 0), WOOD.darkened(0.15))
+		return
 	# A chunky block of a head: a squared poll behind the eye, a flat top, and a blade that flares out and down
 	# to a straight-edged bit.
 	var outline := PackedVector2Array([Vector2(-0.085, 0.040), Vector2(-0.100, 0.030), Vector2(-0.100, -0.030),
@@ -232,12 +358,12 @@ static func _hatchet(k: MeshKit, tier: int, col: Color) -> void:
 	var xf := Transform3D(FORWARD_PLANE, Vector3(0, top, 0))
 	k.flat_shading = tier == 4   # crystal: crisp facets
 	# (A segment length of 0.005 left duplicate faces in one head; 0.0055 is clean.)
-	k.sculpt(outline, xf, _head_thickness(ridge, 0.029, 0.014, 0.034, 0.022, 0.001), _head_color(tier, m, ridge, 0.014), 3, 0.0055)
+	k.sculpt(_stage_outline(outline), xf, _stage_thick(_head_thickness(ridge, 0.029, 0.014, 0.034, 0.022, 0.001), 0.029),
+		_stage_color(_head_color(tier, m, ridge, 0.014), tier, m), 3, 0.0055)
 	k.flat_shading = false
 	# The haft's end: a wooden wedge driven into the top of it, standing proud of the head.
-	var wedge := BoxMesh.new()
-	wedge.size = Vector3(0.03, 0.012, 0.014)
-	k.add_primitive(wedge, Transform3D(Basis(), Vector3(0, top + 0.046, 0)), WOOD.darkened(0.15), 0.0, 0.04)
+	if _s("handle") >= 0.0:
+		_wedge(k, Vector3(0.03, 0.012, 0.014), Vector3(0, top + 0.046, 0), WOOD.darkened(0.15))
 
 
 # --- Pickaxes ---------------------------------------------------------------------------
@@ -247,13 +373,18 @@ static func _pickaxe(k: MeshKit, tier: int, col: Color) -> void:
 	var top := 0.35
 	var m := _metal(tier, col)
 	_handle(k, top + 0.04, 1, 0.02)   # the same round branch as the axe
+	if _s("handle") >= 0.0:
+		_lashing(k, top - 0.135, 0.06, 0.02 * 1.3)
+	if _s("head") < 0.0:
+		return
 	var outline := _knap(PackedVector2Array([Vector2(-0.045, 0.0), Vector2(-0.02, -0.04), Vector2(0.06, -0.038), Vector2(0.17, 0.0), Vector2(0.06, 0.04), Vector2(-0.02, 0.04)]), 41, 0.004)
 	for i in outline.size():   # broad
 		outline[i] = Vector2(outline[i].x, outline[i].y * 1.8)
 	var ridge := PackedVector2Array(outline)
 	ridge.append(outline[0])
 	k.flat_shading = tier == 4   # crystal: crisp facets
-	k.sculpt(outline, Transform3D(FORWARD_PLANE, Vector3(0, top, 0)), _head_thickness(ridge, 0.03, 0.02, 0.0, 0.0, 0.003), _head_color(tier, m, ridge, 0.02), 3, 0.006)
+	k.sculpt(_stage_outline(outline), Transform3D(FORWARD_PLANE, Vector3(0, top, 0)), _stage_thick(_head_thickness(ridge, 0.03, 0.02, 0.0, 0.0, 0.003), 0.03),
+		_stage_color(_head_color(tier, m, ridge, 0.02), tier, m), 3, 0.006)
 	k.flat_shading = false
 
 
@@ -265,6 +396,18 @@ static func _spear(k: MeshKit, tier: int, col: Color) -> void:
 	var hr := 0.015
 	_handle(k, top, tier, hr)
 	var L := 0.17 + tier * 0.012
+	var sock: Color = m.fitting if tier != 2 else m.base.darkened(0.12)
+	var lash := _s("lash")
+	if _s("handle") >= 0.0 and lash > 0.02:
+		# Socket: a tapered sleeve over the shaft (cord on a stone point, metal otherwise), with rings; it's slid up
+		# from below as it's fitted.
+		var head_y0 := top + 0.02
+		var y0 := top - 0.06
+		var y1 := lerpf(y0 + 0.005, head_y0 + 0.004, lash)
+		k.loft([Vector3(0, y0, 0), Vector3(0, lerpf(y0, y1, 0.66), 0), Vector3(0, y1, 0)], [hr * 1.32, hr * 1.18, lerpf(hr * 1.18, hr * 0.85, lash)], 14, sock,
+			func(t: float, _a: float) -> Color: return sock.lightened(0.18) if fposmod(t * 4.0, 1.0) < 0.14 else sock)
+	if _s("head") < 0.0:
+		return
 	var outline: PackedVector2Array
 	match tier:
 		1:   # knapped leaf point
@@ -291,12 +434,8 @@ static func _spear(k: MeshKit, tier: int, col: Color) -> void:
 	var thick := func(p: Vector2) -> float:
 		var t: float = edge_t.call(p)
 		return t + (0.007 if tier != 1 else 0.004) * exp(-absf(p.x) * 60.0) * smoothstep(0.0, 0.05, p.y)
-	k.sculpt(outline, Transform3D(Basis(), Vector3(0, head_y, 0)), thick, _head_color(tier, m, rim, 0.01), 3, 0.005)
+	k.sculpt(_stage_outline(outline), Transform3D(Basis(), Vector3(0, head_y, 0)), _stage_thick(thick, 0.024), _stage_color(_head_color(tier, m, rim, 0.01), tier, m), 3, 0.005)
 	k.flat_shading = false
-	# Socket: a tapered metal sleeve over the shaft, with rings, and a cord binding below it.
-	var sock: Color = m.fitting if tier != 2 else m.base.darkened(0.12)
-	k.loft([Vector3(0, top - 0.06, 0), Vector3(0, top - 0.02, 0), Vector3(0, head_y + 0.004, 0)], [hr * 1.32, hr * 1.18, hr * 0.85], 14, sock,
-		func(t: float, _a: float) -> Color: return sock.lightened(0.18) if fposmod(t * 4.0, 1.0) < 0.14 else sock)
 
 
 # --- Knives -----------------------------------------------------------------------------
@@ -310,8 +449,16 @@ static func _knife(k: MeshKit, tier: int, col: Color) -> void:
 		if tier == 1:
 			return grip.darkened(0.22) if fposmod(t * 9.0 + a / TAU, 1.0) < 0.25 else grip   # wound cord
 		return grip.darkened(0.08 * (sin(a * 3.0 + t * 12.0) * 0.5 + 0.5))
-	k.loft(gp, [0.0125, 0.0145, 0.0145, 0.012], 14, grip, gfn, func(_t: float, _a: float) -> Vector2: return Vector2(0.7, 1.0), true, true)
-	if tier >= 2:   # guard
+	var hs := _s("handle")
+	var gl := _s("lash") if tier == 1 else 1.0   # a stone knife's grip is cord, wound on as it's made
+	if hs >= 0.0 and gl > 0.02:
+		var gsc := 1.0 + 0.35 * (1.0 - clampf(hs, 0.0, 1.0))
+		var path: Array = gp
+		if gl < 1.0:   # wound part-way up
+			var top_y := lerpf(-0.045, 0.055, gl)
+			path = [gp[0], Vector3(0, lerpf(-0.05, top_y, 0.3), 0), Vector3(0, lerpf(-0.05, top_y, 0.65), 0), Vector3(0, top_y, 0)]
+		k.loft(path, [0.0125 * gsc, 0.0145 * gsc, 0.0145 * gsc, 0.012 * gsc], 14, grip, gfn, func(_t: float, _a: float) -> Vector2: return Vector2(0.7, 1.0), true, true)
+	if tier >= 2 and _s("wedge") > 0.5 and hs >= 0.0:   # guard
 		var gc: Color = m.fitting if tier != 2 else m.base.darkened(0.2)
 		var gw := 0.02 + tier * 0.003
 		k.loft([Vector3(0, 0.058, gw * 0.4), Vector3(0, 0.061, 0), Vector3(0, 0.058, -gw)], [0.006, 0.0085, 0.005], 12, gc)
@@ -338,15 +485,17 @@ static func _knife(k: MeshKit, tier: int, col: Color) -> void:
 			edge = PackedVector2Array([Vector2(0.024, 0.0), Vector2(0.03, 0.05), Vector2(0.026, 0.1), Vector2(0.0, L)])
 			outline = PackedVector2Array([Vector2(-0.008, 0.0), Vector2(0.024, 0.0), Vector2(0.03, 0.05), Vector2(0.026, 0.1), Vector2(0.0, L),
 				Vector2(-0.008, 0.12), Vector2(-0.004, 0.105), Vector2(-0.012, 0.09), Vector2(-0.006, 0.075), Vector2(-0.014, 0.06), Vector2(-0.008, 0.04)])
+	if _s("head") < 0.0:
+		return
 	if tier in [1, 4]:
 		k.flat_shading = true
-	var base_col := _head_color(tier, m, edge, 0.007)
+	var base_col := _stage_color(_head_color(tier, m, edge, 0.007), tier, m)
 	var fuller := func(p: Vector2, th: float) -> Color:
 		var c: Color = base_col.call(p, th)
 		if tier in [2, 3, 5] and absf(p.x - 0.002) < 0.0025 and p.y > 0.012 and p.y < L * 0.62:
 			c = c.darkened(0.22)   # fuller groove
 		return c
-	k.sculpt(outline, Transform3D(FORWARD_PLANE, Vector3(0, 0.062, 0)), _head_thickness(edge, 0.008 if tier != 1 else 0.011, 0.026, 0.0, 0.0, 0.0009), fuller, 2, 0.006)
+	k.sculpt(_stage_outline(outline), Transform3D(FORWARD_PLANE, Vector3(0, 0.062, 0)), _stage_thick(_head_thickness(edge, 0.008 if tier != 1 else 0.011, 0.026, 0.0, 0.0, 0.0009), 0.011), fuller, 2, 0.006)
 	k.flat_shading = false
 
 

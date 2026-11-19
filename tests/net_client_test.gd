@@ -275,8 +275,8 @@ func _process(_delta: float) -> bool:
 			if sess == null:
 				_check(_player.inventory.count("cooked_meat") > _cooked, "cooked meat through the minigame (cooked meat %d)" % _player.inventory.count("cooked_meat"))
 				_next("report")
-			elif not sess._busy and sess._lock <= 0.0 and absf(sess.cue_t - 0.85) < 0.03:
-				sess.strike()
+			else:
+				sess.autoplay(_delta)
 			if _waited() > 60.0:
 				_check(false, "cooking never finished")
 				if sess:

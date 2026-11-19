@@ -16,6 +16,8 @@ var _case := {}
 var _before := 0
 var _wait := 0
 var _strikes := 0
+var _game_time := 0.0
+var _seen: Array = []
 var _Session: GDScript
 
 
@@ -102,6 +104,8 @@ func _process(_d: float) -> bool:
 			_player.craft(r, int(_case.times), func(_res: Dictionary) -> void: pass)
 			_check(_player.crafting != null, "%s starts a minigame" % _case.out)
 			_strikes = 0
+			_game_time = 0.0
+			_seen = []
 			_wait = 0
 			_step = 5
 			_f = 0
@@ -113,35 +117,21 @@ func _process(_d: float) -> bool:
 				var got: int = _player.inventory.count(_case.out) - _before
 				_check(got == int(_case.times), "made %d %s (wanted %d)" % [got, _case.out, _case.times])
 				_check(_player.camera.current, "the view is back with the player after %s" % _case.out)
-				var per := float(_wait) / 60.0 / float(_case.times)
-				print("  %s: %d strikes, about %.1f s each at 60 fps" % [_case.out, _strikes, per])
+				var per := _game_time / float(_case.times)
+				print("  %s: steps %s, about %.1f s of play each" % [_case.out, ", ".join(_seen.map(func(x: String) -> String: return x.get_slice(":", 1)).slice(0, _seen.size() / maxi(int(_case.times), 1))), per])
+				_check(_seen.size() >= 2 * int(_case.times), "%s went through its steps (%d)" % [_case.out, _seen.size()])
 				_step = 4
 				return false
 			if _wait > 60 * 60:
 				_check(false, "%s finished within a minute" % _case.out)
 				s.stop()
 				return false
-			var pumping: bool = s.mode == 1 or (s.mode == 2 and s.phase == 0)
-			if pumping:
-				if s.heat < 0.72:
-					Input.action_press("attack")
-				else:
-					Input.action_release("attack")
-			else:
-				Input.action_release("attack")
-				if s._busy or s._lock > 0.0:
-					return false
-				# Wait for the cue's best moment, then strike.
-				var ready := false
-				match s.mode:
-					0: ready = absf(s.cue_t - 0.85) < 0.02
-					3:
-						s.target = clampf(s.sweep_pos(), 0.15, 0.85)
-						ready = absf(s.sweep_pos() - s.target) < 0.01
-					_: ready = absf(s.cue_t - 1.0) < 0.03
-				if ready:
-					s.strike()
-					_strikes += 1
+			# Play every step well, and note each step as it's reached (and how long the item takes, in game time).
+			s.autoplay(_d)
+			_game_time += _d
+			var key := "%d:%s" % [s.made, s.step_id()]
+			if not _seen.has(key):
+				_seen.append(key)
 	return false
 
 
