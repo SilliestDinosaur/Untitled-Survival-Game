@@ -1,0 +1,21 @@
+Godot Engine v4.5.1.stable.official.f62fdbde1 - https://godotengine.org
+
+  ok   hosting
+HOST lan code: AFAC-ADA
+HOST relay code: 8DQR-S88S4
+HOST guest joined: Wanderer 83
+WARNING: Sending 1420 bytes unreliably which is above the MTU (1392), this will result in higher packet loss
+     at: put_packet (modules/enet/enet_multiplayer_peer.cpp:363)
+     GDScript backtrace (most recent call first):
+         [0] _send_animals (res://scripts/net/net.gd:1060)
+         [1] _process (res://scripts/net/net.gd:982)
+  ok   guest's campfire is in the host's world: 1
+  ok   guest's gathering reached the host: 1 removed
+  ok   guest's character kept for next time: 1
+  ok   guest save has inventory and position
+  FAIL the meat the guest cooked is in their saved pack
+  FAIL the foundation the guest built stands, finished, in the host's world
+  FAIL the door the guest built and opened is open in the host's world
+HOST RESULT: FAIL
+WARNING: ObjectDB instances leaked at exit (run with --verbose for details).
+     at: cleanup (core/object/object.cpp:2514)

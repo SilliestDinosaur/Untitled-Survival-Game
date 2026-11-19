@@ -1,0 +1,14 @@
+Godot Engine v4.5.1.stable.official.f62fdbde1 - https://godotengine.org
+
+  ok   connecting to 8DQR-S88S4
+  ok   got the host's world (seed 424242)
+  joined by route: direct
+  ok   starts with a rock from the host
+  ok   host's avatar exists
+  ok   host gave items (fiber 20)
+  ok   crafted a campfire through the host
+  ok   placed campfire shows up for the guest
+  FAIL tree never fell (hp 80)
+CLIENT RESULT: FAIL
+WARNING: ObjectDB instances leaked at exit (run with --verbose for details).
+     at: cleanup (core/object/object.cpp:2514)
