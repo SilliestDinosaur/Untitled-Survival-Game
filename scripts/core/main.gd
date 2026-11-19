@@ -148,6 +148,11 @@ func _ready() -> void:
 	player.open_crafting.connect(func(kind: String) -> void:
 		if state == State.PLAYING and not _inventory.visible:
 			_toggle_inventory(true, kind))
+	player.open_chest.connect(func(sid: String) -> void:
+		if state == State.PLAYING and not _inventory.visible:
+			_inventory.show_chest(sid)
+			Input.mouse_mode = Input.MOUSE_MODE_VISIBLE
+			Audio.play("thud", -8.0, 1.3))
 	_inventory.left_station.connect(func() -> void:
 		if _inventory.visible:
 			_toggle_inventory(false))
@@ -368,6 +373,8 @@ func _toggle_map(open: bool) -> void:
 func _toggle_inventory(open: bool, station := "") -> void:
 	if open:
 		_inventory.show_for(station)
+	else:
+		_inventory.close_chest()
 		if station != "":
 			Audio.play("chop" if station == "workbench" else "clink" if station == "forge" else "rustle", -10.0, 0.9)
 	_inventory.visible = open

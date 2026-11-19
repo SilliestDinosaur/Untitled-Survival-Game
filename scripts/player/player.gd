@@ -7,6 +7,7 @@ signal landed(impact: float)
 signal hint(text: String)   ## short messages for the HUD ("Too hard to break by hand")
 signal hit_landed           ## a swing connected with something
 signal open_crafting(kind: String)   ## Interact on a station: open its crafting panel
+signal open_chest(structure_id: String)   ## Interact on a chest: open it beside the satchel
 signal cave_chest(index: int)    ## Interact with a cave's supply chest
 signal crafting_started      ## a crafting minigame began (the satchel should close)
 
@@ -617,6 +618,9 @@ func _on_grab() -> void:
 		return
 	if look.has("door"):
 		Net.request("toggle_door", {"structure": look.door})
+		return
+	if look.has("chest"):
+		open_chest.emit(String(look.chest))
 		return
 	if look.has("station"):
 		open_crafting.emit(String(look.station))

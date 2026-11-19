@@ -24,6 +24,9 @@ var _build_id := ""        ## the piece being built up with the hammer
 var _after_build := ""     ## the phase after it's built
 var _foundation := Vector3.ZERO
 var _door_id := ""
+var _chest_id := ""
+var _stone := 0
+var _back := Vector3.ZERO
 var _animal: Node
 var _meat := 0
 var _cooked := 0
@@ -227,9 +230,59 @@ func _process(_delta: float) -> bool:
 				_net.request("toggle_door", {"structure": _door_id})
 			if _game.structures.has(_door_id) and bool(_game.structures[_door_id].get("open", false)):
 				_check(true, "opened the door through the host, and it shows open for the guest")
-				_next("hunt")
+				_next("chest")
 			elif _waited() > 15.0:
 				_check(false, "the door never opened")
+				_next("chest")
+		# --- Storage: a chest on the foundation, built, stone put in and taken back out ---
+		"chest":
+			var at: Vector3 = _foundation + Vector3(-0.6, _GA.FLOOR_TOP, -0.6)
+			var why: String = _GA.placement_problem(at, "chest", 0.0)
+			_check(why == "", "a chest fits on the foundation (%s)" % why)
+			_laid = {}
+			_net.request("place_blueprint", {"kind": "chest", "pos": at, "yaw": 0.0}, func(res: Dictionary) -> void: _laid = res)
+			_next("wait_chest")
+		"wait_chest":
+			if _laid.get("ok", false) and _game.structures.has(String(_laid.id)):
+				_chest_id = String(_laid.id)
+				_build_id = _chest_id
+				_after_build = "stash"
+				_next("build")
+			elif (_laid.has("ok") and not _laid.ok) or _waited() > 20.0:
+				_check(false, "chest blueprint refused or lost: %s" % _laid.get("reason", "no answer"))
+				_next("hunt")
+		"stash":
+			if _frames == 1:
+				# Walk over to it first (the host only lets you use a chest within reach).
+				_back = _player.global_position
+				_player.global_position = _foundation + Vector3(1.0, 1.0, 1.0)
+				_stone = _player.inventory.count("stone")
+				_net.request("chest", {"structure": _chest_id, "op": "quick", "from": "bag", "a": _slot("id_stone"), "pos": _player.global_position}, func(res: Dictionary) -> void:
+					if not res.get("ok", false):
+						_check(false, "chest refused: %s; stone in slot %d; %.1f m from it" % [res, _slot("id_stone"), _player.global_position.distance_to(_foundation)]))
+			var items: Array = _game.structures.get(_chest_id, {}).get("items", [])
+			var inside := 0
+			for s: Dictionary in items:
+				if s.get("id", "") == "stone":
+					inside += int(s.count)
+			if inside > 0 and _player.inventory.count("stone") == _stone - inside:
+				_check(true, "put %d stone in the chest through the host" % inside)
+				_next("unstash")
+			elif _waited() > 15.0:
+				_check(false, "the stone never went into the chest")
+				_next("hunt")
+		"unstash":
+			if _frames == 1:
+				var items: Array = _game.structures[_chest_id].get("items", [])
+				for i in items.size():
+					if (items[i] as Dictionary).get("id", "") == "stone":
+						_net.request("chest", {"structure": _chest_id, "op": "quick", "from": "chest", "a": i, "pos": _player.global_position})
+			if _player.inventory.count("stone") == _stone and _GA.chest_is_empty(_game.structures[_chest_id]):
+				_check(true, "took the stone back out of the chest")
+				_player.global_position = _back   # back where the rest happens
+				_next("hunt")
+			elif _waited() > 15.0:
+				_check(false, "the stone never came back out of the chest")
 				_next("hunt")
 		# --- Hunting: kill an animal with a spear, butcher it with a knife ---
 		"hunt":

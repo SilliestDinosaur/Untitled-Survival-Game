@@ -297,7 +297,7 @@ func _piece(info: Dictionary, c: Vector2, s: float) -> void:
 				draw_line(Vector2(x0 + i * w, y0 - (i + 1) * hh), Vector2(x0 + (i + 1) * w, y0 - (i + 1) * hh), base.lightened(0.25), 2.0)
 			draw_polyline(pts + PackedVector2Array([pts[0]]), line, 1.2)
 		"decor":
-			_decor_icon(String(info.get("station", "")), c, s)
+			_decor_icon(item, c, s)
 		"fence":   # posts and two rails
 			for px in [-0.32, 0.0, 0.32]:
 				draw_rect(Rect2(c + Vector2(px * s - s * 0.05, -s * 0.22), Vector2(s * 0.1, s * 0.5)), base)

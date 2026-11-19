@@ -115,10 +115,15 @@ class SlotView extends PanelContainer:
 		return {"slot": index, "inv": inv}
 
 	func _can_drop_data(_at: Vector2, data: Variant) -> bool:
-		return interactive and data is Dictionary and data.has("slot") and data.inv == inv
+		if not interactive or not data is Dictionary or not data.has("slot"):
+			return false
+		return data.has("chest") or data.get("inv") == inv
 
 	func _drop_data(_at: Vector2, data: Variant) -> void:
-		inv.move(int(data.slot), index)
+		if data.has("chest"):   # out of a chest, onto this slot
+			ChestPanel.request({"structure": data.chest, "op": "move", "from": "chest", "a": data.slot, "to": "bag", "b": index})
+		else:
+			inv.move(int(data.slot), index)
 		Audio.play(Audio.sfx.click, -10.0, 1.2)
 
 	func _gui_input(event: InputEvent) -> void:
@@ -132,7 +137,10 @@ class SlotView extends PanelContainer:
 					break
 			accept_event()
 		elif event.button_index == MOUSE_BUTTON_LEFT and event.shift_pressed:
-			inv.quick_move(index)
+			if ChestPanel.open_id != "":   # a chest is open: shift-click sends it in
+				ChestPanel.request({"structure": ChestPanel.open_id, "op": "quick", "from": "bag", "a": index})
+			else:
+				inv.quick_move(index)
 			accept_event()
 
 
@@ -218,6 +226,7 @@ class InventoryPanel extends Control:
 	var player: Node
 	var _slots: Array[SlotView] = []
 	var _craft: CraftingPanel
+	var _chest: ChestPanel
 
 	func setup(inv: Inventory, p: Node) -> void:
 		inventory = inv
@@ -231,8 +240,20 @@ class InventoryPanel extends Control:
 
 	## Open beside the satchel: a station's own crafting panel, or ("") what you can make by hand.
 	func show_for(station_kind: String) -> void:
+		close_chest()
 		_craft.set_station(station_kind)
 		show()
+
+	## Open a chest beside the satchel (in place of the crafting panel).
+	func show_chest(sid: String) -> void:
+		_craft.hide()
+		_chest.open(sid)
+		show()
+
+	func close_chest() -> void:
+		if _chest and _chest.visible:
+			_chest.close()
+			_craft.show()
 
 	## Make now, while the game starts, what the menus would otherwise make the first time they're used: every
 	## slot's painted background (and each hotbar slot's selected one) and every recipe's row. Done then, it was a
@@ -271,6 +292,11 @@ class InventoryPanel extends Control:
 		row.add_child(craft)
 		_craft = craft
 		craft.left_station.connect(func() -> void: left_station.emit())
+		_chest = ChestPanel.new()
+		_chest.player = player
+		_chest.hide()
+		row.add_child(_chest)
+		_chest.left.connect(func() -> void: left_station.emit())
 		var title_row := HBoxContainer.new()
 		title_row.add_child(UITheme.heading("Satchel", 36))
 		var spacer := Control.new()
@@ -607,3 +633,183 @@ void fragment() {
 				_status.text = "Made %s%s" % [ItemDB.display_name(res.out), (" x%d" % res.made) if res.made > 1 else ""]
 			else:
 				_status.text = String(res.get("reason", "")))
+
+
+
+## An open chest beside the satchel: its slots, dragged to and from the satchel's (or shift-clicked across). Every
+## move asks the host (GameActions.chest_op), so two players at one chest can't both take the same thing.
+class ChestPanel extends PanelContainer:
+	signal left   ## the chest is gone, or you walked away from it
+
+	static var open_id := ""   ## the chest open on this machine ("" for none): shift-clicks in the satchel go into it
+	static var _player: Node   ## who's asking (for where they stand)
+
+	var player: Node:
+		set(p):
+			player = p
+			_player = p
+	var _sid := ""
+	var _grid: GridContainer
+	var _title: Label
+	var _icon: ItemIcon
+	var _views: Array = []
+	var _timer := 0.0
+
+	static func request(args: Dictionary) -> void:
+		if is_instance_valid(_player):
+			args["pos"] = _player.global_position
+		Net.request("chest", args, func(res: Dictionary) -> void:
+			if not res.get("ok", false) and String(res.get("reason", "")) != "":
+				Audio.play(Audio.sfx.click, -6.0, 0.7))
+
+	func _ready() -> void:
+		add_theme_stylebox_override("panel", UITheme.paper_box(Color(0.95, 0.88, 0.76), 14, 30))
+		custom_minimum_size = Vector2(400, 0)
+		var col := VBoxContainer.new()
+		col.add_theme_constant_override("separation", 10)
+		add_child(col)
+		var head := HBoxContainer.new()
+		head.add_theme_constant_override("separation", 12)
+		col.add_child(head)
+		_icon = ItemIcon.new("chest", 56)
+		_icon.custom_minimum_size = Vector2(56, 56)
+		head.add_child(_icon)
+		var names := VBoxContainer.new()
+		names.add_theme_constant_override("separation", -4)
+		names.size_flags_vertical = Control.SIZE_SHRINK_CENTER
+		head.add_child(names)
+		_title = UITheme.heading("Chest", 36)
+		names.add_child(_title)
+		names.add_child(UITheme.label("Drag to move  ·  Shift-click to send across", 14, UITheme.INK_DIM))
+		_grid = GridContainer.new()
+		_grid.columns = 8
+		_grid.add_theme_constant_override("h_separation", 6)
+		_grid.add_theme_constant_override("v_separation", 6)
+		col.add_child(_grid)
+		Game.structures_changed.connect(func() -> void:
+			if visible:
+				_refresh())
+
+	func open(sid: String) -> void:
+		_sid = sid
+		open_id = sid
+		var st: Dictionary = Game.structures.get(sid, {})
+		var n := int(GameActions.DECOR.get(st.get("kind", ""), {}).get("slots", 0))
+		_title.text = ItemDB.display_name(st.get("kind", "chest"))
+		_icon.item = st.get("kind", "chest")
+		while _views.size() < n:
+			var v := ChestSlotView.new(_views.size())
+			_grid.add_child(v)
+			_views.append(v)
+		for i in _views.size():
+			_views[i].visible = i < n
+		show()
+		_refresh()
+
+	func close() -> void:
+		open_id = ""
+		_sid = ""
+		hide()
+
+	func _refresh() -> void:
+		if not Game.structures.has(_sid):
+			left.emit()
+			return
+		var items: Array = Game.structures[_sid].get("items", [])
+		for i in _views.size():
+			if _views[i].visible:
+				_views[i].show_slot(_sid, items[i] if i < items.size() else {})
+
+	func _process(delta: float) -> void:
+		if not visible or not player:
+			return
+		_timer -= delta
+		if _timer <= 0.0:
+			_timer = 0.4
+			var st: Dictionary = Game.structures.get(_sid, {})
+			if st.is_empty():
+				left.emit()
+				return
+			var p: Array = st.pos
+			if Vector3(p[0], p[1], p[2]).distance_to(player.global_position) > GameActions.CHEST_REACH - 0.5:
+				left.emit()
+
+
+## One slot of an open chest: the same painted look as the satchel's.
+class ChestSlotView extends PanelContainer:
+	var index := 0
+	var _sid := ""
+	var _slot := {}
+	var _icon: ItemIcon
+	var _count: Label
+	var _dur: Control
+	var _dur_frac := -1.0
+	var _shown := "-"
+
+	func _init(i: int) -> void:
+		index = i
+		custom_minimum_size = Vector2(64, 64)
+		mouse_filter = Control.MOUSE_FILTER_STOP
+		add_theme_stylebox_override("panel", SlotView.style(false, 140 + i))
+
+	func _ready() -> void:
+		var stack := Control.new()
+		stack.mouse_filter = Control.MOUSE_FILTER_IGNORE
+		add_child(stack)
+		_icon = ItemIcon.new("", 46)
+		_icon.position = Vector2(-2, -2)
+		_icon.size = Vector2(46, 46)
+		stack.add_child(_icon)
+		_count = UITheme.label("", 15, UITheme.INK)
+		_count.add_theme_font_override("font", UITheme.BOLD_FONT)
+		_count.position = Vector2(26, 25)
+		stack.add_child(_count)
+		_dur = Control.new()
+		_dur.mouse_filter = Control.MOUSE_FILTER_IGNORE
+		_dur.position = Vector2(2, 42)
+		_dur.size = Vector2(40, 5)
+		_dur.draw.connect(func() -> void:
+			if _dur_frac < 0.0:
+				return
+			_dur.draw_rect(Rect2(Vector2.ZERO, _dur.size), Color(0.1, 0.08, 0.06, 0.45))
+			_dur.draw_rect(Rect2(Vector2.ZERO, Vector2(_dur.size.x * _dur_frac, _dur.size.y)), Color(0.45, 0.7, 0.3).lerp(Color(0.85, 0.3, 0.2), 1.0 - _dur_frac)))
+		stack.add_child(_dur)
+
+	func show_slot(sid: String, s: Dictionary) -> void:
+		_sid = sid
+		_slot = s
+		var key := str(s)
+		if key == _shown or not _icon:
+			return
+		_shown = key
+		var id: String = s.get("id", "")
+		_icon.item = id
+		_count.text = str(s.count) if not s.is_empty() and int(s.count) > 1 else ""
+		_dur_frac = -1.0
+		if not s.is_empty() and int(s.get("dur", -1)) >= 0:
+			_dur_frac = clampf(float(s.dur) / float(ItemDB.tool_stats(id).durability), 0.0, 1.0)
+		_dur.queue_redraw()
+		tooltip_text = ItemDB.display_name(id) if id != "" else ""
+
+	func _get_drag_data(_at: Vector2) -> Variant:
+		if _slot.is_empty():
+			return null
+		var preview := ItemIcon.new(_slot.id, 52)
+		preview.position = -Vector2(26, 26)
+		var holder := Control.new()
+		holder.add_child(preview)
+		set_drag_preview(holder)
+		return {"slot": index, "chest": _sid}
+
+	func _can_drop_data(_at: Vector2, data: Variant) -> bool:
+		return data is Dictionary and data.has("slot") and (data.get("chest", "") == _sid or data.has("inv"))
+
+	func _drop_data(_at: Vector2, data: Variant) -> void:
+		var from := "chest" if data.has("chest") else "bag"
+		ChestPanel.request({"structure": _sid, "op": "move", "from": from, "a": data.slot, "to": "chest", "b": index})
+		Audio.play(Audio.sfx.click, -10.0, 1.2)
+
+	func _gui_input(event: InputEvent) -> void:
+		if event is InputEventMouseButton and event.pressed and event.button_index == MOUSE_BUTTON_LEFT and event.shift_pressed and not _slot.is_empty():
+			ChestPanel.request({"structure": _sid, "op": "quick", "from": "chest", "a": index})
+			accept_event()

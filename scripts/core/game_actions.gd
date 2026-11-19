@@ -771,6 +771,8 @@ static func removal_problem(st: Dictionary) -> String:
 			var o: Dictionary = Game.structures[id]
 			if (not is_building(o.kind) or is_decor(o.kind)) and floor_under(_pos(o)) == st:
 				return "Pack up the %s on it first" % ItemDB.display_name(o.kind).to_lower()
+	elif DECOR.get(st.kind, {}).has("slots") and not chest_is_empty(st):
+		return "Take everything out of it first"
 	elif st.kind in WALL_KINDS:
 		# A roof needs two walls under it; don't let it fall.
 		var lvl := int(st.get("level", 0))
@@ -1034,3 +1036,99 @@ static func _loot_cache(inv: Inventory, cache_id: String, _rng: RandomNumberGene
 	for i in rng.randi_range(2, 4):
 		var e: Array = supplies[rng.randi() % supplies.size()]
 		_add(inv, e[0], rng.randi_range(e[1], e[2]), out)
+
+
+# --- Storage -----------------------------------------------------------------------------------
+
+const CHEST_REACH := 6.0   ## how close you must be to move things in or out of a chest
+
+
+## A chest's slots ({} empty, or {id, count, dur}), kept in the structure itself so saves and guests carry them.
+static func chest_slots(st: Dictionary) -> Array:
+	var n := int(DECOR.get(st.kind, {}).get("slots", 0))
+	if not st.has("items") or (st.items as Array).size() != n:
+		var old: Array = st.get("items", [])
+		var items: Array = []
+		for i in n:
+			items.append(old[i] if i < old.size() else {})
+		st["items"] = items
+	return st.items
+
+
+static func chest_is_empty(st: Dictionary) -> bool:
+	for s: Dictionary in st.get("items", []):
+		if not s.is_empty():
+			return false
+	return true
+
+
+## Move things between a chest and a satchel (or within either). a: {structure, op: "move" | "quick", from: "bag" |
+## "chest", a: slot, to: "bag" | "chest", b: slot, pos: where the player stands}. "move" drops slot a's stack on
+## slot b (merging like stacks, else swapping); "quick" sends it to the other side wherever it fits.
+static func chest_op(player_id: int, a: Dictionary) -> Dictionary:
+	var sid := String(a.get("structure", ""))
+	if not Game.structures.has(sid):
+		return {"ok": false, "reason": "The chest is gone"}
+	var st: Dictionary = Game.structures[sid]
+	if not DECOR.get(st.kind, {}).has("slots") or is_blueprint(st):
+		return {"ok": false}
+	var at: Vector3 = a.get("pos", _pos(st))
+	if at.distance_to(_pos(st)) > CHEST_REACH:
+		return {"ok": false, "reason": "Too far from the chest"}
+	var inv := Game.inventory_of(player_id)
+	var chest := chest_slots(st)
+	var from := String(a.get("from", "chest"))
+	var src: Array = chest if from == "chest" else inv.slots
+	var ia := int(a.get("a", -1))
+	if ia < 0 or ia >= src.size() or (src[ia] as Dictionary).is_empty():
+		return {"ok": false}
+	if String(a.get("op", "")) == "quick":
+		var dst: Array = inv.slots if from == "chest" else chest
+		_stow(src, ia, dst, inv if from == "chest" else null)
+	else:
+		var to := String(a.get("to", "bag"))
+		var dst: Array = chest if to == "chest" else inv.slots
+		var ib := int(a.get("b", -1))
+		if ib < 0 or ib >= dst.size() or (src == dst and ia == ib):
+			return {"ok": false}
+		var s: Dictionary = src[ia]
+		var d: Dictionary = dst[ib]
+		if not d.is_empty() and d.id == s.id and ItemDB.info(s.id).kind != "tool":
+			var put := mini(int(s.count), ItemDB.stack_size(s.id) - int(d.count))
+			d.count = int(d.count) + put
+			s.count = int(s.count) - put
+			if int(s.count) <= 0:
+				src[ia] = {}
+		else:
+			src[ia] = d
+			dst[ib] = s
+	inv.changed.emit()
+	Game.structures_changed.emit()
+	return {"ok": true}
+
+
+## Put the stack in src[i] into dst: onto like stacks first, then the first empty slot (into a satchel, its own
+## rules for where things go). Whatever doesn't fit stays where it was.
+static func _stow(src: Array, i: int, dst: Array, into: Inventory) -> void:
+	var s: Dictionary = src[i]
+	if into != null:
+		var got := into.add(s.id, int(s.count), true, int(s.get("dur", -1)))
+		s.count = int(s.count) - got
+	else:
+		var cap := ItemDB.stack_size(s.id)
+		if ItemDB.info(s.id).kind != "tool":
+			for d: Dictionary in dst:
+				if int(s.count) <= 0:
+					break
+				if not d.is_empty() and d.id == s.id and int(d.count) < cap:
+					var put := mini(int(s.count), cap - int(d.count))
+					d.count = int(d.count) + put
+					s.count = int(s.count) - put
+		for j in dst.size():
+			if int(s.count) <= 0:
+				break
+			if (dst[j] as Dictionary).is_empty():
+				dst[j] = s.duplicate()
+				s.count = 0
+	if int(s.count) <= 0:
+		src[i] = {}

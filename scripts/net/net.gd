@@ -748,6 +748,8 @@ func run_action(pid: int, peer: int, action: String, a: Dictionary) -> Dictionar
 				"split": inv.split(int(a.a), int(a.b))
 				"quick": inv.quick_move(int(a.a))
 			return {"ok": true}
+		"chest":
+			return GameActions.chest_op(pid, a)
 		"reset":
 			GameActions.drop_all(inv, a.get("pos", Vector3.ZERO))
 			inv.clear(true)
