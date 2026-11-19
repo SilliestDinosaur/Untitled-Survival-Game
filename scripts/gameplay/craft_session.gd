@@ -272,13 +272,13 @@ func _view(key: String) -> Transform3D:
 			return Transform3D(Basis(Vector3.UP, yaw) * Basis(Vector3.RIGHT, HAND_PITCH), pc.origin - Vector3(0, HAND_DROP, 0))
 		"fire":   # the spit and the fire under it
 			var c: Vector3 = _station.pos
-			return _look(c + _side * 1.45 + Vector3(0, 1.25, 0), c + Vector3(0, 0.7, 0))
+			return _look(c + _side * 1.6 + Vector3(0, 1.32, 0), c + Vector3(0, 0.8, 0))
 		"mouth":   # over the hearth's fire, from the front
 			from = Vector3(0.28, 1.7, -1.35)
 			at = Vector3(0.0, 0.86, -0.05)
 		"anvil":   # the anvil's face, with the stump and the hearth's corner around it
-			from = Vector3(1.38, 1.42, -1.12)
-			at = Vector3(0.93, 0.7, -0.2)
+			from = Vector3(1.32, 1.4, -1.14)
+			at = Vector3(0.88, 0.68, -0.23)
 		"bench":   # the piece on the bench top, the bench around it
 			var s := _bench_side()
 			from = Vector3(0.06, 1.62, s * 1.08)
