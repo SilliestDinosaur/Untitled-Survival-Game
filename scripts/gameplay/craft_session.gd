@@ -551,10 +551,10 @@ func _tool_place(where: String) -> Transform3D:
 	var head := _head_y()
 	match where:
 		"hand":
-			var sc := 1.2 if step_id() == "knap" else 0.55
+			var sc := 2.0 if step_id() == "knap" else 0.7
 			var b := (Basis(Vector3.FORWARD, -0.35) * Basis(Vector3.RIGHT, 0.25)).scaled(Vector3.ONE * sc)
-			# The head sits in the middle of the view (the view looks down at your hands).
-			return Transform3D(b, Vector3(0.0, -0.03, -0.42) - b * Vector3(0, head, 0))
+			# The head sits in the middle of the view, close (the view looks down at your hands).
+			return Transform3D(b, Vector3(0.0, -0.02, -0.36) - b * Vector3(0, head, 0))
 		"bench":
 			return _global_to_local(_xf * Transform3D(_lying(), Vector3(head - 0.12, 0.875, _bench_side() * 0.08)))
 		"coals":
