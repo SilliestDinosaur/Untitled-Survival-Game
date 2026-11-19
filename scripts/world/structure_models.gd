@@ -238,8 +238,7 @@ static func _floor(k: MeshKit, mat: String, rng: RandomNumberGenerator) -> void:
 		return
 	var bed := PackedVector2Array([Vector2(-h, -h), Vector2(h, -h), Vector2(h, h), Vector2(-h, h)])
 	var mortar := MORTAR.darkened(0.12) if mat == "brick" else STONE_MORTAR
-	k.sculpt(bed, Transform3D(Basis(Vector3.RIGHT, PI * 0.5), Vector3.ZERO), func(_p: Vector2) -> float: return 0.42,
-		func(_p: Vector2, _t: float) -> Color: return mortar, 0, 0.05)
+	k.extrude(bed, Transform3D(Basis(Vector3.RIGHT, PI * 0.5), Vector3.ZERO), 0.42, 0.0, mortar, mortar)
 	var n := 3 if mat == "stone" else 6
 	var step := GameActions.CELL / n
 	var base := _mat_colour(mat)
@@ -250,11 +249,9 @@ static func _floor(k: MeshKit, mat: String, rng: RandomNumberGenerator) -> void:
 			var hw := step * 0.5 - (0.035 if mat == "stone" else 0.03) + rng.randf_range(-0.01, 0.01)
 			var outline := _rounded_rect(hw, hw, 0.07 if mat == "stone" else 0.03, 3)
 			var block := base.lightened(rng.randf_range(-0.07, 0.05))
-			var face := func(p: Vector2, _t: float) -> Color:
-				return block.darkened(0.1) if fposmod(p.x * 5.0 + p.y * 3.0, 1.0) < 0.04 else block
 			var xf := Transform3D(Basis(Vector3.RIGHT, PI * 0.5).rotated(Vector3.UP, rng.randf_range(-0.03, 0.03)), Vector3(bx, 0.12 if mat == "stone" else 0.24, bz))
-			var thick := 0.44 if mat == "stone" else 0.2
-			k.sculpt(outline, xf, func(_p: Vector2) -> float: return thick + rng.randf_range(-0.01, 0.01), face, 1, 0.04 if mat == "stone" else 0.02)
+			var thick := (0.44 if mat == "stone" else 0.2) + rng.randf_range(-0.01, 0.01)
+			k.extrude(outline, xf, thick, 0.03 if mat == "stone" else 0.015, block, block.darkened(0.12))
 
 
 ## Walls, half walls and the wall around an opening: a mortar core split round the openings, then the
@@ -270,8 +267,7 @@ static func _edge(k: MeshKit, mat: String, height: float, openings: Array, rng: 
 	# Boards are thin, so their core is too: a thick core would hide them behind its face.
 	var core_thick := 0.06 if mat == "wood" else 0.2
 	for r: Rect2 in _core_rects(height, openings, x0, x1):
-		k.sculpt(_rect_outline(r), Transform3D(), func(_p: Vector2) -> float: return core_thick,
-			func(_p: Vector2, _t: float) -> Color: return core, 0, 0.06)
+		k.extrude(_rect_outline(r), Transform3D(), core_thick, 0.0, core, core)
 	match mat:
 		"brick":
 			_brick_courses(k, height, openings, rng, x0, x1)
@@ -347,11 +343,8 @@ static func _brick_courses(k: MeshKit, height: float, openings: Array, rng: Rand
 			if _hits(Rect2(bx0, y0, bx1 - bx0, bh), openings):
 				continue
 			var b := base.lightened(rng.randf_range(-0.07, 0.05))
-			var face := func(p: Vector2, _t: float) -> Color:
-				return b.darkened(0.12) if p.y < -bh * 0.5 + 0.045 or p.y > bh * 0.5 - 0.045 else b
 			var outline := _rounded_rect((bx1 - bx0) * 0.5, bh * 0.5 - 0.015, 0.025, 2)
-			k.sculpt(outline, Transform3D(Basis(), Vector3((bx0 + bx1) * 0.5, y0 + bh * 0.5, 0.07)),
-				func(_p: Vector2) -> float: return 0.22, face, 1, 0.03)
+			k.extrude(outline, Transform3D(Basis(), Vector3((bx0 + bx1) * 0.5, y0 + bh * 0.5, 0.07)), 0.22, 0.02, b, b.darkened(0.14))
 
 
 static func _stone_courses(k: MeshKit, height: float, openings: Array, rng: RandomNumberGenerator, x0: float, x1: float) -> void:
@@ -369,11 +362,8 @@ static func _stone_courses(k: MeshKit, height: float, openings: Array, rng: Rand
 			if sx1 - sx0 < 0.15 or _hits(Rect2(sx0, y0, sx1 - sx0, rh), openings):
 				continue
 			var s := base.lightened(rng.randf_range(-0.08, 0.06))
-			var face := func(p: Vector2, _t: float) -> Color:
-				return s.darkened(0.12) if absf(p.x) > (sx1 - sx0) * 0.5 - 0.06 or absf(p.y) > rh * 0.5 - 0.06 else s
-			k.sculpt(_rounded_rect((sx1 - sx0) * 0.5 - 0.012, rh * 0.5 - 0.012, 0.07, 2),
-				Transform3D(Basis(), Vector3((sx0 + sx1) * 0.5, y0 + rh * 0.5, 0.09)),
-				func(_p: Vector2) -> float: return 0.26, face, 1, 0.025)
+			k.extrude(_rounded_rect((sx1 - sx0) * 0.5 - 0.012, rh * 0.5 - 0.012, 0.07, 2),
+				Transform3D(Basis(), Vector3((sx0 + sx1) * 0.5, y0 + rh * 0.5, 0.09)), 0.26, 0.04, s, s.darkened(0.14))
 
 
 ## Boards standing between a bottom and a top rail. Rails and boards stop short where an opening crosses them.
@@ -415,10 +405,8 @@ static func _wood_boards(k: MeshKit, height: float, openings: Array, rng: Random
 			if ln < 0.1:
 				continue
 			var board := WOOD.lightened(rng.randf_range(-0.05, 0.06))
-			var grain := func(p: Vector2, _t: float) -> Color:
-				return board.darkened(0.08) if fposmod(p.y * 6.0 + sin(p.x * 30.0), 1.0) < 0.08 else board
-			k.sculpt(_rounded_rect(bhw, ln * 0.5, minf(0.02, bhw * 0.5), 1), Transform3D(Basis(), Vector3(bx, (sg[0] + sg[1]) * 0.5 + off, 0.0)),
-				func(_p: Vector2) -> float: return 0.08, grain, 1, 0.02)
+			k.extrude(_rounded_rect(bhw, ln * 0.5, minf(0.02, bhw * 0.5), 1), Transform3D(Basis(), Vector3(bx, (sg[0] + sg[1]) * 0.5 + off, 0.0)),
+				0.08, 0.012, board, board.darkened(0.1))
 
 
 ## What is left of [a, b] segments once the cut (c, d) is taken out of them.
@@ -516,11 +504,10 @@ static func _roof(k: MeshKit, mat: String, rng: RandomNumberGenerator) -> void:
 				continue
 			tx = minf(tx, h - hx)
 			var t := tile.lightened(rng.randf_range(-0.06, 0.06))
-			var face := func(p: Vector2, _t: float) -> Color: return t.darkened(0.15) if p.y < -hy * 0.6 else t
 			# Tiles are nudged off a regular grid so their edges never line up exactly.
 			var jitter := Vector2(rng.randf_range(-0.004, 0.004), rng.randf_range(-0.004, 0.004))
-			k.sculpt(_rounded_rect(hx, hy, hx * 0.3, 1), Transform3D(Basis(Vector3.RIGHT, PI * 0.5), Vector3(tx + jitter.x, 0.03 + row * 0.004, tz + jitter.y)),
-				func(_p: Vector2) -> float: return 0.06, face, 1, 0.045)
+			k.extrude(_rounded_rect(hx, hy, hx * 0.3, 1), Transform3D(Basis(Vector3.RIGHT, PI * 0.5), Vector3(tx + jitter.x, 0.03 + row * 0.004, tz + jitter.y)),
+				0.06, 0.012, t, t.darkened(0.18))
 	# Edge beams inside the cell (a neighbouring roof's beams sit beside them, not in the same place), the short pair
 	# fitted between the long pair so no two beams overlap.
 	for side in [-1.0, 1.0]:

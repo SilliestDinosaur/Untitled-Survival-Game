@@ -241,10 +241,17 @@ func _piece(info: Dictionary, c: Vector2, s: float) -> void:
 	var base: Color = colours.get(String(info.get("mat", "")), Color(0.6, 0.6, 0.6))
 	var line := base.darkened(0.35)
 	match String(info.get("shape", "")):
-		"floor":
-			draw_rect(Rect2(c + Vector2(-s * 0.4, s * 0.08), Vector2(s * 0.8, s * 0.2)), base)
-			for i in 3:
-				draw_line(c + Vector2(-s * 0.4 + i * s * 0.27, s * 0.08), c + Vector2(-s * 0.4 + i * s * 0.27, s * 0.28), line, 1.2)
+		"floor":   # a slab seen from above at an angle: a tiled top and a darker front edge
+			var tl := c + Vector2(-s * 0.24, -s * 0.2)
+			var tr := c + Vector2(s * 0.4, -s * 0.2)
+			var br := c + Vector2(s * 0.24, s * 0.14)
+			var bl := c + Vector2(-s * 0.4, s * 0.14)
+			draw_colored_polygon(PackedVector2Array([tl, tr, br, bl]), base.lightened(0.08))
+			draw_colored_polygon(PackedVector2Array([bl, br, br + Vector2(0, s * 0.14), bl + Vector2(0, s * 0.14)]), base.darkened(0.2))
+			for i in range(1, 3):   # the tiles' joints, both ways
+				var f := i / 3.0
+				draw_line(tl.lerp(bl, f), tr.lerp(br, f), line, 1.2)
+				draw_line(tl.lerp(tr, f), bl.lerp(br, f), line, 1.2)
 		"wall":
 			draw_rect(Rect2(c + Vector2(-s * 0.34, -s * 0.36), Vector2(s * 0.68, s * 0.72)), base)
 			for i in 3:
@@ -262,9 +269,21 @@ func _piece(info: Dictionary, c: Vector2, s: float) -> void:
 			draw_rect(Rect2(c + Vector2(-s * 0.34, -s * 0.36), Vector2(s * 0.68, s * 0.72)), base)
 			draw_rect(Rect2(c + Vector2(-s * 0.14, -s * 0.12), Vector2(s * 0.28, s * 0.48)), Color(0.5, 0.36, 0.24))
 			draw_circle(c + Vector2(s * 0.08, s * 0.14), s * 0.03, Color(0.3, 0.3, 0.32))
-		"stairs":
-			for i in 4:
-				draw_rect(Rect2(c + Vector2(-s * 0.36 + i * s * 0.18, -s * 0.3 + i * s * 0.16), Vector2(s * 0.72 - i * s * 0.18, s * 0.6 - i * s * 0.16)), base.lightened(i * 0.04))
+		"stairs":   # a flight of four steps from the side, climbing to the right
+			var steps := 4
+			var w := s * 0.72 / steps
+			var hh := s * 0.68 / steps
+			var x0 := c.x - s * 0.36
+			var y0 := c.y + s * 0.34
+			var pts := PackedVector2Array([Vector2(x0, y0)])
+			for i in steps:
+				pts.append(Vector2(x0 + i * w, y0 - (i + 1) * hh))
+				pts.append(Vector2(x0 + (i + 1) * w, y0 - (i + 1) * hh))
+			pts.append(Vector2(x0 + steps * w, y0))
+			draw_colored_polygon(pts, base)
+			for i in steps:   # each tread's lighter nosing
+				draw_line(Vector2(x0 + i * w, y0 - (i + 1) * hh), Vector2(x0 + (i + 1) * w, y0 - (i + 1) * hh), base.lightened(0.25), 2.0)
+			draw_polyline(pts + PackedVector2Array([pts[0]]), line, 1.2)
 		"roof":
 			for i in 3:
 				draw_colored_polygon(PackedVector2Array([c + Vector2(-s * 0.36, -s * 0.12 + i * s * 0.2), c + Vector2(s * 0.36, -s * 0.12 + i * s * 0.2), c + Vector2(s * 0.28, s * 0.06 + i * s * 0.2), c + Vector2(-s * 0.28, s * 0.06 + i * s * 0.2)]), base.lightened(i * 0.06))

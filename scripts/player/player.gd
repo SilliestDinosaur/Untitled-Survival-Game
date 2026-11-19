@@ -713,9 +713,14 @@ func _update_placement() -> void:
 	if pos == Vector3.INF:
 		var flat := Vector3(dir.x, 0, dir.z).normalized()
 		pos = global_position + flat * 3.0
-	pos.y = maxf(pos.y, Game.world_gen.get_height(pos.x, pos.z)) if not GameActions.is_building(kind_now) else pos.y
 	if not GameActions.is_building(kind_now):
+		# A station stands on the ground, or on the top of a floor when that's what you're aiming at.
 		pos.y = Game.world_gen.get_height(pos.x, pos.z)
+		if ray.is_colliding() and ray.get_collider().has_meta("structure") and ray.get_collision_normal().y > 0.7 \
+				and ray.get_collision_point().distance_to(from) <= REACH + 2.0:
+			var top := ray.get_collision_point()
+			if not GameActions.floor_under(top).is_empty():
+				pos = top
 	if Input.is_action_just_pressed("rotate_piece"):
 		_place_turns = (_place_turns + 1) % 4
 	var yaw := rotation.y + PI + _place_turns * PI * 0.5

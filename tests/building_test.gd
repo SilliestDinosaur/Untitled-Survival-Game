@@ -154,6 +154,44 @@ func _process(_d: float) -> bool:
 		4:
 			_check(_GA.is_building("stone_roof") and _GA.is_building("stone_stairs") and _GA.is_building("brick_floor"), "every material variant is a building piece")
 			_check(_GA.PIECES.size() == 24, "24 building pieces (%d)" % _GA.PIECES.size())
+			_step = 5
+		5:
+			# Stations on floors: a workbench stands on a finished foundation, not sunk into one from the ground, not
+			# against a wall, and the floor can't be knocked down from under it.
+			var cell := Vector3.INF
+			for k in 60:
+				var cand: Vector3 = _spot + Vector3((k % 6 - 3) * 3.0, 0, 9.0 + (k / 6) * 3.0)
+				cand.y = _game.world_gen.get_height(cand.x, cand.z)
+				if _Terrain.tree_near(cand, 5.0) == null and cand.y > 2.0 and _GA.placement_problem(_GA.snap_piece("foundation", cand).pos, "foundation", 0.0) == "":
+					cell = cand
+					break
+			_check(cell != Vector3.INF, "found a clear cell for the station checks")
+			if cell == Vector3.INF:
+				return _finish()
+			var fs: Dictionary = _GA.snap_piece("foundation", cell)
+			var laid: Dictionary = _GA.place_blueprint(1, "foundation", fs.pos, 0.0)
+			_check(laid.ok, "a foundation for the workbench")
+			_Terrain.commit(_Terrain.level_ground(fs.pos, 1.5, 1.5, 0.0, fs.pos.y))
+			var not_built: String = _GA.placement_problem(fs.pos + Vector3(0.2, _GA.FLOOR_TOP, 0.1), "workbench")
+			_check(not_built != "", "a workbench can't stand on a blueprint: %s" % not_built)
+			_build(String(laid.id))
+			var top: Vector3 = fs.pos + Vector3(0.2, _GA.FLOOR_TOP, 0.1)
+			var on_top: String = _GA.placement_problem(top, "workbench")
+			_check(on_top == "", "a workbench can stand on a finished foundation (%s)" % on_top)
+			var inv = _game.inventory_of(1)
+			inv.add("workbench", 1, true)
+			var placed: Dictionary = _GA.place_structure(1, _slot_of(inv, "workbench"), top, 0.0)
+			_check(placed.get("ok", false), "the workbench is placed on the foundation")
+			var under: String = _GA.removal_problem(_game.structures[String(laid.id)])
+			_check(under.begins_with("Pack up"), "the foundation can't be knocked down from under it: %s" % under)
+			var sunk := Vector3(fs.pos.x + 0.6, _game.world_gen.get_height(fs.pos.x + 0.6, fs.pos.z), fs.pos.z)
+			var sunk_problem: String = _GA.placement_problem(sunk, "forge")
+			_check(sunk_problem != "", "a station on the ground inside a slab is refused: %s" % sunk_problem)
+			var ws: Dictionary = _GA.snap_piece("wall", fs.pos + Vector3(0, 0.5, -1.4))
+			var wall: Dictionary = _GA.place_blueprint(1, "wall", ws.pos, ws.yaw)
+			_check(wall.ok, "a wall on the foundation's edge")
+			var by_wall: String = _GA.placement_problem(fs.pos + Vector3(-0.9, _GA.FLOOR_TOP, -1.2), "campfire")
+			_check(by_wall.contains("wall") or by_wall.contains("Too close"), "a station against a wall is refused: %s" % by_wall)
 			return _finish()
 	return false
 

@@ -53,6 +53,8 @@ func _prewarm() -> void:
 		if info.get("kind", "") in ["placeable", "piece"] and kind != "" and not seen.has(kind):
 			seen[kind] = true
 			StructureModels.get_model(kind, _mat, _glow_mat)
+	for piece: String in GameActions.PIECES:   # building pieces too (a fraction of a second for all of them)
+		StructureModels.get_model(piece, _mat, _glow_mat)
 
 
 ## Flame tongues: three lofted teardrops, yellow core fading to red tips.

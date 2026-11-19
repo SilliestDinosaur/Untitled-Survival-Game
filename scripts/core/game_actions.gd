@@ -538,12 +538,51 @@ static func placement_problem(pos: Vector3, kind := "", yaw := 0.0) -> String:
 			if o.kind in EDGE_KINDS and _pos(o).distance_to(pos) < 0.5:
 				return "There's already a wall here"
 		return ""
-	if Game.world_gen.get_normal(pos.x, pos.z).y < 0.8:
+	# Stations: on the ground, or on top of a finished floor.
+	var on_floor := not floor_under(pos).is_empty()
+	if not on_floor and Game.world_gen.get_normal(pos.x, pos.z).y < 0.8:
 		return "Too steep here"
 	for id: String in Game.structures:
-		if _pos(Game.structures[id]).distance_to(pos) < 1.8:
-			return "Too close to another structure"
+		var o: Dictionary = Game.structures[id]
+		var op := _pos(o)
+		if not is_building(o.kind):
+			if op.distance_to(pos) < STATION_GAP:
+				return "Too close to the %s" % ItemDB.display_name(o.kind).to_lower()
+		elif o.kind in EDGE_KINDS:
+			# Clear of walls: its footprint (about a metre and a half across) mustn't reach into one.
+			if pos.y < op.y + WALL_H and pos.y + 1.2 > op.y and _to_wall(pos, op, float(o.get("yaw", 0.0))) < STATION_RADIUS:
+				return "A wall is in the way"
+		elif o.kind in FLOOR_KINDS and not on_floor:
+			if cell_of(op) == cell_of(pos) and absf(op.y - pos.y) < 1.0:
+				if is_blueprint(o) and absf(op.y + FLOOR_TOP - pos.y) < 0.3:
+					return "Build the floor with the hammer first"
+				return "Put it on top of the floor"
+		elif o.kind in STAIR_KINDS:
+			if cell_of(op) == cell_of(pos) and absf(op.y - pos.y) < STACK_H:
+				return "Stairs are in the way"
 	return ""
+
+
+const STATION_GAP := 1.6      ## stations keep this far apart (centre to centre)
+const STATION_RADIUS := 0.7   ## and this far from a wall
+
+
+## The finished floor a station at `pos` would stand on (its top within a hand's breadth of pos), or {}.
+static func floor_under(pos: Vector3) -> Dictionary:
+	var cell := cell_of(pos)
+	for id: String in Game.structures:
+		var st: Dictionary = Game.structures[id]
+		if st.kind in FLOOR_KINDS and not is_blueprint(st) and cell_of(_pos(st)) == cell and absf(_pos(st).y + FLOOR_TOP - pos.y) < 0.3:
+			return st
+	return {}
+
+
+## Distance across the ground from p to a wall standing on an edge at `wall` (a 3 m segment along the edge).
+static func _to_wall(p: Vector3, wall: Vector3, yaw: float) -> float:
+	var along_x := absf(sin(yaw)) < 0.5
+	var a := absf(p.x - wall.x) if along_x else absf(p.z - wall.z)   # along the wall
+	var b := absf(p.z - wall.z) if along_x else absf(p.x - wall.x)   # out from it
+	return Vector2(maxf(a - CELL * 0.5, 0.0), b).length()
 
 
 ## The staircase starting from a cell's level, or {}.
@@ -649,6 +688,10 @@ static func removal_problem(st: Dictionary) -> String:
 			return "Take down what's on top of it first"
 		if walls_around(cell, lvl) > 0 or _edges_on_floor(cell, lvl) > 0:
 			return "Take down the walls standing on it first"
+		for id: String in Game.structures:   # a station standing on it
+			var o: Dictionary = Game.structures[id]
+			if not is_building(o.kind) and floor_under(_pos(o)) == st:
+				return "Pack up the %s on it first" % ItemDB.display_name(o.kind).to_lower()
 	elif st.kind in WALL_KINDS:
 		# A roof needs two walls under it; don't let it fall.
 		var lvl := int(st.get("level", 0))
