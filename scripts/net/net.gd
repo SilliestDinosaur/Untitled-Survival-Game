@@ -43,6 +43,7 @@ const ALPHABET := "ABCDEFGHJKLMNPQRSTUVWXYZ23456789"
 ## "off" for none).
 const RELAY_SERVER := "3.139.2.153:8890"   # the relay on AWS Lightsail (see README, "Relay server")
 const RELAY_CODE_LENGTH := 9
+const ANIMALS_PER_PACKET := 12   ## animal updates per unreliable packet (each is ~70 bytes; a packet holds ~1390)
 const RELAY_KEEPALIVE := 10.0   ## seconds between a host's address refreshes (also keeps its router's door open)
 const RELAY_RETRY := 30.0       ## a host that couldn't reach the meeting server tries again this often
 
@@ -1057,7 +1058,10 @@ func _send_animals() -> void:
 			if a.global_position.distance_to(center) > ANIMAL_RANGE:
 				continue
 			out.append([a.net_id, a.species_index, a.global_position, a.rotation.y, int(a.state), a.dead])
-		_animals.rpc_id(peer, out)
+		# In batches small enough for one packet: a herd in one went over the MTU, and over the internet a
+		# split unreliable packet is lost whole if any piece is.
+		for i in range(0, out.size(), ANIMALS_PER_PACKET):
+			_animals.rpc_id(peer, out.slice(i, i + ANIMALS_PER_PACKET))
 
 
 @rpc("authority", "unreliable_ordered")

@@ -13,6 +13,9 @@ var _phase_ms := 0
 var _frames := 0
 var _fails: Array[String] = []
 var _target := {}
+var _hits_sent := 0
+var _hit_replies := 0
+var _last_hit := {}
 var _wood := 0
 var _structures_before := 0
 var _replies := 0
@@ -123,13 +126,21 @@ func _process(_delta: float) -> bool:
 			if not found.is_empty():
 				_target = found[0].resources[found[1]]
 			if _frames % 10 == 0 and not _target.get("removed", false):
+				_hits_sent += 1
 				_net.request("hit_resource", {"id": _target.id, "kind": _target.kind, "key": _target.key, "slot": _player.inventory.selected,
-					"pos": _target.transform.origin, "from": _player.global_position})
+					"pos": _target.transform.origin, "from": _player.global_position}, func(res: Dictionary) -> void:
+						_hit_replies += 1
+						_last_hit = res)
 			if _target.get("removed", false) and _game.removed_resources.has(_target.id):
 				_check(_player.inventory.count("wood") > _wood, "chopped a tree through the host (wood %d -> %d)" % [_wood, _player.inventory.count("wood")])
 				_next("animals")
 			elif _waited() > 45.0:
 				_check(false, "tree never fell (hp %s)" % str(_target.get("hp")))
+				# What happened, for a failure on two machines: the replies, and whether the tree's changes arrived.
+				print("  tree %s (%s) at %.1f m; hits sent %d, replies %d, last reply %s; removed here %s, in Game %s; tool %s" % [
+					_target.id, _target.kind, _target.transform.origin.distance_to(_player.global_position), _hits_sent, _hit_replies,
+					str(_last_hit).left(300), str(_target.get("removed", false)), str(_game.removed_resources.has(_target.id)),
+					_player.inventory.selected_item()])
 				return _finish()
 		"animals":
 			var n: int = _main.get_node("Wildlife").get_animals().size()
