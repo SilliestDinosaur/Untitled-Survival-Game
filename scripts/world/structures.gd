@@ -9,7 +9,12 @@ var _mat: ShaderMaterial
 var _glow_mat: StandardMaterial3D
 var _flame_mat: StandardMaterial3D
 var _flame_mesh: ArrayMesh
-var _blueprint_mat: StandardMaterial3D   ## see-through blue for pieces not yet finished with the hammer
+var _blueprint_mat: ShaderMaterial   ## see-through blue above a piece's build line (shaders/blueprint.gdshader)
+var _build_mat: ShaderMaterial       ## the painted look below it (shaders/painted_build.gdshader)
+var _finishing := {}                 ## ids whose blueprint was just finished: they get a puff when rebuilt solid
+
+## Dust from hammering, by material.
+const DUST := {"wood": Color(0.72, 0.56, 0.38), "stone": Color(0.62, 0.62, 0.64), "brick": Color(0.74, 0.46, 0.36)}
 
 
 func _ready() -> void:
@@ -27,10 +32,9 @@ func _ready() -> void:
 	_flame_mat.blend_mode = BaseMaterial3D.BLEND_MODE_ADD
 	_flame_mat.cull_mode = BaseMaterial3D.CULL_DISABLED
 	_flame_mesh = _build_flame()
-	_blueprint_mat = StandardMaterial3D.new()
-	_blueprint_mat.albedo_color = Color(0.45, 0.72, 1.0, 0.38)
-	_blueprint_mat.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
-	_blueprint_mat.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
+	_blueprint_mat = ShaderMaterial.new()
+	_blueprint_mat.shader = preload("res://shaders/blueprint.gdshader")
+	_build_mat = ArtStyle.material(preload("res://shaders/painted_build.gdshader"), {"brush_strength": 0.22, "rim_amount": 0.3})
 	# The first world was built before this node existed, so its models are built here too.
 	_prewarm()
 	Game.structures_changed.connect(_sync)
@@ -84,15 +88,67 @@ func _sync() -> void:
 	for id: String in Game.structures:
 		var st: Dictionary = Game.structures[id]
 		if _nodes.has(id) and is_instance_valid(_nodes[id]) and bool(_nodes[id].get_meta("blueprint", false)) != GameActions.is_blueprint(st):
+			if not GameActions.is_blueprint(st):
+				_finishing[id] = true
 			_free_node(id)   # a blueprint just finished: rebuild it solid
 		if not _nodes.has(id) or not is_instance_valid(_nodes[id]):
 			_nodes[id] = _make(st)
 			var light := _nodes[id].get_node_or_null("Light") as OmniLight3D
 			if light:
 				_lit[id] = [_nodes[id], light, _nodes[id].get_node_or_null("Flame") as Node3D]
+			if _finishing.has(id):
+				_finishing.erase(id)
+				_finished_fx(_nodes[id], st)
 		else:
 			_apply_door(_nodes[id], Game.structures[id])
 			_apply_ends(_nodes[id], Game.structures[id])
+			_apply_build(_nodes[id], st)
+
+
+## Where a blueprint's build line is (in the piece's own height) for how much of it is built.
+static func _cut_for(mesh: Mesh, built: float) -> float:
+	var box := mesh.get_aabb() if mesh else AABB(Vector3.ZERO, Vector3.ONE)
+	return box.position.y - 0.01 + (box.size.y + 0.02) * clampf(built, 0.0, 1.0)
+
+
+func _set_cut(root: Node3D, cut: float) -> void:
+	root.set_meta("cut", cut)
+	for n in ["Body", "Ghost"]:
+		var mi := root.get_node_or_null(n) as GeometryInstance3D
+		if mi:
+			mi.set_instance_shader_parameter("build_cut", cut)
+
+
+## A hammer hit on a blueprint: the build line rises to the new share (quickly, not in a jump), with a puff of dust
+## in the piece's material along the line.
+func _apply_build(root: Node3D, st: Dictionary) -> void:
+	if not bool(root.get_meta("blueprint", false)):
+		return
+	var body := root.get_node_or_null("Body") as MeshInstance3D
+	if not body:
+		return
+	var target := _cut_for(body.mesh, float(st.get("built", 0.0)))
+	var now: float = root.get_meta("cut", target)
+	if is_equal_approx(now, target):
+		return
+	root.set_meta("cut", target)
+	var tw := create_tween()
+	tw.tween_method(func(c: float) -> void: _set_cut(root, c), now, target, 0.35).set_trans(Tween.TRANS_CUBIC).set_ease(Tween.EASE_OUT)
+	var mat := GameActions.piece_mat(st.kind)
+	var at := root.to_global(Vector3(0, target, 0))
+	Effects.chips(self, at, DUST.get(mat, Color(0.7, 0.6, 0.5)), 12, 0.05, 2.2)
+
+
+## A blueprint finished: a bigger puff all round, and the piece settles in with a little bounce.
+func _finished_fx(root: Node3D, st: Dictionary) -> void:
+	var mat := GameActions.piece_mat(st.kind)
+	var body := root.get_node_or_null("Body") as MeshInstance3D
+	var h := body.mesh.get_aabb().size.y if body and body.mesh else 1.0
+	Effects.chips(self, root.to_global(Vector3(0, h * 0.5, 0)), DUST.get(mat, Color(0.7, 0.6, 0.5)), 22, 0.07, 3.0)
+	Audio.play_3d("thud", root.global_position, -4.0, 0.8)
+	root.scale = Vector3(1.0, 0.94, 1.0)
+	var tw := create_tween()
+	tw.tween_property(root, "scale", Vector3.ONE, 0.35).set_trans(Tween.TRANS_BACK).set_ease(Tween.EASE_OUT)
 
 
 ## A wall's ends follow the walls it meets: placing or removing a neighbour can turn its corner joint around.
@@ -106,6 +162,9 @@ func _apply_ends(root: Node3D, st: Dictionary) -> void:
 	var body := root.get_node_or_null("Body") as MeshInstance3D
 	if body:
 		body.mesh = StructureModels.get_model(st.kind, _mat, _glow_mat, ends).body
+		var ghost := root.get_node_or_null("Ghost") as MeshInstance3D
+		if ghost:
+			ghost.mesh = body.mesh
 
 
 func _free_node(id: String) -> void:
@@ -129,8 +188,15 @@ func _make(st: Dictionary) -> Node3D:
 	mi.name = "Body"
 	mi.mesh = model.body
 	if blueprint:
-		mi.material_override = _blueprint_mat
+		# The real piece up to the build line, and the plan's blue above it (the same mesh twice).
+		mi.material_override = _build_mat
 		mi.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+		var ghost := MeshInstance3D.new()
+		ghost.name = "Ghost"
+		ghost.mesh = model.body
+		ghost.material_override = _blueprint_mat
+		ghost.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+		root.add_child(ghost)
 	elif st.kind == "campfire":
 		# Its light sits inside the log teepee: the logs would throw hard spokes of shadow across the ground.
 		mi.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
@@ -197,6 +263,8 @@ func _make(st: Dictionary) -> Node3D:
 	root.set_meta("phase", randf() * TAU)
 	add_child(root)
 	CaveShade.apply(root, CaveShade.at(root.position))   # built in a cave: the sky doesn't reach it
+	if blueprint:
+		_set_cut(root, _cut_for(model.body, float(st.get("built", 0.0))))
 	return root
 
 
