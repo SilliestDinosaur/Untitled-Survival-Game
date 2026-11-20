@@ -209,12 +209,12 @@ func get_base_height(x: float, z: float) -> float:
 		var stepped := (floorf(f) + smoothstep(0.15, 1.0, f - floorf(f))) * step
 		land = lerpf(land, lerpf(raised, stepped, 0.6), smoothstep(0.0, 0.5, bad))
 	land = _carve_water(x, z, land, range_t, mask, bumps)
-	land = Rivers.carve(rivers, x, z, land)
 	# The seabed: a shallow shelf that drops away gradually offshore.
 	var offshore := smoothstep(0.5, 0.95, coast_raw)
 	var seabed := lerpf(-2.5, -24.0, offshore) + bumps * 0.6 * offshore
 	var ground := lerpf(seabed, land, mask)
-	return ground
+	# The rivers last, so the coast's slope down to the seabed can't pull their banks under their water.
+	return Rivers.carve(rivers, x, z, ground)
 
 
 ## How strongly the badlands climate holds here (ignores altitude so terraces stay put).

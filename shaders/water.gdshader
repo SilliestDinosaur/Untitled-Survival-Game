@@ -75,7 +75,14 @@ void fragment() {
 	float edge = 1.0 - smoothstep(0.0, foam_width, water_depth + (fn - 0.5) * 0.9);
 	float roll = sin(water_depth * 3.2 - TIME * 1.4 + fn * 4.0) * 0.5 + 0.5;
 	float lines = smoothstep(0.8, 0.95, roll) * (1.0 - smoothstep(0.4, 2.6, water_depth));
-	float foam = clamp(smoothstep(0.35, 0.6, edge) + lines * 0.55 * step(0.45, fn), 0.0, 1.0);
+	// Rivers: a foam line along the waterline itself (the ribbon knows where its edges meet the banks), so the edge
+	// shows even where the banks rise too steeply for the depth-based band to be more than a sliver.
+	float shore_foam = 0.0;
+	if (flow > 0.0) {
+		float shore = UV2.x - abs(UV.x - UV2.x) - UV2.y;   // metres in from the waterline
+		shore_foam = (1.0 - smoothstep(0.05, 0.4, shore + (fn - 0.5) * 0.35)) * 0.55;
+	}
+	float foam = clamp(max(smoothstep(0.35, 0.6, edge), shore_foam) + lines * 0.55 * step(0.45, fn), 0.0, 1.0);
 
 	// Brushy glints: hashed cells that light up with the ripples.
 	vec2 cell = floor(uv * 1.5);
