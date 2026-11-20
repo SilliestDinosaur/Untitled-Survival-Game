@@ -227,13 +227,17 @@ func badlands_amount(x: float, z: float) -> float:
 ## Lakes: basins cut below sea level so the sea plane fills them.
 ## They only form in the lowlands; in hills and mountains they taper out (springs, gorges' ends).
 func _carve_water(x: float, z: float, land: float, range_t: float, mask: float, bumps: float) -> float:
-	var lowland := (1.0 - range_t) * (1.0 - smoothstep(6.0, 12.0, land)) * smoothstep(0.25, 0.5, mask)
+	# Fading out over a wide band of height, so a lake meeting a hill's foot doesn't cut a cliff into it.
+	var lowland := (1.0 - range_t) * (1.0 - smoothstep(3.0, 16.0, land)) * smoothstep(0.25, 0.5, mask)
 	if lowland <= 0.001:
 		return land
 	# Lakes
 	var lk := _lake.get_noise_2d(x, z)
 	var lake_th := lerpf(0.56, 0.4, lake_amount)
-	var lake_t := smoothstep(lake_th - 0.06, lake_th + 0.08, lk) * lowland
+	# The higher the land around a lake, the further out its shore starts to slope down, so the shores stay gentle
+	# enough to walk out up (a lake cut into a hillside would otherwise have a steep bank).
+	var ramp := 0.06 + 0.016 * maxf(land - 2.0, 0.0)
+	var lake_t := smoothstep(lake_th - ramp, lake_th + 0.08, lk) * lowland
 	if lake_t > 0.0:
 		var depth := -1.5 - smoothstep(lake_th, lake_th + 0.25, lk) * 3.5
 		land = lerpf(land, minf(land, depth + bumps * 0.4), lake_t)
