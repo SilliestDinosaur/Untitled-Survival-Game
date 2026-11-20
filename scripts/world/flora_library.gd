@@ -189,6 +189,26 @@ func _init(seed_value: int, pal: WorldPalette) -> void:
 			if KINDS[kind].category == "tree":
 				_specs[key + "_lod"] = {"kind": kind, "index": i, "seed": variant_seed, "bare": false, "detail": _base_detail * TREE_DETAIL * 0.6}
 			variants[kind].append(key)
+	# More shapes for the trees, so a forest doesn't repeat itself (drawn from their own seed after all the
+	# others, so the shapes older worlds already have stay as they were).
+	var more := RandomNumberGenerator.new()
+	more.seed = seed_value * 53 + 11
+	for kind: String in KINDS:
+		var want := int(MORE_TREE_SHAPES.get(kind, 0))
+		for i in range(KINDS[kind].variants, want):
+			var key := "%s_%d" % [kind, i]
+			var variant_seed := more.randi()
+			var detail := _base_detail * TREE_DETAIL
+			_specs[key] = {"kind": kind, "index": i, "seed": variant_seed, "bare": false, "detail": detail}
+			if kind in BARE_KINDS or kind == ItemDB.fruit_tree:
+				_specs[key + "_bare"] = {"kind": kind, "index": i, "seed": variant_seed, "bare": true, "detail": detail}
+			_specs[key + "_lod"] = {"kind": kind, "index": i, "seed": variant_seed, "bare": false, "detail": _base_detail * TREE_DETAIL * 0.6}
+			variants[kind].append(key)
+
+
+## How many canopy shapes each tree has in all (the common forest trees most).
+const MORE_TREE_SHAPES := {"pine": 8, "oak": 8, "birch": 7, "fir": 8, "autumn_oak": 7, "willow": 5, "acacia": 6, "palm": 5,
+	"jungle_tree": 6, "dead_tree": 5}
 
 
 ## The mesh for a key ("pine_0", "pine_0_bare", "pine_0_lod"), built the first time it's asked for.

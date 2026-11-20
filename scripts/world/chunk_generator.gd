@@ -231,11 +231,22 @@ static func _place_resources(coord: Vector2i, origin: Vector3, gen: WorldGen, fl
 		# Nothing grows over a cave opening or inside a tunnel (the draws above still happen).
 		if removed.has(id) or Caves.void_distance(gen.caves, pos) < 1.0 or (not covered.is_empty() and _is_covered(covered, pos.x, pos.z)):
 			return
+		var basis := Basis(Vector3.UP, yaw).scaled(scl)
+		if FloraLibrary.KINDS[kind].category == "tree":
+			# Every tree its own: stretched a little differently each way and leaning a touch (from its id, so it's
+			# the same on every machine and draws nothing from the placement's random numbers).
+			var h := hash(id)
+			var sx := 0.86 + float(h % 29) / 100.0
+			var sy := 0.88 + float((h >> 5) % 31) / 100.0
+			var sz := 0.86 + float((h >> 10) % 29) / 100.0
+			var lean_axis := Vector3(cos(float((h >> 15) % 628) / 100.0), 0, sin(float((h >> 15) % 628) / 100.0))
+			var lean := deg_to_rad(float((h >> 20) % 50) / 10.0)   # up to 5 degrees
+			basis = Basis(lean_axis, lean) * Basis(Vector3.UP, yaw) * Basis.from_scale(scl * Vector3(sx, sy, sz))
 		out.append({
 			"id": id,
 			"kind": kind,
 			"key": flora.variants[kind][variant % flora.variants[kind].size()],
-			"transform": Transform3D(Basis(Vector3.UP, yaw).scaled(scl), pos),
+			"transform": Transform3D(basis, pos),
 			"hp": FloraLibrary.KINDS[kind].hp,
 		})
 
@@ -418,10 +429,13 @@ static func _resource_buffers(resources: Array[Dictionary], origin: Vector3, tie
 		var t: Transform3D = r.transform
 		t.origin -= origin
 		var shade := 0.92 + fposmod(t.origin.x * 3.17 + t.origin.z * 1.31, 0.16)
+		var warm := 0.0
+		if cat == "tree":   # a touch warmer or cooler, tree to tree
+			warm = fposmod(t.origin.x * 1.91 + t.origin.z * 2.73, 0.1) - 0.05
 		# Remember which instance this is, so it can be shaken / hidden when gathered.
 		r.mm_key = key
 		r.mm_index = buffers[key].size() / 16 if buffers.has(key) else 0
-		_append_instance(buffers, key, t, Color(shade, shade, shade, float(r.get("sky", 1.0))))
+		_append_instance(buffers, key, t, Color(shade * (1.0 + warm), shade, shade * (1.0 - warm), float(r.get("sky", 1.0))))
 	return buffers
 
 
