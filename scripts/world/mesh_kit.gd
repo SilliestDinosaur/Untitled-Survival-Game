@@ -18,6 +18,12 @@ static var detail := 1.0
 ## Whether trees get their small leaf cards and needle cards (the "Leaf details" setting).
 static var leaves := true
 var _noise: FastNoiseLite
+## Where each separate part (primitive, loft, extrusion, lathe) starts in `verts`. At commit each part is moved by
+## its own fraction of a millimetre, so two parts' faces that happen to lie in exactly the same plane (a board's top
+## flush with a rail's, a tile's edge on a beam's end) don't fight over the same pixels and flicker.
+var _parts := PackedInt32Array()
+## How far (metres, at most) a part may be nudged. 0 turns it off.
+static var nudge := 0.0009
 
 
 func _init(noise_seed := 0) -> void:
@@ -46,6 +52,7 @@ func add_tri(a: Vector3, b: Vector3, c: Vector3, ca: Color, cb := Color(-1, 0, 0
 ## color_fn:     optional Callable(local_pos: Vector3) -> Color for patterns (stripes, bellies).
 func add_primitive(prim: PrimitiveMesh, xf: Transform3D, color: Color, lumpy := 0.0, shade_jitter := 0.05,
 		puff_center: Variant = null, color_fn := Callable()) -> void:
+	_parts.append(verts.size())
 	var arrays := prim.get_mesh_arrays()
 	var src: PackedVector3Array = arrays[Mesh.ARRAY_VERTEX]
 	var src_n: PackedVector3Array = arrays[Mesh.ARRAY_NORMAL]
@@ -138,6 +145,7 @@ func _emit(a: Vector3, b: Vector3, c: Vector3, na: Vector3, nb: Vector3, nc: Vec
 ## inside faces into the hollow, and it's closed all the way round (no seams, no pretend holes).
 ## color_fn: optional Callable(t: float (0..1 along the profile), angle: float) -> Color.
 func lathe(profile: Array, segments: int, color: Color, color_fn := Callable(), xf := Transform3D()) -> void:
+	_parts.append(verts.size())
 	var n := profile.size()
 	if n < 2:
 		return
@@ -180,6 +188,7 @@ func lathe(profile: Array, segments: int, color: Color, color_fn := Callable(), 
 ## closed:   the path is a loop (a ring or coil): the tube joins itself, with no caps.
 func loft(path: Array, radii: Array, sides := 8, color := Color.WHITE, color_fn := Callable(),
 		shape_fn := Callable(), cap_start := true, cap_end := true, bumps := 0.0, closed := false) -> void:
+	_parts.append(verts.size())
 	var n := path.size()
 	if n < 2:
 		return
@@ -249,6 +258,7 @@ func loft(path: Array, radii: Array, sides := 8, color := Color.WHITE, color_fn 
 ## edge_color colors the bevel (e.g. a bright sharpened edge on metal).
 func extrude(outline: PackedVector2Array, xf: Transform3D, thickness: float, bevel: float, color: Color,
 		edge_color: Color, edge_thin := 0.15) -> void:
+	_parts.append(verts.size())
 	var count := outline.size()
 	if count < 3:
 		return
@@ -506,6 +516,18 @@ static func dist_to_polyline(p: Vector2, line: PackedVector2Array) -> float:
 
 
 func commit(material: Material) -> ArrayMesh:
+	if nudge > 0.0 and _parts.size() > 1:
+		for pi in _parts.size():
+			var from := _parts[pi]
+			var to := _parts[pi + 1] if pi + 1 < _parts.size() else verts.size()
+			if to <= from:
+				continue
+			# Steps on each axis that differ for any two parts built within a dozen of each other (neighbouring parts
+			# are the ones that touch), so their faces never land in one plane.
+			var off := Vector3(float(pi % 13) - 6.0, float((pi * 5) % 17) - 8.0, float((pi * 7) % 19) - 9.0) * (nudge / 9.0)
+			for vi in range(from, to):
+				verts[vi] += off
+		_parts.clear()
 	var arrays := []
 	arrays.resize(Mesh.ARRAY_MAX)
 	arrays[Mesh.ARRAY_VERTEX] = verts

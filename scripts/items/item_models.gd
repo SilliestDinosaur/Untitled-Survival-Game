@@ -611,29 +611,92 @@ static func _knapped_rock(k: MeshKit) -> void:
 		var support := Vector3(n.x * ext.x, n.y * ext.y, n.z * ext.z).length()
 		var depth := rng.randf_range(0.86, 0.97) - (0.1 if n.x > 0.55 else 0.0)
 		planes.append(Plane(n, support * depth))
-	var pts := Geometry3D.compute_convex_mesh_points(planes)
+	var pts: Array[Vector3] = []
+	for p: Vector3 in Geometry3D.compute_convex_mesh_points(planes):
+		pts.append(p)
 	var stone := Color(0.5, 0.49, 0.47)
-	for pl: Plane in planes:
-		var face: Array[Vector3] = []
-		for p: Vector3 in pts:
-			if absf(pl.distance_to(p)) < 0.0005:
-				face.append(p)
-		if face.size() < 3:
+	# The surface: the convex hull of the cut block's corners (closed by construction), each facet one colour.
+	for f: Array in convex_hull(pts):
+		var a: Vector3 = pts[f[0]]
+		var b: Vector3 = pts[f[1]]
+		var c: Vector3 = pts[f[2]]
+		var n := (b - a).cross(c - a).normalized()
+		var fh := hash(Vector3i(roundi(n.x * 8.0), roundi(n.y * 8.0), roundi(n.z * 8.0)))
+		var col := stone.darkened(float(fh % 20) / 100.0 - 0.04).lerp(Color(0.52, 0.47, 0.4), float((fh >> 6) % 30) / 100.0)
+		if n.x > 0.45:   # the fresh chips on the working end, paler
+			col = stone.lightened(0.12 + float((fh >> 12) % 10) / 100.0)
+		k.triangle(a + centre, b + centre, c + centre, n, col)
+
+
+## The convex hull of a few points, as triangles [i, j, k] wound so (pj - pi) x (pk - pi) points outward.
+## (Incremental: each point outside the hull so far replaces the faces it can see with a fan to their rim.)
+static func convex_hull(pts: Array[Vector3]) -> Array:
+	var n := pts.size()
+	if n < 4:
+		return []
+	# A first tetrahedron from four points that aren't flat.
+	var i0 := 0
+	var i1 := -1
+	for i in range(1, n):
+		if pts[i].distance_to(pts[i0]) > 1e-6:
+			i1 = i
+			break
+	var i2 := -1
+	for i in n:
+		if i != i0 and i != i1 and (pts[i1] - pts[i0]).cross(pts[i] - pts[i0]).length() > 1e-9:
+			i2 = i
+			break
+	var i3 := -1
+	var nrm := (pts[i1] - pts[i0]).cross(pts[i2] - pts[i0])
+	for i in n:
+		if i != i0 and i != i1 and i != i2 and absf(nrm.dot(pts[i] - pts[i0])) > 1e-12:
+			i3 = i
+			break
+	if i1 < 0 or i2 < 0 or i3 < 0:
+		return []
+	var inside := (pts[i0] + pts[i1] + pts[i2] + pts[i3]) / 4.0
+	var faces: Array = []
+	var orient := func(a: int, b: int, c: int) -> Array:
+		var fn := (pts[b] - pts[a]).cross(pts[c] - pts[a])
+		return [a, b, c] if fn.dot(pts[a] - inside) > 0.0 else [a, c, b]
+	faces.append(orient.call(i0, i1, i2))
+	faces.append(orient.call(i0, i1, i3))
+	faces.append(orient.call(i0, i2, i3))
+	faces.append(orient.call(i1, i2, i3))
+	for p in n:
+		if p in [i0, i1, i2, i3]:
 			continue
-		var mid := Vector3.ZERO
-		for p in face:
-			mid += p
-		mid /= face.size()
-		var u := (face[0] - mid).normalized()
-		var v := pl.normal.cross(u)
-		face.sort_custom(func(a: Vector3, b: Vector3) -> bool:
-			return atan2((a - mid).dot(v), (a - mid).dot(u)) < atan2((b - mid).dot(v), (b - mid).dot(u)))
-		# Each facet a slightly different grey; the fresh chips on the working end paler.
-		var col := stone.darkened(rng.randf_range(-0.04, 0.16)).lerp(Color(0.52, 0.47, 0.4), rng.randf_range(0.0, 0.3))
-		if pl.normal.x > 0.45:
-			col = stone.lightened(rng.randf_range(0.12, 0.22))
-		for i in range(1, face.size() - 1):
-			k.triangle(face[0] + centre, face[i] + centre, face[i + 1] + centre, pl.normal, col)
+		var visible: Array = []
+		for fi in faces.size():
+			var f: Array = faces[fi]
+			var fn := (pts[f[1]] - pts[f[0]]).cross(pts[f[2]] - pts[f[0]])
+			if fn.dot(pts[p] - pts[f[0]]) > 1e-10:
+				visible.append(fi)
+		if visible.is_empty():
+			continue
+		# The rim: edges of the seen faces that aren't shared by two seen faces.
+		var edge_count := {}
+		for fi: int in visible:
+			var f: Array = faces[fi]
+			for e in 3:
+				var a: int = f[e]
+				var b: int = f[(e + 1) % 3]
+				var key := Vector2i(mini(a, b), maxi(a, b))
+				edge_count[key] = int(edge_count.get(key, 0)) + 1
+		var rim: Array = []
+		for fi: int in visible:
+			var f: Array = faces[fi]
+			for e in 3:
+				var a: int = f[e]
+				var b: int = f[(e + 1) % 3]
+				if int(edge_count[Vector2i(mini(a, b), maxi(a, b))]) == 1:
+					rim.append([a, b])   # kept in the seen face's winding, so the new face winds the same way
+		visible.sort()
+		for k in range(visible.size() - 1, -1, -1):
+			faces.remove_at(visible[k])
+		for e: Array in rim:
+			faces.append([e[0], e[1], p])
+	return faces
 
 
 static func _flint_rock(k: MeshKit, r: float) -> void:

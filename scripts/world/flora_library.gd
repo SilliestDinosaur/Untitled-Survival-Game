@@ -918,7 +918,7 @@ func _clover(kit: MeshKit, rng: RandomNumberGenerator) -> void:
 		var base := Vector3(rng.randf_range(-0.2, 0.2), rng.randf_range(0.03, 0.08), rng.randf_range(-0.2, 0.2))
 		for l in 3:
 			var a := TAU * l / 3.0 + rng.randf()
-			var c := base + Vector3(cos(a), 0, sin(a)) * 0.035
+			var c := base + Vector3(cos(a), 0.002 * l, sin(a)) * 0.035 + Vector3(0, 0.0015 * l, 0)   # each leaf a hair above the last (they overlap)
 			for k in 6:
 				var a1 := TAU * k / 6.0
 				var a2 := TAU * (k + 1) / 6.0

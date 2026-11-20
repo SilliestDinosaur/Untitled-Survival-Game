@@ -7,6 +7,8 @@ extends SceneTree
 ##   nan        - non-finite positions or normals
 ##   open       - edges used by only one triangle (cracks), counted after welding vertices by position
 ##   nonmanifold - edges used by three or more triangles
+##   zfight     - (ZFIGHT=1) separate triangles lying in the same plane, facing the same way and overlapping: two
+##                surfaces fighting over the same pixels, so they flicker as the view moves
 ## Environment:
 ##   ITEMS=hatchet_t1,pickaxe_t2   check only these (default: every item in ItemDB)
 ##   VERBOSE=1                     list each bad triangle's index and position
@@ -61,6 +63,12 @@ func _run() -> void:
 			if load("res://scripts/items/item_db.gd").info(id).get("kind", "") == "piece" and load("res://scripts/core/game_actions.gd").PIECES.has(id) \
 			else ItemModels.mesh_for(id, mat)
 		var report := _check(mesh, verbose, id)
+		if OS.get_environment("ZFIGHT") != "":
+			var z := _zfight(mesh, verbose)
+			if z > 0:
+				print("%-14s zfight %d" % [id, z])
+				total_bad += z
+			continue
 		var bad: int = report.inverted + report.degenerate + report.nan + report.open + report.nonmanifold
 		total_bad += bad
 		print("%-14s tris %5d  inverted %4d (slivers %4d)  degenerate %3d  nan %3d  open %4d  nonmanifold %3d  slivers %4d  %s" % [
@@ -83,6 +91,12 @@ func _run_flora() -> void:
 		if only != "" and not key in only.split(","):
 			continue
 		var report := _check(flora.mesh(key), verbose, key)
+		if OS.get_environment("ZFIGHT") != "":
+			var z := _zfight(flora.mesh(key), verbose)
+			if z > 0:
+				print("%-22s zfight %d" % [key, z])
+				total_bad += z
+			continue
 		var bad: int = report.inverted + report.degenerate + report.nan
 		total_bad += bad
 		if bad > 0 or verbose:
@@ -159,6 +173,95 @@ func _check(mesh: ArrayMesh, verbose: bool, id: String) -> Dictionary:
 			if verbose:
 				print("   nonmanifold edge ", ek, " used ", n)
 	return out
+
+
+## Pairs of triangles that z-fight: same plane (within 0.08 mm: closer than the depth buffer can tell apart), same facing, overlapping, and not neighbours on one
+## surface (they share no corner).
+func _zfight(mesh: ArrayMesh, verbose: bool) -> int:
+	if mesh == null or mesh.get_surface_count() == 0:
+		return 0
+	var pos: PackedVector3Array = mesh.surface_get_arrays(0)[Mesh.ARRAY_VERTEX]
+	var buckets := {}
+	var tris: Array = []
+	var floor_y := INF   # faces down on the model's very bottom rest on the ground: never seen
+	for p in pos:
+		floor_y = minf(floor_y, p.y)
+	var t := 0
+	while t + 2 < pos.size():
+		var a := pos[t]
+		var b := pos[t + 1]
+		var c := pos[t + 2]
+		t += 3
+		var g := (c - a).cross(b - a)
+		if g.length_squared() < 1e-12:
+			continue
+		var n := g.normalized()
+		var d := n.dot(a)
+		if n.y < -0.95 and absf(a.y - floor_y) < 0.002 and absf(b.y - floor_y) < 0.002:
+			continue
+		var i := tris.size()
+		tris.append([a, b, c, n, d])
+		var key := [roundi(n.x * 30.0), roundi(n.y * 30.0), roundi(n.z * 30.0), roundi(d * 300.0)]
+		if not buckets.has(key):
+			buckets[key] = []
+		buckets[key].append(i)
+	var found := 0
+	var seen := {}
+	for key: Array in buckets:
+		var mine: Array = buckets[key]
+		# Neighbouring distance bins too (two planes 1 mm apart can fall either side of a bin's edge).
+		var others: Array = mine.duplicate()
+		for dd in [-1, 1]:
+			var k2 := [key[0], key[1], key[2], key[3] + dd]
+			if buckets.has(k2):
+				others.append_array(buckets[k2])
+		if mine.size() * others.size() > 400000:
+			continue   # a huge flat plane (a floor's top): its tiles don't overlap; skip the cost
+		for i: int in mine:
+			for j: int in others:
+				if j <= i or seen.has(Vector2i(i, j)):
+					continue
+				seen[Vector2i(i, j)] = true
+				var A: Array = tris[i]
+				var B: Array = tris[j]
+				if (A[3] as Vector3).dot(B[3]) < 0.998 or absf(float(A[4]) - float(B[4])) > 0.00008:
+					continue
+				if _shares_corner(A, B):
+					continue
+				if _overlap(A, B):
+					found += 1
+					if verbose and found <= int(OS.get_environment("SHOW") if OS.get_environment("SHOW") != "" else "6"):
+						print("   zfight near ", (A[0] + A[1] + A[2]) / 3.0)
+	return found
+
+
+func _shares_corner(A: Array, B: Array) -> bool:
+	for p in 3:
+		for q in 3:
+			if (A[p] as Vector3).distance_squared_to(B[q]) < 1e-10:
+				return true
+	return false
+
+
+## Two coplanar triangles overlap with some area: a point well inside one lies inside the other.
+func _overlap(A: Array, B: Array) -> bool:
+	var n: Vector3 = A[3]
+	var u := n.cross(Vector3.UP if absf(n.y) < 0.9 else Vector3.RIGHT).normalized()
+	var v := n.cross(u)
+	var pa: Array = []
+	var pb: Array = []
+	for k in 3:
+		pa.append(Vector2((A[k] as Vector3).dot(u), (A[k] as Vector3).dot(v)))
+		pb.append(Vector2((B[k] as Vector3).dot(u), (B[k] as Vector3).dot(v)))
+	for pair: Array in [[pa, pb], [pb, pa]]:
+		var src: Array = pair[0]
+		var dst: Array = pair[1]
+		var cen: Vector2 = (src[0] + src[1] + src[2]) / 3.0
+		for k in 4:
+			var probe: Vector2 = cen if k == 3 else (src[k] as Vector2).lerp(cen, 0.35)
+			if Geometry2D.point_is_inside_triangle(probe, dst[0], dst[1], dst[2]):
+				return true
+	return false
 
 
 func _key(p: Vector3) -> String:
