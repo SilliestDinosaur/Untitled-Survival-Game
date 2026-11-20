@@ -126,6 +126,7 @@ const YIELDS := {
 	"pebbles": [["stone", 1, 2]],
 	"cache": [],
 	"giant_mushroom": [["fiber", 1, 2], ["wood", 1, 2]],
+	"bamboo": [["sticks", 2, 3], ["fiber", 0, 1]],
 }
 ## Extra reward for finishing a node off.
 const BONUS := {

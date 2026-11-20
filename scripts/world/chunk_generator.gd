@@ -24,6 +24,8 @@ const FERN_ATTEMPTS := 90
 const PALM_ATTEMPTS := 10
 const TALL_GRASS_ATTEMPTS := 160
 const CLOVER_ATTEMPTS := 120
+const UNDERGROWTH_ATTEMPTS := 46   ## the jungle's extra layer of plants
+const VINE_ATTEMPTS := 110        ## vines on rock faces
 
 
 ## job: {coord, tier, gen, flora, removed (Dictionary of ids), grass_density}
@@ -356,6 +358,40 @@ static func _place_resources(coord: Vector2i, origin: Vector3, gen: WorldGen, fl
 		if kind == "log" and out.size() > before:
 			var xf: Transform3D = out[-1].transform
 			out[-1].transform = Transform3D(Basis(Quaternion(Vector3.UP, nrm)) * xf.basis, xf.origin)
+
+	# The jungle floor: a thick layer of broadleaves, heliconias, fern palms and bamboo between the trees.
+	for i in UNDERGROWTH_ATTEMPTS:
+		var a := _attempt(rng, origin, size)
+		var h := gen.get_height(a.x, a.z)
+		if h < 2.2 or gen.near_river(a.x, a.z) or h > 48.0 or gen.get_normal(a.x, a.z).y < 0.8:
+			counter[0] += 1
+			continue
+		var jungle: float = gen.biome_weights_at(a.x, a.z, h).get(Biome.JUNGLE, 0.0)
+		if a.r_place >= jungle * 0.85:
+			counter[0] += 1
+			continue
+		add.call(_pick_weighted(FloraLibrary.JUNGLE_UNDERGROWTH, a.r_kind), a.variant, Vector3(a.x, h - 0.08, a.z), a.yaw, Vector3.ONE * a.scl)
+
+	# Vines down the rock faces where the land is green: each hangs from the top of the face to its foot.
+	for i in VINE_ATTEMPTS:
+		var a := _attempt(rng, origin, size)
+		var h := gen.get_height(a.x, a.z)
+		var nrm := gen.get_normal(a.x, a.z)
+		if h < 2.5 or nrm.y > 0.75 or nrm.y < 0.1 or gen.near_river(a.x, a.z, 2.0):
+			counter[0] += 1
+			continue
+		var w := gen.biome_weights_at(a.x, a.z, h)
+		var green := 0.0
+		for b: int in FloraLibrary.VINE_BIOMES:
+			green += float(w.get(b, 0.0)) * float(FloraLibrary.VINE_BIOMES[b])
+		var face: Variant = _rock_face(gen, a.x, a.z) if a.r_place < green * 0.9 else null
+		if face == null:
+			counter[0] += 1
+			continue
+		var before := out.size()
+		add.call("cliff_vine", a.variant, face.top, 0.0, Vector3.ONE)
+		if out.size() > before:
+			out[-1].transform = Transform3D(face.basis, face.top)
 	_place_cave_resources(coord, origin, gen, flora, removed, out)
 	return out
 
@@ -398,6 +434,50 @@ static func _place_cave_resources(coord: Vector2i, origin: Vector3, gen: WorldGe
 
 
 ## One placement attempt's random values (always the same count, for determinism).
+## The rock face through (x, z): its top (walking uphill until the slope eases) and its foot (downhill likewise),
+## and the basis that lays a vine curtain on it from top to foot (model -Y down the face, +Z out of it, stretched to
+## the face's length). Null where it's too short or too long to be worth a vine.
+static func _rock_face(gen: WorldGen, x: float, z: float) -> Variant:
+	var walk := func(sign: float) -> Vector3:
+		var p := Vector2(x, z)
+		for k in 26:
+			var n := gen.get_normal(p.x, p.y)
+			if n.y > 0.8:
+				break
+			var down := Vector2(n.x, n.z).normalized()   # the normal leans downhill
+			p += down * sign * 0.7
+		return Vector3(p.x, gen.get_height(p.x, p.y), p.y)
+	var top: Vector3 = walk.call(-1.0)
+	var foot: Vector3 = walk.call(1.0)
+	var along := top - foot
+	if along.y < 1.5:
+		return null
+	if along.length() > 9.0:   # a long face: the vine hangs down its top part
+		foot = top - along.normalized() * rng_len(x, z)
+		along = top - foot
+	# A vine is straight, a face is curved: where the face bows in under the straight line the vine would stand off
+	# it, so the whole vine is sunk by the widest gap (its ends tuck into the ground a little). Too curved: no vine.
+	var gap := 0.0
+	for k in range(1, 10):
+		var c := foot.lerp(top, k / 10.0)
+		gap = maxf(gap, c.y - gen.get_height(c.x, c.z))
+	if gap > 1.0:
+		return null
+	top.y -= gap
+	foot.y -= gap
+	var up_face := along.normalized()
+	var flat := Vector2(along.x, along.z).normalized()
+	var across := Vector3(-flat.y, 0, flat.x)
+	var out_face := across.cross(up_face).normalized()
+	var length := along.length() + 0.3
+	return {"top": top + out_face * 0.04, "basis": Basis(across * 1.0, up_face * (length / FloraLibrary.VINE_LENGTH), out_face)}
+
+
+## A vine's length on a long face (from its place, so it's the same on every machine).
+static func rng_len(x: float, z: float) -> float:
+	return 5.0 + float(absi(hash(Vector2i(int(x * 10.0), int(z * 10.0)))) % 400) / 100.0
+
+
 static func _attempt(rng: RandomNumberGenerator, origin: Vector3, size: float) -> Dictionary:
 	return {
 		"x": origin.x + rng.randf() * size,

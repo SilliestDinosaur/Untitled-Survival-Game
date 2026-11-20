@@ -136,7 +136,19 @@ const KINDS := {
 	"ice_rock": {"category": "rock", "label": "Ice-crusted stone", "variants": 2, "solid": true, "hp": 170, "target": "rock", "yield": "rock", "shape": "rock"},
 	# Added with the cave dressing (last again).
 	"stalagmite": {"category": "rock", "label": "Stalagmite", "variants": 3, "solid": true, "hp": 120, "target": "rock", "yield": "rock", "shape": "rock"},
+	# Jungle undergrowth and the vines on rock faces (last again).
+	"bamboo": {"category": "bush", "label": "Bamboo", "variants": 3, "solid": false, "hp": 50, "target": "tree", "yield": "bamboo", "shape": "bush"},
+	"heliconia": {"category": "bush", "label": "Heliconia", "variants": 3, "solid": false, "hp": 30, "target": "bush", "yield": "bush", "shape": "bush"},
+	"fern_palm": {"category": "bush", "label": "Fern palm", "variants": 3, "solid": false, "hp": 40, "target": "bush", "yield": "bush", "shape": "bush"},
+	"cliff_vine": {"category": "bush", "label": "Vines", "variants": 3, "solid": false, "hp": 25, "target": "bush", "yield": "reeds", "shape": "small"},
 }
+
+## The jungle's own layer of undergrowth, on top of its bushes (see ChunkGenerator): [kind, weight].
+const JUNGLE_UNDERGROWTH := [["jungle_plant", 0.3], ["heliconia", 0.22], ["fern_palm", 0.22], ["bamboo", 0.14], ["flower_bush", 0.12]]
+## How green a place has to be for vines on its rock faces, per biome.
+const VINE_BIOMES := {Biome.JUNGLE: 1.0, Biome.FOREST: 0.45, Biome.MARSH: 0.5, Biome.AUTUMN: 0.3, Biome.MEADOW: 0.2, Biome.TAIGA: 0.15}
+## A vine curtain's model is this long; each one is stretched to the rock face it hangs on.
+const VINE_LENGTH := 4.0
 
 ## Fade-out distance per category (0 = always visible; trees are handled by chunk detail levels).
 const VIS_RANGE := {"tree": 0.0, "bush": 150.0, "rock": 260.0, "clutter": 110.0, "grass": 60.0, "flower": 55.0, "fern": 75.0}
@@ -354,6 +366,10 @@ func _build_mesh(kind: String, index: int, variant_seed: int) -> ArrayMesh:
 		"glowcap": _glowcap(kit, rng, index)
 		"ice_rock": _ice_rock(kit, rng)
 		"stalagmite": _stalagmite(kit, rng)
+		"bamboo": _bamboo(kit, rng)
+		"heliconia": _heliconia(kit, rng)
+		"fern_palm": _fern_palm(kit, rng)
+		"cliff_vine": _cliff_vine(kit, rng)
 	if kind == ItemDB.fruit_tree and not _bare:
 		_add_fruit(kit, rng)
 	var cat: String = KINDS[kind].category
@@ -1033,6 +1049,129 @@ func _jungle_plant(kit: MeshKit, rng: RandomNumberGenerator) -> void:
 			Vector2(0, length), Vector2(-w * 0.4, length * 0.9), Vector2(-w, length * 0.55), Vector2(-w * 0.8, length * 0.25)])
 		var b := Basis(Quaternion(Vector3.UP, dir)) * Basis(Vector3.UP, rng.randf_range(-0.3, 0.3))
 		kit.extrude(outline, Transform3D(b * Basis(Vector3.RIGHT, PI * 0.5), stem_top), 0.02, 0.01, leaf.lightened(rng.randf_range(-0.04, 0.08)), leaf.lightened(0.18), 0.4)
+
+
+## A clump of bamboo: tall jointed canes, pale bands at the nodes, sprays of narrow leaves up top.
+func _bamboo(kit: MeshKit, rng: RandomNumberGenerator) -> void:
+	var cane := _vary(Color(0.5, 0.62, 0.28), rng, 0.05)
+	var leaf := _vary(_pal.jungle_leaves, rng)
+	for i in rng.randi_range(7, 12):
+		var a := rng.randf() * TAU
+		var d := rng.randf_range(0.0, 0.5)
+		var base := Vector3(cos(a) * d, -0.1, sin(a) * d)
+		var h := rng.randf_range(3.2, 5.8)
+		var lean := Vector3(cos(a), 0, sin(a)) * rng.randf_range(0.2, 0.7) + Vector3(rng.randf_range(-0.2, 0.2), 0, rng.randf_range(-0.2, 0.2))
+		var path: Array = []
+		var radii: Array = []
+		var r := rng.randf_range(0.035, 0.055)
+		for k in 7:
+			var t := k / 6.0
+			path.append(base + Vector3(0, h * t, 0) + lean * t * t)
+			radii.append(r * (1.0 - t * 0.35))
+		var nodes := rng.randi_range(7, 10)
+		var c := cane.lightened(rng.randf_range(-0.05, 0.08))
+		kit.loft(path, radii, 6, c, func(t: float, _ang: float) -> Color:
+			return c.lightened(0.25) if fposmod(t * nodes, 1.0) < 0.06 else c, Callable(), true, true)
+		# Leaf sprays from the upper nodes.
+		for k in rng.randi_range(2, 4):
+			var t := rng.randf_range(0.55, 0.98)
+			var at: Vector3 = base + Vector3(0, h * t, 0) + lean * t * t
+			for j in rng.randi_range(3, 4):
+				var la := rng.randf() * TAU
+				var dir := Vector3(cos(la), rng.randf_range(-0.6, 0.1), sin(la)).normalized()
+				var ll := rng.randf_range(0.22, 0.38)
+				var outline := PackedVector2Array([Vector2(0, 0), Vector2(0.03, ll * 0.3), Vector2(0.025, ll * 0.7), Vector2(0, ll), Vector2(-0.025, ll * 0.7), Vector2(-0.03, ll * 0.3)])
+				var b := Basis(Quaternion(Vector3.UP, dir)) * Basis(Vector3.UP, rng.randf() * TAU)
+				kit.extrude(outline, Transform3D(b * Basis(Vector3.RIGHT, PI * 0.5), at), 0.008, 0.0, leaf.lightened(rng.randf_range(-0.06, 0.1)), leaf, 0.3)
+
+
+## Heliconia: tall paddle leaves on long stalks, and a spike of red and yellow claws zig-zagging up.
+func _heliconia(kit: MeshKit, rng: RandomNumberGenerator) -> void:
+	var leaf := _vary(_pal.jungle_leaves_2, rng)
+	for i in rng.randi_range(4, 7):
+		var a := rng.randf() * TAU
+		var tip := Vector3(cos(a) * rng.randf_range(0.25, 0.5), rng.randf_range(1.0, 1.6), sin(a) * rng.randf_range(0.25, 0.5))
+		kit.loft([Vector3(cos(a) * 0.05, 0, sin(a) * 0.05), tip * 0.6, tip], [0.03, 0.025, 0.02], 5, leaf.darkened(0.2))
+		var length := rng.randf_range(0.8, 1.2)
+		var w := length * 0.2
+		var outline := PackedVector2Array([Vector2(0, 0), Vector2(w * 0.8, length * 0.15), Vector2(w, length * 0.5), Vector2(w * 0.7, length * 0.85),
+			Vector2(0, length), Vector2(-w * 0.7, length * 0.85), Vector2(-w, length * 0.5), Vector2(-w * 0.8, length * 0.15)])
+		var dir := Vector3(cos(a) * 0.45, 1.0, sin(a) * 0.45).normalized()
+		var b := Basis(Quaternion(Vector3.UP, dir)) * Basis(Vector3.UP, a + PI * 0.5)
+		kit.extrude(outline, Transform3D(b * Basis(Vector3.RIGHT, PI * 0.5), tip - dir * 0.05), 0.02, 0.01, leaf.lightened(rng.randf_range(-0.04, 0.08)), leaf.lightened(0.15), 0.4)
+	var red := Color(0.86, 0.2, 0.18).lerp(Color(0.95, 0.45, 0.15), rng.randf() * 0.5)
+	for s in rng.randi_range(1, 2):
+		var a := rng.randf() * TAU
+		var base := Vector3(cos(a) * 0.15, 0, sin(a) * 0.15)
+		var h := rng.randf_range(1.0, 1.5)
+		var top := base + Vector3(cos(a) * 0.15, h, sin(a) * 0.15)
+		kit.loft([base, top], [0.022, 0.016], 5, Color(0.42, 0.5, 0.22))
+		var claws := rng.randi_range(5, 8)
+		for k in claws:
+			var t := 0.55 + 0.42 * float(k) / float(claws)
+			var at := base.lerp(top, t)
+			var side := 1.0 if k % 2 == 0 else -1.0
+			var out := Vector3(-sin(a), 0, cos(a)) * side
+			var dir := (out + Vector3(0, 0.55, 0)).normalized()
+			var cl := 0.16 * (1.0 - t * 0.4)
+			kit.add_primitive(MeshKit.cylinder(0.0, cl * 0.32, cl, 5), Transform3D(Basis(Quaternion(Vector3.UP, dir)), at + dir * cl * 0.45), red, 0.0, 0.05)
+			kit.add_primitive(MeshKit.sphere(cl * 0.12, 5, 3), Transform3D(Basis(), at + dir * cl * 0.95), Color(0.98, 0.85, 0.25), 0.0, 0.03)
+
+
+## A fern palm: a short rough trunk and a crown of long arching feathery fronds.
+func _fern_palm(kit: MeshKit, rng: RandomNumberGenerator) -> void:
+	var leaf := _vary(_pal.fern.lerp(_pal.jungle_leaves, 0.4), rng)
+	var trunk_h := rng.randf_range(0.3, 1.1)
+	var bark := _vary(_pal.bark, rng).lerp(Color(0.4, 0.33, 0.24), 0.4)
+	kit.loft([Vector3(0, -0.1, 0), Vector3(0, trunk_h * 0.5, 0), Vector3(0, trunk_h, 0)], [0.22, 0.2, 0.17], 8, bark, func(t: float, ang: float) -> Color:
+		return bark.darkened(0.15) if fposmod(t * 9.0 + ang * 0.3, 1.0) < 0.35 else bark, Callable(), true, true, 0.03)
+	var top := Vector3(0, trunk_h, 0)
+	for i in rng.randi_range(9, 11):
+		var a := TAU * i / 10.0 + rng.randf_range(-0.2, 0.2)
+		var out := Vector3(cos(a), 0, sin(a))
+		var length := rng.randf_range(1.1, 1.7)
+		var rise := rng.randf_range(0.5, 0.9)
+		# The midrib arches up and over; leaflets in pairs all along it.
+		var pts: Array = []
+		for k in 6:
+			var t := k / 5.0
+			pts.append(top + out * length * t + Vector3(0, rise * sin(t * PI * 0.8) - t * t * 0.4, 0))
+		kit.loft(pts, [0.02, 0.018, 0.015, 0.012, 0.008, 0.004], 4, leaf.darkened(0.2), Callable(), Callable(), false, false)
+		for k in range(1, 8):
+			var t := k / 8.0
+			var seg := int(t * 5.0)
+			var p: Vector3 = (pts[seg] as Vector3).lerp(pts[mini(seg + 1, 5)], t * 5.0 - seg)
+			var along: Vector3 = ((pts[mini(seg + 1, 5)] as Vector3) - (pts[seg] as Vector3)).normalized()
+			var side := along.cross(Vector3.UP).normalized()
+			var ll := 0.3 * (1.0 - t * 0.55)
+			for sgn in [-1.0, 1.0]:
+				var d: Vector3 = (side * sgn + along * 0.5 + Vector3(0, -0.25, 0)).normalized()
+				var outline := PackedVector2Array([Vector2(0, 0), Vector2(0.018, ll * 0.4), Vector2(0, ll), Vector2(-0.018, ll * 0.4)])
+				kit.extrude(outline, Transform3D(Basis(Quaternion(Vector3.UP, d)) * Basis(Vector3.RIGHT, PI * 0.5), p), 0.006, 0.0, leaf.lightened(rng.randf_range(-0.05, 0.08)), leaf, 0.3)
+
+
+## A curtain of vines hanging from the top of a rock face: strands in the model's -Y (the length VINE_LENGTH), lying
+## in its XY plane (the face) with leaves along them. Placed, it is turned to lie along the face and stretched to it.
+func _cliff_vine(kit: MeshKit, rng: RandomNumberGenerator) -> void:
+	var stem := _vary(_pal.vine, rng).darkened(0.2)
+	var leaf := _vary(_pal.vine, rng)
+	for i in rng.randi_range(6, 10):
+		var x := rng.randf_range(-1.1, 1.1)
+		var l := VINE_LENGTH * rng.randf_range(0.55, 1.0)
+		var path: Array = []
+		var radii: Array = []
+		for k in 8:
+			var t := k / 7.0
+			path.append(Vector3(x + sin(t * 5.0 + x * 3.0) * 0.12, -l * t, 0.04 + 0.03 * sin(t * 7.0 + x)))
+			radii.append(lerpf(0.022, 0.01, t))
+		kit.loft(path, radii, 4, stem, Callable(), Callable(), false, true)
+		for k in rng.randi_range(6, 11):
+			var t := rng.randf_range(0.0, 1.0)
+			var seg := mini(int(t * 7.0), 6)
+			var p: Vector3 = (path[seg] as Vector3).lerp(path[seg + 1], t * 7.0 - seg)
+			var s := rng.randf_range(0.07, 0.12)
+			kit.add_primitive(MeshKit.sphere(s, 5, 3), Transform3D(Basis(Vector3.FORWARD, rng.randf_range(-0.6, 0.6)).scaled(Vector3(1.3, 1.0, 0.35)), p + Vector3(rng.randf_range(-0.06, 0.06), 0, 0.05)),
+				leaf.lightened(rng.randf_range(-0.12, 0.1)), 0.05, 0.05)
 
 
 ## A ring of tall thin mushrooms with glowing caps (they light up the fungal grove at night).

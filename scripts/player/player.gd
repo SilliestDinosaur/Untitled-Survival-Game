@@ -36,6 +36,10 @@ var active := false
 var spawn_point := Vector3.ZERO
 var swimming := false
 var underwater := false
+var climbing := false          ## on a vine-hung rock face
+var _vines: Array = []         ## [top, down the face (unit), length, half width, out of the face] near here
+var _vine_scan := 0.0
+const CLIMB_SPEED := 2.6
 ## What the crosshair is on: {} or {name, label, resource/chunk | animal | pickup, actions}.
 var looking_at := {}
 var inventory: Inventory
@@ -273,7 +277,12 @@ func _physics_process(delta: float) -> void:
 	elif sprinting:
 		speed = sprint_speed
 
-	if swimming:
+	# Vines on a rock face: walk into them and you climb (jump lets go).
+	climbing = not swimming and dir != Vector3.ZERO and not Input.is_action_pressed("jump") and _on_vines(dir, delta)
+	if climbing:
+		velocity.y = CLIMB_SPEED
+		_coyote = coyote_time
+	elif swimming:
 		# Float near the surface; hold jump to rise, otherwise bob at chest height.
 		var target_y := water_y - 1.35
 		var up := 3.0 if Input.is_action_pressed("jump") else (target_y - global_position.y) * 2.0
@@ -353,6 +362,49 @@ func _kick_dust(size: float, count: int) -> void:
 func _blow(weight: float) -> void:
 	viewmodel.hit_stop(0.025 + 0.02 * weight)
 	kick(Vector3(0.006 * weight, randf_range(-0.003, 0.003) * weight, randf_range(-0.005, 0.005) * weight))
+
+
+## Whether the player is against a curtain of vines and heading into its rock face (the climbable vines near here
+## are looked up a few times a second, from the chunks around).
+func _on_vines(dir: Vector3, delta: float) -> bool:
+	_vine_scan -= delta
+	if _vine_scan <= 0.0:
+		_vine_scan = 0.25
+		_vines.clear()
+		var world: Node = get_node_or_null("/root/Main/World")
+		if world:
+			var here: Vector2i = world.world_to_chunk(global_position)
+			for dz in range(-1, 2):
+				for dx in range(-1, 2):
+					var chunk = world.get_chunk(here + Vector2i(dx, dz))
+					if not chunk:
+						continue
+					for r: Dictionary in chunk.resources:
+						if r.kind != "cliff_vine" or r.get("removed", false):
+							continue
+						var xf: Transform3D = r.transform
+						if xf.origin.distance_to(global_position) > 16.0:
+							continue
+						var down := -xf.basis.y.normalized()
+						_vines.append([xf.origin, down, xf.basis.y.length() * FloraLibrary.VINE_LENGTH, 1.1, xf.basis.z.normalized()])
+	var chest := global_position + Vector3(0, 0.9, 0)
+	for v: Array in _vines:
+		var top: Vector3 = v[0]
+		var down: Vector3 = v[1]
+		var out: Vector3 = v[4]
+		var rel := chest - top
+		var along := rel.dot(down)
+		if along < -0.6 or along > float(v[2]) + 0.5:
+			continue
+		var side: Vector3 = out.cross(down)
+		if absf(rel.dot(side)) > float(v[3]) + 0.3:
+			continue
+		if absf(rel.dot(out)) > 1.3:
+			continue
+		var into := Vector2(-out.x, -out.z).normalized()
+		if Vector2(dir.x, dir.z).dot(into) > 0.35:
+			return true
+	return false
 
 
 ## Knock the camera (radians of pitch, yaw, roll); it springs back by itself.
