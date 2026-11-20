@@ -34,9 +34,9 @@ void fragment() {
 	}
 	// Frost bends the light a little where it's thick.
 	float crystals = fbm(c * 9.0) * 0.7 + fbm(c * 40.0) * 0.3;
-	float frost_mask = smoothstep(0.85 - frost * 0.55, 1.05 - frost * 0.4, edge + crystals * 0.35) * frost;
+	float frost_mask = smoothstep(0.78 - frost * 0.28, 0.98 - frost * 0.15, edge + (crystals - 0.5) * 0.3) * frost;
 	uv += (vec2(crystals) - 0.5) * 0.012 * frost_mask;
-	vec3 col = textureLod(screen, uv, water * 1.6 + frost_mask * 1.2).rgb;
+	vec3 col = textureLod(screen, uv, water * 1.6).rgb;
 	if (water > 0.0) {
 		col = mix(col, col * vec3(0.55, 0.85, 0.95) + vec3(0.0, 0.03, 0.05), water * 0.6);
 	}
@@ -49,9 +49,10 @@ void fragment() {
 	}
 	// Frost: white-blue rime with sparkly crystals.
 	vec3 rime = vec3(0.85, 0.93, 1.0) * (0.75 + 0.35 * step(0.82, fbm(c * 60.0)));
-	col = mix(col, rime, frost_mask * 0.75);
+	col = mix(col, rime, frost_mask * 0.6);
 	// Warmth: a soft orange glow rising from the bottom and sides.
-	float glow = smoothstep(0.35, 0.95, edge) * (0.6 + 0.4 * (1.0 - SCREEN_UV.y)) * (0.85 + 0.15 * sin(TIME * 7.0) * sin(TIME * 3.1));
-	col += vec3(1.0, 0.45, 0.12) * glow * warm * 0.35;
+	float glow = smoothstep(0.25, 0.9, edge) * (0.6 + 0.4 * (1.0 - SCREEN_UV.y)) * (0.85 + 0.15 * sin(TIME * 7.0) * sin(TIME * 3.1));
+	col += vec3(1.0, 0.45, 0.12) * glow * warm * 0.6;
+	col = mix(col, col * vec3(1.06, 1.0, 0.9), warm * 0.5);   // and the whole picture a touch warmer
 	COLOR = vec4(col, 1.0);
 }
