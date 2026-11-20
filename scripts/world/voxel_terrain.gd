@@ -489,6 +489,8 @@ static func _carve(d: PackedFloat32Array, s: Array, origin: Vector3, ylo: float,
 	var j1 := clampi(ceili((hi.y - ylo) / step), 0, ny - 1)
 	var ab := b - a
 	var len2 := maxf(ab.length_squared(), 0.0001)
+	var fa := float(s[6]) if s.size() > 7 else -INF   # the piece's flat floor at each end (see Caves._piece_distance)
+	var fb := float(s[7]) if s.size() > 7 else -INF
 	for k in range(k0, k1 + 1):
 		var z := origin.z + (k - PAD) * step
 		for j in range(j0, j1 + 1):
@@ -497,7 +499,7 @@ static func _carve(d: PackedFloat32Array, s: Array, origin: Vector3, ylo: float,
 			for i in range(i0, i1 + 1):
 				var p := Vector3(origin.x + (i - PAD) * step, y, z)
 				var t := clampf((p - a).dot(ab) / len2, 0.0, 1.0)
-				var dist := p.distance_to(a + ab * t) - lerpf(ra, rb, t)
+				var dist := maxf(p.distance_to(a + ab * t) - lerpf(ra, rb, t), lerpf(fa, fb, t) - y)
 				if dist < d[row + i]:
 					d[row + i] = dist
 

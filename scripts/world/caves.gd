@@ -65,6 +65,7 @@ static func plan(gen: WorldGen) -> Dictionary:
 	var edges: Array = []   # [a, b]
 	var rooms: Array = []   # node indices of chambers
 	var roots: Array = []   # node index at each entrance
+	_node_grid = {}
 	for e in spots.size():
 		var s: Vector3 = spots[e]
 		# The mouth: just under the slope, so the void breaks the surface and makes an opening.
@@ -99,9 +100,19 @@ static func plan(gen: WorldGen) -> Dictionary:
 				var nr := clampf(rad + rng.randf_range(-0.5, 0.5), 1.2, 3.6)
 				if is_room:
 					nr = rng.randf_range(4.5, 7.5)
-				var fit: Variant = _fit(gen, nodes[cur].p + dir * length, nr)
+				var fit: Variant = null
+				# A few headings: one that would cut through another tunnel at a different height (a hole in that one's
+				# floor) or drop away too steeply is swapped for a turn.
+				for attempt in 4:
+					var d := dir if attempt == 0 else dir.rotated(Vector3.UP, (0.7 + 0.35 * attempt) * (1.0 if attempt % 2 == 1 else -1.0))
+					fit = _follow(gen, nodes[cur], nodes[cur].p + d * length, nr)
+					if fit != null and _breaks_floor(nodes, fit, nr):
+						fit = null
+					if fit != null:
+						dir = d
+						break
 				if fit == null:
-					break   # the rock ends here: this branch stops
+					break   # the rock ends here (or it would have to drop away too steeply): this branch stops
 				var nxt := _add_node(nodes, fit, nr, tree)
 				edges.append([cur, nxt])
 				if is_room:
@@ -133,7 +144,7 @@ static func plan(gen: WorldGen) -> Dictionary:
 		for j in range(i + 1, nodes.size()):
 			if nodes[i].tree == nodes[j].tree:
 				continue
-			if nodes[i].p.distance_to(nodes[j].p) < 16.0 and rng.randf() < 0.3:
+			if nodes[i].p.distance_to(nodes[j].p) < 16.0 and rng.randf() < 0.3 and _walkable_link(nodes[i], nodes[j]):
 				edges.append([i, j])
 				loops += 1
 				break
@@ -165,8 +176,13 @@ static func plan(gen: WorldGen) -> Dictionary:
 		var wa: float = walk[edge[0]]
 		var wb: float = walk[edge[1]]
 		var wm := minf(wa + a.p.distance_to(mid), wb + b.p.distance_to(mid))
-		segs.append([a.p, mid, float(a.r), mid_r, wa, wm])
-		segs.append([mid, b.p, mid_r, float(b.r), wm, wb])
+		# Each piece carries its floor at both ends: the tunnel is cut flat there (see _piece_distance), so the floor
+		# runs straight from node to node instead of dipping into the bottom of each round chamber.
+		var fa := float(a.p.y) - FLOOR_K * float(a.r)
+		var fb := float(b.p.y) - FLOOR_K * float(b.r)
+		var fm := (fa + fb) * 0.5
+		segs.append([a.p, mid, float(a.r), mid_r, wa, wm, fa, fm])
+		segs.append([mid, b.p, mid_r, float(b.r), wm, wb, fm, fb])
 	var buckets := {}
 	for si in segs.size():
 		var s: Array = segs[si]
@@ -529,9 +545,75 @@ static func _fit(gen: WorldGen, p: Vector3, r: float) -> Variant:
 	return Vector3(p.x, clampf(p.y, low, top), p.z)
 
 
+## How steeply a cave floor may fall or rise from one node to the next (rise over run): gentle enough to walk
+## back up. (Floors go from node to node in a straight line, so keeping each step to this keeps the whole floor.)
+const FLOOR_K := 0.8      ## a cave's floor is this share of its radius below its middle (cut flat there)
+const FLOOR_DOWN := 0.5
+const FLOOR_UP := 0.45
+
+
+## A node placed after `from`, near p, with radius r: its floor (y - r) no steeper from `from`'s floor than the
+## cave allows, and fitted under the ground like any node. Null if no such place fits (the branch ends there).
+static func _follow(gen: WorldGen, from: Dictionary, p: Vector3, r: float) -> Variant:
+	var fit: Variant = _fit(gen, p, r)
+	if fit == null:
+		return null
+	var q: Vector3 = fit
+	var run := Vector2(q.x - from.p.x, q.z - from.p.z).length()
+	var prev_floor: float = from.p.y - FLOOR_K * float(from.r)
+	var floor_y := clampf(q.y - FLOOR_K * r, prev_floor - FLOOR_DOWN * run, prev_floor + FLOOR_UP * run)
+	var top := gen.get_base_height(q.x, q.z) - r - CLEARANCE
+	var low := maxf(top - MAX_DEPTH, Game.SEA_LEVEL + r + 1.0)
+	var y := floor_y + FLOOR_K * r
+	if y > top + 0.01 or y < low - 0.01:
+		return null   # the ground won't hold a floor that follows on gently here
+	return Vector3(q.x, y, q.z)
+
+
+## Whether two nodes' floors are close enough in height, for the distance between them, to join with a tunnel
+## you can walk both ways.
+static func _walkable_link(a: Dictionary, b: Dictionary) -> bool:
+	var run := Vector2(a.p.x - b.p.x, a.p.z - b.p.z).length()
+	var rise := absf((a.p.y - FLOOR_K * float(a.r)) - (b.p.y - FLOOR_K * float(b.r)))
+	return rise <= minf(FLOOR_DOWN, FLOOR_UP) * run
+
+
 static func _add_node(nodes: Array, p: Vector3, r: float, tree: int) -> int:
 	nodes.append({"p": p, "r": r, "tree": tree})
+	var key := Vector2i(floori(p.x / NODE_CELL), floori(p.z / NODE_CELL))
+	var grid: Dictionary = _node_grid
+	if not grid.has(key):
+		grid[key] = []
+	grid[key].append(nodes.size() - 1)
 	return nodes.size() - 1
+
+
+const NODE_CELL := 16.0
+static var _node_grid := {}   ## node indices by 16 m cell, for the plan being made
+
+
+## Whether a node at p (radius r) would overlap another tunnel whose floor is at a height you couldn't walk between
+## over that distance: one would open a pit or a ledge in the other's floor.
+static func _breaks_floor(nodes: Array, p: Vector3, r: float) -> bool:
+	var f := p.y - FLOOR_K * r
+	var cx := floori(p.x / NODE_CELL)
+	var cz := floori(p.z / NODE_CELL)
+	for dz in range(-1, 2):
+		for dx in range(-1, 2):
+			for i: int in _node_grid.get(Vector2i(cx + dx, cz + dz), []):
+				var n: Dictionary = nodes[i]
+				var q: Vector3 = n.p
+				var rn := float(n.r)
+				var run := Vector2(q.x - p.x, q.z - p.z).length()
+				if run > r + rn + 0.5:
+					continue
+				# One above the other with rock between: fine.
+				var fn := q.y - FLOOR_K * rn
+				if q.y + rn < f - 0.6 or p.y + r < fn - 0.6:
+					continue
+				if absf(fn - f) > 0.5 * run + 2.5:
+					return true
+	return false
 
 
 ## A long winding corridor from node a to node b, with bends so it reads as dug rock.
@@ -546,13 +628,14 @@ static func _corridor(gen: WorldGen, nodes: Array, edges: Array, rng: RandomNumb
 		var t := float(i) / n
 		var p := pa.lerp(pb, t) + Vector3(rng.randf_range(-3, 3), rng.randf_range(-1.5, 1.5), rng.randf_range(-3, 3))
 		var r := rng.randf_range(1.5, 2.6)
-		var fit: Variant = _fit(gen, p, r)
-		if fit == null:
+		var fit: Variant = _follow(gen, nodes[prev], p, r)
+		if fit == null or _breaks_floor(nodes, fit, r):
 			continue
 		var nxt := _add_node(nodes, fit, r, nodes[a].tree)
 		edges.append([prev, nxt])
 		prev = nxt
-	edges.append([prev, b])
+	if _walkable_link(nodes[prev], nodes[b]):
+		edges.append([prev, b])
 
 
 ## The tunnel pieces that could reach the chunk at `origin` (size metres square), with a margin.
@@ -610,7 +693,7 @@ static func sky_seen(plan: Dictionary, p: Vector3) -> float:
 		var a: Vector3 = s[0]
 		var ab: Vector3 = s[1] - a
 		var t := clampf((p - a).dot(ab) / maxf(ab.length_squared(), 0.0001), 0.0, 1.0)
-		var d := p.distance_to(a + ab * t) - lerpf(float(s[2]), float(s[3]), t)
+		var d := maxf(p.distance_to(a + ab * t) - lerpf(float(s[2]), float(s[3]), t), lerpf(float(s[6]), float(s[7]), t) - p.y)
 		if d < best:
 			best = d
 			best_walk = lerpf(float(s[4]), float(s[5]), t)
@@ -624,4 +707,6 @@ static func _piece_distance(s: Array, p: Vector3) -> float:
 	var a: Vector3 = s[0]
 	var ab: Vector3 = s[1] - a
 	var t := clampf((p - a).dot(ab) / maxf(ab.length_squared(), 0.0001), 0.0, 1.0)
-	return p.distance_to(a + ab * t) - lerpf(float(s[2]), float(s[3]), t)
+	var d := p.distance_to(a + ab * t) - lerpf(float(s[2]), float(s[3]), t)
+	# The flat floor: no void below it.
+	return maxf(d, lerpf(float(s[6]), float(s[7]), t) - p.y)
