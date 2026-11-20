@@ -607,18 +607,44 @@ static func _door_panel(door: MeshKit, mat: String, rng: RandomNumberGenerator) 
 
 
 ## Twelve steps climbing one storey, from the floor's top to the next floor's top, running out along -Z.
+## Wood: an open stair, two slanted stringers with plank treads between them and gaps where the risers would be.
+## Stone and brick: solid stepped blocks with chunky slab treads, between side curbs shaped like the stringers.
 static func _stairs(k: MeshKit, mat: String) -> void:
 	var col := _mat_colour(mat)
 	var rise := GameActions.STACK_H / GameActions.STAIR_STEPS
 	var run := GameActions.CELL / GameActions.STAIR_STEPS
+	var h := GameActions.CELL * 0.5
+	var ft := GameActions.FLOOR_TOP
+	var top_y := ft + GameActions.STACK_H
+	var wood := mat == "wood"
+	# The side beams: their top runs 4 cm over the treads' middles, cut level at the floor and at the floor above,
+	# and square at the bottom front and top back (an outline in the stair's side, z flipped so it runs up the slope).
+	var depth := 0.34 if wood else 0.42
+	var slope := GameActions.STACK_H / GameActions.CELL
+	var over := rise * 0.5 + 0.04
+	var u_top := -h + (top_y - ft - over) / slope
+	var u_foot := -h + (depth - over) / slope
+	var side := PackedVector2Array([Vector2(-h, ft), Vector2(u_foot, ft), Vector2(h, top_y - depth + over), Vector2(h, top_y),
+		Vector2(u_top, top_y), Vector2(-h, ft + over)])
+	var beam_w := 0.12 if wood else 0.16
+	var beam_col := WOOD_DARK if wood else col.darkened(0.22)
+	for sx in [-1.0, 1.0]:
+		k.extrude(side, Transform3D(Basis(Vector3.UP, PI * 0.5), Vector3(sx * (h - beam_w * 0.5), 0, 0)), beam_w, 0.012, beam_col, beam_col.darkened(0.1), 0.1)
+	var inner := GameActions.CELL - beam_w * 2.0
 	for i in GameActions.STAIR_STEPS:
-		var top := GameActions.FLOOR_TOP + (i + 1) * rise
-		var zc := GameActions.CELL * 0.5 - (i + 0.5) * run
-		# Each tread overlaps the next by a hair, so no two faces lie exactly on each other.
-		k.add_primitive(_box(Vector3(GameActions.CELL - 0.04, top, run + 0.02)), Transform3D(Basis(), Vector3(0, top * 0.5, zc)),
-			col.lightened(0.05 * float(i % 2)), 0.0, 0.04)
-		k.add_primitive(_box(Vector3(GameActions.CELL - 0.04, 0.025, run * 0.7)), Transform3D(Basis(), Vector3(0, top + 0.012, zc)),
-			col.lightened(0.16), 0.0, 0.02)
+		var top := ft + (i + 1) * rise
+		var zc := h - (i + 0.5) * run
+		var shade := 0.06 * float((i * 7) % 3) - 0.04
+		if wood:
+			# A plank tread, its ends let into the stringers.
+			k.add_primitive(_box(Vector3(inner + 0.06, 0.08, run * 0.9)), Transform3D(Basis(), Vector3(0, top - 0.04, zc)),
+				WOOD.darkened(0.08).lightened(shade), 0.0, 0.015)
+		else:
+			# The block under the step, and a slab on top with a nose over the step below.
+			k.add_primitive(_box(Vector3(inner + 0.02, top - 0.06, run + 0.02)), Transform3D(Basis(), Vector3(0, (top - 0.06) * 0.5, zc)),
+				col.darkened(0.08).lightened(shade), 0.0, 0.03)
+			k.add_primitive(_box(Vector3(inner + 0.02, 0.08, run + 0.05)), Transform3D(Basis(), Vector3(0, top - 0.04, zc + 0.015)),
+				col.lightened(0.12 + shade), 0.0, 0.02)
 
 
 ## A roof of overlapping tiles over a 3 m square, with a beam round the edge. Brick is clay, wood
