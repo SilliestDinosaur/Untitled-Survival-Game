@@ -12,7 +12,7 @@ extends RefCounted
 
 ## Material tiers. 0-1 and 5 are fixed; 2-4 are generated per world (the twist): every island has
 ## its own metals and gem, with their own names, colors, traits and places they're found.
-## The last tier is forged from the essence of the night's shadow creatures.
+## The last tier is forged from shadow essence, carried by the beasts that lair in the deep caves.
 const TIER_POWER := [0.6, 1.0, 1.45, 1.95, 2.6, 3.4]
 const TRAITS := {
 	"swift": {"name": "Swift", "desc": "Swings 20% faster."},
@@ -50,7 +50,7 @@ const BASE_ITEMS := {
 	"raw_meat": {"name": "Raw Meat", "kind": "food", "stack": 40, "icon": "meat", "food": 16.0, "health": -4.0, "desc": "Filling, but it should really be cooked."},
 	"cactus_flesh": {"name": "Cactus Flesh", "kind": "food", "stack": 40, "icon": "cactus", "food": 5.0, "health": 3.0, "desc": "Watery and a little sour."},
 	"charcoal": {"name": "Charcoal", "kind": "material", "stack": 100, "icon": "charcoal", "desc": "Wood burnt slow in a campfire. Burns hot enough to smelt ore."},
-	"essence": {"name": "Shadow Essence", "kind": "material", "stack": 50, "icon": "essence", "tier": 5, "desc": "Left behind by shadow creatures. Forges Duskforged tools."},
+	"essence": {"name": "Shadow Essence", "kind": "material", "stack": 50, "icon": "essence", "tier": 5, "desc": "Carried by the beasts of the deep caves. Forges Duskforged tools."},
 	# Crafted materials
 	"rope": {"name": "Rope", "kind": "material", "stack": 50, "icon": "rope", "desc": "Twisted plant fiber. Lashes tools and frames together."},
 	"plank": {"name": "Planks", "kind": "material", "stack": 100, "icon": "plank", "desc": "Split and smoothed at a workbench."},
@@ -382,11 +382,38 @@ static func describe(id: String, durability := -1) -> String:
 				best += ("" if best == "" else ", ") + {"tree": "wood", "rock": "stone", "carcass": "butchering"}[k]
 		if best != "":
 			lines.append("Good for: " + best)
+		if t.get("type", "") == "pickaxe":
+			# What it can break: every deposit up to its tier.
+			var can: Array[String] = []
+			for k: String in FloraLibrary.KINDS:
+				var need := int(FloraLibrary.KINDS[k].get("min_tier", -1))
+				if need >= 0 and need <= int(t.get("tier", 0)):
+					can.append(String(FloraLibrary.KINDS[k].label).to_lower() + ("s" if not String(FloraLibrary.KINDS[k].label).ends_with("s") else ""))
+			lines.append("Mines stone%s" % ((" and " + ", ".join(_uniq(can))) if not can.is_empty() else " (not ore)"))
 		if durability >= 0:
-			lines.append("Durability %d / %d" % [durability, t.durability])
+			var pct := float(durability) / maxf(float(t.durability), 1.0)
+			lines.append("Durability %d / %d%s" % [durability, t.durability, "  (worn: repair or replace soon)" if pct < 0.2 else ""])
 	if i.kind == "food":
 		var known: bool = not i.get("unknown", false) or Game.known_items.has(id)
 		lines.append("Food +%d%s" % [roundi(i.get("food", 0.0)), ("  ·  Health %+d" % roundi(i.health)) if i.get("health", 0.0) != 0.0 else ""])
 		if i.has("effect"):
 			lines.append(("Effect: %s (%s)" % [EFFECTS[i.effect].name, EFFECTS[i.effect].desc]) if known else "Effect: ??? (try it)")
+	# What it goes into, and how many fit in a slot.
+	if i.kind != "tool":
+		var uses := 0
+		for r: Dictionary in Recipes.all():
+			if (r.needs as Dictionary).has(id):
+				uses += 1
+		if uses > 0:
+			lines.append("Used in %d recipe%s" % [uses, "" if uses == 1 else "s"])
+		if stack_size(id) > 1:
+			lines.append("Stacks to %d" % stack_size(id))
 	return "\n".join(lines)
+
+
+static func _uniq(a: Array[String]) -> Array[String]:
+	var out: Array[String] = []
+	for x in a:
+		if not x in out:
+			out.append(x)
+	return out

@@ -549,9 +549,15 @@ class SettingsPanel extends Control:
 class LoadingScreen extends Control:
 	const TIPS := [
 		"Every seed is a different island: new terrain, colors, plants, animals and names.",
-		"Shadow creatures come at night. They will break through weak walls.",
+		"The caves hold the best ore: the deeper you go, the better the metal. Take a torch.",
+		"Beasts lair in the deepest cave chambers. They carry shadow essence, for Duskforged tools.",
 		"Sprinting burns food faster, and animals hear you coming.",
-		"Ore deposits are more common high in the mountains.",
+		"Ore deposits are more common high in the mountains, and richer underground.",
+		"Click the map to mark a place. Where you last fell is marked too, so you can fetch your things.",
+		"Quick stack (in the satchel) puts things away into the chests nearby that already hold them.",
+		"Shift-click with a hammer to repair everything damaged around you.",
+		"Ctrl-click Craft to make as many as you have the makings of.",
+		"Knock a piece down within 30 seconds of finishing it and you get everything back.",
 		"Falling from high places hurts. Water breaks your fall.",
 		"Territorial beasts leave you alone... until you hit them.",
 		"Mushrooms grow near fallen logs in damp forests.",

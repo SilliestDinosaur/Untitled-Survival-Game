@@ -123,6 +123,9 @@ static func harvest_carcass(player_id: int, animal: Node, rng: RandomNumberGener
 	_give_chance(inv, ItemDB.HARVEST.carcass, rng, result.items, mult)
 	if result.items.is_empty():
 		_add(inv, "raw_meat", 1, result.items)
+	# The deep caves' beasts carry shadow essence (the only place it comes from: it forges Duskforged tools).
+	if animal.species.habitat == "cave" and rng.randf() < 0.6:
+		_add(inv, "essence", rng.randi_range(1, 2), result.items)
 	animal.carcass_hp -= ItemDB.HIT_DAMAGE * clampf(tool.carcass, 0.6, 2.5)
 	if animal.carcass_hp <= 0.0:
 		result.destroyed = true

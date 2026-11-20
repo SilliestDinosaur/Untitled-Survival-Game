@@ -488,9 +488,16 @@ func _update_looking_at() -> void:
 		var chunk := body.get_parent() as TerrainChunk
 		var res: Dictionary = chunk.resource_from_hit(body, ray.get_collider_shape())
 		if not res.is_empty():
+			var label: String = FloraLibrary.KINDS[res.kind].label
+			# Ore and crystal tell you up front which pickaxe they need (red when what you hold won't do).
+			var need := int(FloraLibrary.KINDS[res.kind].get("min_tier", -1))
+			if need >= 0:
+				var held := ItemDB.tool_stats(inventory.selected_item())
+				var can: bool = held.get("type", "") == "pickaxe" and int(held.get("tier", 0)) >= need
+				label += " · needs a %s pickaxe%s" % [ItemDB.tier_info(need).name, "" if can else " ✗"]
 			looking_at = {
 				"name": Game.flora.resource_name(res),
-				"label": FloraLibrary.KINDS[res.kind].label,
+				"label": label,
 				"resource": res,
 				"chunk": chunk,
 				"interact": _interact_verb(res),
