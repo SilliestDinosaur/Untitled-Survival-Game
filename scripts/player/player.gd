@@ -60,6 +60,7 @@ var _kick := Vector3.ZERO     ## camera rotation knocked by a blow (pitch, yaw, 
 var _lean := 0.0              ## roll into a strafe
 var _cold := 0.0
 var _heat := 0.0
+var fire_distance := INF   ## metres to the nearest campfire or forge (for the screen's warm glow right by one)
 var _exposure_timer := 0.0
 ## While holding a placeable: {ok, reason, pos, yaw, name}
 var placement := {}
@@ -929,6 +930,7 @@ const FIRE_WARMTH_RANGE := 7.0
 
 ## How cold it is here right now, and how much nearby fire (or a held torch) warms you.
 func _update_exposure() -> void:
+	fire_distance = INF
 	var p := global_position
 	var gen: WorldGen = Game.world_gen
 	var night := 1.0 - Game.daylight()
@@ -957,6 +959,7 @@ func _update_exposure() -> void:
 			continue
 		var sp: Array = st.pos
 		var d := p.distance_to(Vector3(sp[0], sp[1], sp[2]))
+		fire_distance = minf(fire_distance, d)
 		if d < FIRE_WARMTH_RANGE:
 			_heat += (8.0 if st.kind == "campfire" else 5.0) * (1.0 - d / FIRE_WARMTH_RANGE * 0.6)
 	if _heat > 1.0:

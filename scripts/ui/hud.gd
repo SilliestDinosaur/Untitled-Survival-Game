@@ -181,7 +181,9 @@ func _ready() -> void:
 func _update_mood(delta: float, chill: float, low: float, s: PlayerStats) -> void:
 	var want := Vector4.ZERO
 	if Settings.screen_effects and player.crafting == null:
-		want = Vector4(chill, smoothstep(1.0, 6.0, s.heat), low, 1.0 if player.underwater else 0.0)
+		# The warm glow only right at a fire (standing over it), not everywhere its warmth reaches.
+		var hot := 1.0 - smoothstep(0.9, 1.8, float(player.fire_distance))
+		want = Vector4(chill, hot, low, 1.0 if player.underwater else 0.0)
 	_mood_v = _mood_v.lerp(want, 1.0 - exp(-3.0 * delta))
 	var on := _mood_v.x > 0.01 or _mood_v.y > 0.01 or _mood_v.z > 0.01 or _mood_v.w > 0.01
 	_mood.visible = on
