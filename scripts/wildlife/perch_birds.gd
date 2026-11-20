@@ -68,14 +68,26 @@ func _scan() -> void:
 				if xf.origin.distance_to(position) > 45.0:
 					continue
 				var top: Variant = null
-				if TREE_TOPS.has(r.kind):
-					top = xf.origin + Vector3(0, float(TREE_TOPS[r.kind]) * xf.basis.y.length() * 0.98, 0)
+				if TREE_TOPS.has(r.kind) and Game.flora.has_mesh(r.key):
+					# Out on the crown's lower edge, where a bird on a branch can be seen from below.
+					var bb := _crown(String(r.key))
+					var a := _rng.randf() * TAU
+					top = xf * Vector3(cos(a) * bb.x * 0.4, bb.y * (0.42 if r.kind == "jungle_tree" else 0.7), sin(a) * bb.x * 0.4)
 				elif r.kind == "log":
 					top = xf.origin + xf.basis.y.normalized() * 0.5 * xf.basis.y.length()
 				elif r.kind in ["rock", "boulder"]:
 					top = xf.origin + Vector3(0, 0.85 * xf.basis.y.length(), 0)
 				if top != null:
 					_perches.append(top)
+
+
+## A tree model's crown: (width, height), from its mesh (looked up once per model).
+static var _crowns := {}
+static func _crown(key: String) -> Vector2:
+	if not _crowns.has(key):
+		var bb: AABB = Game.flora.mesh(key).get_aabb()
+		_crowns[key] = Vector2(maxf(bb.size.x, bb.size.z), bb.end.y)
+	return _crowns[key]
 
 
 ## A spot on a perch, spread a little so birds sharing it don't sit inside each other.

@@ -1040,7 +1040,7 @@ func _make_perch_bird(rng: RandomNumberGenerator, kind: String) -> Species:
 		"toucan": s.biome_pref = {Biome.JUNGLE: 0.8}
 		"songbird": s.biome_pref = {Biome.FOREST: 1.0, Biome.AUTUMN: 1.0, Biome.MEADOW: 0.7, Biome.TAIGA: 0.6, Biome.MARSH: 0.5}
 		"vulture": s.biome_pref = {Biome.DESERT: 1.0, Biome.BADLANDS: 1.0, Biome.DRYLANDS: 0.9}
-	s.size = {"parrot": 0.32, "toucan": 0.34, "songbird": 0.16, "vulture": 0.75}[kind] * rng.randf_range(0.9, 1.1)
+	s.size = {"parrot": 0.5, "toucan": 0.46, "songbird": 0.18, "vulture": 0.75}[kind] * rng.randf_range(0.9, 1.1)
 	var size := s.size
 	var main: Color
 	var wing_col: Color

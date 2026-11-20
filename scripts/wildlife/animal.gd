@@ -688,9 +688,11 @@ func _nearest_tree(p: Vector3, reach: float, not_at: Vector3) -> Variant:
 					continue
 				var xf: Transform3D = r.transform
 				var d := Vector2(xf.origin.x - p.x, xf.origin.z - p.z).length()
-				if d < best_d and Vector2(xf.origin.x - not_at.x, xf.origin.z - not_at.z).length() > 1.0:
+				if d < best_d and Vector2(xf.origin.x - not_at.x, xf.origin.z - not_at.z).length() > 1.0 and Game.flora.has_mesh(r.key):
 					best_d = d
-					best = xf.origin + Vector3(0, float(TREE_TOPS[r.kind]) * xf.basis.y.length() * 0.92, 0)
+					# Up in the lower crown, against the trunk.
+					var h: float = PerchBirds._crown(String(r.key)).y
+					best = xf.origin + Vector3(0, h * xf.basis.y.length() * (0.5 if r.kind == "jungle_tree" else 0.62), 0)
 	return best
 
 
