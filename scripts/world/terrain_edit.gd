@@ -103,6 +103,40 @@ static func clear_rect(center: Vector3, hx: float, hz: float, yaw: float, y: flo
 	return cells
 
 
+## How placing a piece changes the ground: a ground-floor slab levels the ground under it; an upper storey's floor
+## stands on walls and leaves the ground alone; anything else cuts away ground poking into it.
+static func cells_for(kind: String, pos: Vector3, yaw: float, level: int) -> Array:
+	if kind in GameActions.FLOOR_KINDS:
+		return level_ground(pos, 1.5, 1.5, 0.0, pos.y) if level == 0 else []
+	var rect := Vector2(1.5, 0.25) if kind in GameActions.EDGE_KINDS else Vector2(1.5, 1.5)
+	return clear_rect(pos, rect.x, rect.y, yaw, pos.y)
+
+
+## Work the ground out again from scratch: every piece standing, in the order it was placed, shaping the ground as
+## it does now. (Repairs saves from before upper floors stopped raising hills under themselves.)
+static func rebuild(structures: Dictionary) -> void:
+	var gen: WorldGen = Game.world_gen
+	if not gen:
+		return
+	gen.edits = {}
+	var ids := structures.keys()
+	ids.sort_custom(func(a: String, b: String) -> bool: return a.trim_prefix("s").to_int() < b.trim_prefix("s").to_int())
+	for id: String in ids:
+		var st: Dictionary = structures[id]
+		var p: Array = st.pos
+		var cells := cells_for(String(st.kind), Vector3(p[0], p[1], p[2]), float(st.get("yaw", 0.0)), int(st.get("level", 0)))
+		if cells.is_empty():
+			continue
+		var nd: Dictionary = gen.edits.duplicate()
+		for c: Array in cells:
+			var k := Vector2i(int(c[0]), int(c[1]))
+			if absf(float(c[2])) < 0.001:
+				nd.erase(k)
+			else:
+				nd[k] = float(c[2])
+		gen.edits = nd
+
+
 ## Make a change real on this machine: update the ground and rebuild the chunks it touches.
 static func commit(cells: Array) -> void:
 	var gen: WorldGen = Game.world_gen

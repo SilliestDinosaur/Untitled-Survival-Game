@@ -348,13 +348,14 @@ func _add_piece_colliders(body: StaticBody3D, kind: String) -> CollisionShape3D:
 				_box_collider(body, Vector3(GameActions.CELL - 0.04, top, run + 0.02), Vector3(0, top * 0.5, zc))
 		"doorway", "door":
 			# Two posts and a lintel: walkable through the opening.
-			_box_collider(body, Vector3(0.8, 3.0, 0.3), Vector3(-1.1, 1.5, 0))
-			_box_collider(body, Vector3(0.8, 3.0, 0.3), Vector3(1.1, 1.5, 0))
-			_box_collider(body, Vector3(1.4, 0.7, 0.3), Vector3(0, 2.65, 0))
+			var wh := GameActions.WALL_H
+			_box_collider(body, Vector3(0.8, wh, 0.3), Vector3(-1.1, wh * 0.5, 0))
+			_box_collider(body, Vector3(0.8, wh, 0.3), Vector3(1.1, wh * 0.5, 0))
+			_box_collider(body, Vector3(1.4, wh - 2.3, 0.3), Vector3(0, (wh + 2.3) * 0.5, 0))
 			if shape == "door":
 				panel = _box_collider(body, Vector3(StructureModels.DOOR_W * 2.0 - 0.04, StructureModels.DOOR_H - 0.06, 0.08), Vector3.ZERO)
 		_:
-			_box_collider(body, Vector3(GameActions.CELL, GameActions.WALL_H, 0.3), Vector3(0, 1.5, 0))
+			_box_collider(body, Vector3(GameActions.CELL, GameActions.WALL_H, 0.3), Vector3(0, GameActions.WALL_H * 0.5, 0))
 	return panel
 
 

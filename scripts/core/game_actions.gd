@@ -223,13 +223,13 @@ static func craft(player_id: int, recipe_id: String, pos: Vector3, times := 1) -
 
 
 ## Building pieces live on a grid: foundations fill 2 m cells and can stack in levels. Walls,
-## doorways and roofs sit on the levels. Heights: a level's slab is 0.5 m thick and its walls
-## stand 2.4 m tall, so each level is STACK_H apart.
+## doorways and roofs sit on the levels. Heights: each level is STACK_H apart and its walls are that tall, so the
+## walls of one level stand right on those of the level below (the slab above sits inside their tops).
 const CELL := 3.0
 const STACK_H := 3.5
 const SLAB_T := 0.5
 const WALL_LIFT := 0.25      ## walls stand on the top of a level's slab
-const WALL_H := 3.0
+const WALL_H := 3.5         ## a full storey: one level's walls meet the next's, and a staircase ends at their top
 const ROOF_T := 0.3
 const MAX_LEVEL := 3
 const FLOOR_TOP := 0.34      ## a floor's walking surface, above its origin

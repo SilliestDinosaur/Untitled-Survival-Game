@@ -202,6 +202,17 @@ func inventory_of(player_id: int) -> Inventory:
 	return inventories[player_id]
 
 
+const BUILD_V := 2     ## version of building heights (2: walls a full storey tall)
+const TERRAIN_V := 2   ## version of how building shapes the ground (2: upper-storey floors leave it alone)
+
+
+static func _has_upper_floor(sts: Dictionary) -> bool:
+	for id: String in sts:
+		if sts[id].kind in GameActions.FLOOR_KINDS and int(sts[id].get("level", 0)) > 0:
+			return true
+	return false
+
+
 func new_entity_id(prefix: String) -> String:
 	next_entity_id += 1
 	return "%s%d" % [prefix, next_entity_id]
@@ -235,8 +246,17 @@ func load_save(id: String) -> Dictionary:
 		explored.resize(explore_size() * explore_size())
 	pickups = data.get("pickups", {})
 	structures = data.get("structures", {})
+	# Saves from when walls were 3 m: roofs sat on those, so they go up to the new wall tops.
+	if int(data.get("build_v", 1)) < BUILD_V:
+		for id: String in structures:
+			var st: Dictionary = structures[id]
+			if st.kind in GameActions.COVER_KINDS:
+				st.pos = [float(st.pos[0]), float(st.pos[1]) + GameActions.WALL_H - 3.0, float(st.pos[2])]
 	if world_gen:
 		world_gen.edits = TerrainEdit.from_list(data.get("terrain", []))
+		# Saves from before upper floors stopped raising the ground under them: work the ground out again.
+		if int(data.get("terrain_v", 1)) < TERRAIN_V and _has_upper_floor(structures):
+			TerrainEdit.rebuild(structures)
 	next_entity_id = int(data.get("next_entity_id", 1))
 	time_of_day = float(data.get("time_of_day", 0.3))
 	day = int(data.get("day", 1))
@@ -280,6 +300,8 @@ func write_save(player_data: Dictionary) -> void:
 		"pickups": pickups,
 		"structures": structures,
 		"terrain": TerrainEdit.to_list(world_gen.edits) if world_gen else [],
+		"terrain_v": TERRAIN_V,
+		"build_v": BUILD_V,
 		"next_entity_id": next_entity_id,
 		"time_of_day": time_of_day,
 		"day": day,

@@ -781,18 +781,12 @@ func _drop_overflow(items: Dictionary, at: Vector3) -> void:
 			GameActions.spawn_pickup(k.trim_prefix("_overflow_"), items[k], -1, at + Vector3(_rng.randf_range(-0.4, 0.4), 0.3, _rng.randf_range(-0.4, 0.4)))
 
 
-## Where something was just placed, shape the ground for it: a floor's slab levels the ground under it (at the
+## Where something was just placed, shape the ground for it: a ground floor's slab levels the ground under it (at the
 ## height the host worked out, shared with its neighbours); anything else just clears ground that pokes into it.
 func _shape_ground(placed: Dictionary) -> void:
 	if not placed.get("ok", false):
 		return
-	var kind: String = placed.get("kind", "")
-	var cells: Array = []
-	if kind in GameActions.FLOOR_KINDS:
-		cells = TerrainEdit.level_ground(placed.pos, 1.5, 1.5, 0.0, placed.pos.y)
-	else:
-		var rect := Vector2(1.5, 0.25) if kind in GameActions.EDGE_KINDS else Vector2(1.5, 1.5)
-		cells = TerrainEdit.clear_rect(placed.pos, rect.x, rect.y, float(placed.get("yaw", 0.0)), placed.pos.y)
+	var cells := TerrainEdit.cells_for(String(placed.get("kind", "")), placed.pos, float(placed.get("yaw", 0.0)), int(placed.get("level", 0)))
 	if not cells.is_empty():
 		TerrainEdit.commit(cells)
 		if is_host():
