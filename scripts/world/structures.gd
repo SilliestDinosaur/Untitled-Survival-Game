@@ -47,6 +47,7 @@ func _ready() -> void:
 	_prewarm()
 	Game.structures_changed.connect(_sync)
 	Game.world_changed.connect(func() -> void:
+		_settled = false
 		StructureModels.clear_cache()
 		_prewarm()
 		for id: String in _nodes.keys():
@@ -88,11 +89,20 @@ func _build_flame() -> ArrayMesh:
 	return k.commit(_flame_mat)
 
 
+var _settled := false   ## the world's pieces have been drawn once (after that, new ones pop in as they're placed)
+
+
 func _sync() -> void:
 	for id: String in _nodes.keys():
 		if not Game.structures.has(id):
 			_free_node(id)
 	_corners = StructureModels.corner_index(Game.structures)
+	# Only a handful new at once is someone building; a whole base appearing is a save loading (no popping).
+	var fresh := 0
+	for id: String in Game.structures:
+		if not _nodes.has(id):
+			fresh += 1
+	var pop := _settled and fresh <= 3
 	for id: String in Game.structures:
 		var st: Dictionary = Game.structures[id]
 		if _nodes.has(id) and is_instance_valid(_nodes[id]) and bool(_nodes[id].get_meta("blueprint", false)) != GameActions.is_blueprint(st):
@@ -107,10 +117,25 @@ func _sync() -> void:
 			if _finishing.has(id):
 				_finishing.erase(id)
 				_finished_fx(_nodes[id], st)
+			elif pop:
+				_pop_in(_nodes[id])
+			_nodes[id].set_meta("shown", true)
 		else:
 			_apply_door(_nodes[id], Game.structures[id])
 			_apply_ends(_nodes[id], Game.structures[id])
 			_apply_build(_nodes[id], st)
+	_settled = true
+
+
+## Something just put down: it drops the last few centimetres and settles with a little squash.
+func _pop_in(root: Node3D) -> void:
+	var home := root.position
+	root.position = home + Vector3(0, 0.25, 0)
+	root.scale = Vector3(0.94, 1.08, 0.94)
+	var tw := root.create_tween()
+	tw.tween_property(root, "position", home, 0.16).set_trans(Tween.TRANS_QUAD).set_ease(Tween.EASE_IN)
+	tw.parallel().tween_property(root, "scale", Vector3(1.05, 0.93, 1.05), 0.16)
+	tw.tween_property(root, "scale", Vector3.ONE, 0.22).set_trans(Tween.TRANS_BACK).set_ease(Tween.EASE_OUT)
 
 
 ## Where a blueprint's build line is (in the piece's own height) for how much of it is built.
@@ -376,7 +401,14 @@ func _apply_door(root: Node3D, st: Dictionary) -> void:
 	var pivot: Node3D = root.get_meta("pivot")
 	var panel: CollisionShape3D = root.get_meta("panel")
 	var ang := -PI * 0.5 if bool(st.get("open", false)) else 0.0
-	pivot.rotation.y = ang
+	# It swings (with a little give at the end), rather than jumping open or shut. Its collision moves at once.
+	if not is_equal_approx(float(pivot.get_meta("to", 0.0)), ang) and pivot.is_inside_tree() and root.has_meta("shown"):
+		pivot.set_meta("to", ang)
+		var tw := pivot.create_tween()
+		tw.tween_property(pivot, "rotation:y", ang, 0.5).set_trans(Tween.TRANS_BACK).set_ease(Tween.EASE_OUT)
+	else:
+		pivot.set_meta("to", ang)
+		pivot.rotation.y = ang
 	var hinge := Vector3(-StructureModels.DOOR_W, 0.0, 0.0)
 	var centre := Vector3(StructureModels.DOOR_W - 0.02, StructureModels.DOOR_H * 0.5 - 0.03, 0.0)
 	panel.transform = Transform3D(Basis(Vector3.UP, ang), hinge + Basis(Vector3.UP, ang) * centre)

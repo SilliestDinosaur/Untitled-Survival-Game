@@ -305,6 +305,7 @@ func _physics_process(delta: float) -> void:
 		if fall_speed > safe_fall_speed:
 			stats.take_damage((fall_speed - safe_fall_speed) * fall_damage_per_ms)
 		landed.emit(fall_speed)
+		viewmodel.land(fall_speed / 10.0)
 	_was_on_floor = is_on_floor()
 
 	# Keep the player on the map, and catch anyone who falls through the world.
@@ -396,7 +397,7 @@ func _update_camera(delta: float, sprinting: bool, input: Vector2) -> void:
 
 	_fov_kick = lerpf(_fov_kick, 9.0 if sprinting and horizontal > 6.0 else 0.0, 1.0 - exp(-6.0 * delta))
 	camera.fov = Settings.fov + _fov_kick
-	viewmodel.update_motion(delta, _bob_time, _bob_amount)
+	viewmodel.update_motion(delta, _bob_time, _bob_amount, sprinting and horizontal > 6.0)
 	underwater = not Game.in_cave and camera.global_position.y < Game.SEA_LEVEL - 0.05
 
 
@@ -566,6 +567,7 @@ func _update_actions(delta: float) -> void:
 			Net.request("place_blueprint", {"kind": placement.kind, "pos": at, "yaw": placement.yaw}, func(res: Dictionary) -> void:
 				if res.get("ok", false):
 					Audio.play_3d("click", at, -4.0, 1.1)
+					viewmodel.place()
 				elif res.get("reason", "") != "":
 					hint.emit(res.reason))
 		elif placement.get("reason", "") != "":
@@ -578,6 +580,7 @@ func _update_actions(delta: float) -> void:
 			Net.request("place", {"slot": inventory.selected, "pos": at, "yaw": placement.yaw}, func(res: Dictionary) -> void:
 				if res.get("ok", false):
 					Audio.play_3d("thud", at, -2.0, 0.8)
+					viewmodel.place()
 					Effects.dust(get_parent(), at + Vector3.UP * 0.15, Game.palette.sand.darkened(0.1), 6, 0.45, 0.6)
 				elif res.get("reason", "") != "":
 					hint.emit(res.reason))

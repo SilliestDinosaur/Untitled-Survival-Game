@@ -47,6 +47,10 @@ var _breath := 0.0
 var _rng := RandomNumberGenerator.new()
 var _collider: StaticBody3D
 var _world: Node
+var _leg_base: Array[Vector3] = []   ## each leg's resting place on the body (they lift off it as they step)
+var _startle := 0.0           ## a jump when something gives it a fright, easing away
+var _flinch := Vector2.ZERO   ## a blow's knock (roll, pitch), easing away
+var _lunge := 0.0             ## an attack's lunge forward, easing away
 var home_pos := Vector3.ZERO   ## cave beasts: their lair (they never stray far from it)
 var _cave := false
 const LAIR_LEASH := 14.0
@@ -81,6 +85,7 @@ func setup(sp: FaunaLibrary.Species, pos: Vector3, p: Node3D) -> void:
 		leg.add_child(_mesh(sp.hind_leg_mesh if hind else sp.leg_mesh))
 		_body.add_child(leg)
 		_legs.append(leg)
+		_leg_base.append(off)
 
 	# Hit box on the "interact" layer: the crosshair and tools can hit it, the player walks through.
 	_collider = StaticBody3D.new()
@@ -104,6 +109,8 @@ func _mesh(m: Mesh) -> MeshInstance3D:
 
 
 func _enter(s: State) -> void:
+	if s in [State.ALERT, State.FLEE] and state in [State.IDLE, State.GRAZE, State.WANDER]:
+		_startle = 1.0   # it jumps
 	state = s
 	if s == State.ATTACK:
 		Music.combat_ping(1.0)
@@ -387,18 +394,29 @@ func _animate(delta: float, graze: float, alert: float) -> void:
 	var stride := clampf(_speed / maxf(species.run_speed, 0.1), 0.0, 1.0)
 	var moving := clampf(_speed / 0.4, 0.0, 1.0)
 	var swing := (0.32 + stride * 0.4) * moving
-	# Walk: diagonal pairs together. Run: front pair and back pair together (bound).
-	var phases := [0.0, PI, PI, 0.0] if stride < 0.55 else [0.0, 0.3, PI, PI + 0.3]
-	if _legs.size() == 2:
-		phases = [0.0, PI]
+	# Walk: diagonal pairs together. Run: front pair and back pair together (bound). The gait slides from one to
+	# the other as it speeds up, rather than switching.
+	var run := smoothstep(0.38, 0.7, stride)
+	var walk_ph := [0.0, PI, PI, 0.0]
+	var run_ph := [0.0, 0.3, PI, PI + 0.3]
 	for i in _legs.size():
-		var ph: float = _gait + phases[i]
+		var off: float = (lerp_angle(walk_ph[i], run_ph[i], run) if _legs.size() == 4 else [0.0, PI][i % 2])
+		var ph: float = _gait + off
 		_legs[i].rotation.x = lerp_angle(_legs[i].rotation.x, sin(ph) * swing, 1.0 - exp(-20.0 * delta))
+		# The foot lifts as the leg swings forward, and is planted as it pushes back.
+		if i < _leg_base.size():
+			var lift := maxf(cos(ph), 0.0) * 0.07 * species.size * moving
+			_legs[i].position.y = lerpf(_legs[i].position.y, _leg_base[i].y + lift, 1.0 - exp(-20.0 * delta))
 	# Body: bob with the steps, breathe when still, lean into turns and slopes.
 	_breath += delta * 1.7
 	var base_y := species.leg_len + species.body_h * 0.25
 	var bob := absf(sin(_gait)) * 0.05 * species.size * moving
-	_body.position.y = base_y + bob + sin(_breath) * 0.006 * species.size * (1.0 - moving)
+	_startle = move_toward(_startle, 0.0, delta * 3.0)
+	_lunge = move_toward(_lunge, 0.0, delta * 4.0)
+	_flinch = _flinch.lerp(Vector2.ZERO, 1.0 - exp(-8.0 * delta))
+	var hop := sin(_startle * PI) * 0.14 * species.size
+	_body.position.y = base_y + bob + hop + sin(_breath) * 0.006 * species.size * (1.0 - moving)
+	_body.position.z = -sin(_lunge * PI) * 0.3 * species.size
 	var fwd := Vector3(-sin(_yaw), 0, -cos(_yaw))
 	var side := Vector3(-fwd.z, 0, fwd.x)
 	var half := species.body_len * 0.5
@@ -406,14 +424,21 @@ func _animate(delta: float, graze: float, alert: float) -> void:
 	var pitch := 0.0 if _cave else atan2(g.get_height(position.x + fwd.x * half, position.z + fwd.z * half) - g.get_height(position.x - fwd.x * half, position.z - fwd.z * half), species.body_len)
 	var roll := 0.0 if _cave else atan2(g.get_height(position.x + side.x * 0.4, position.z + side.z * 0.4) - g.get_height(position.x - side.x * 0.4, position.z - side.z * 0.4), 0.8)
 	var turn_lean := clampf(angle_difference(_yaw, _desired_yaw), -0.6, 0.6) * stride * 0.25
-	_body.rotation.x = lerpf(_body.rotation.x, pitch * 0.8, 1.0 - exp(-8.0 * delta))
-	_body.rotation.z = lerpf(_body.rotation.z, roll * 0.6 + turn_lean, 1.0 - exp(-6.0 * delta))
+	# A walk sways side to side with the steps; a gallop rocks fore and aft.
+	var sway := sin(_gait) * 0.035 * moving * (1.0 - run)
+	var rock := sin(_gait * 2.0) * 0.07 * moving * run
+	_body.rotation.x = lerpf(_body.rotation.x, pitch * 0.8 + rock - _lunge * 0.15, 1.0 - exp(-8.0 * delta)) + _flinch.y
+	_body.rotation.z = lerpf(_body.rotation.z, roll * 0.6 + turn_lean + sway, 1.0 - exp(-6.0 * delta)) + _flinch.x
 
 	# Head: down to graze (with nibbles), up and still when alert, occasional glances.
 	_look_cd -= delta
 	if _look_cd <= 0.0:
 		_look_cd = _rng.randf_range(1.5, 4.0)
 		_look_target = _rng.randf_range(-0.5, 0.5) if moving < 0.5 and alert < 0.5 else 0.0
+	# Alert: it looks at you.
+	if alert > 0.5 and player and is_instance_valid(player) and state != State.FLEE:
+		var d: Vector3 = player.global_position - global_position
+		_look_target = clampf(wrapf(atan2(-d.x, -d.z) - _yaw, -PI, PI), -1.0, 1.0)
 	_look_yaw = lerpf(_look_yaw, _look_target * (1.0 - graze), 1.0 - exp(-3.0 * delta))
 	var head_pitch := graze * deg_to_rad(58.0) + graze * sin(_breath * 3.0) * 0.04
 	if alert > 0.5:
@@ -422,6 +447,7 @@ func _animate(delta: float, graze: float, alert: float) -> void:
 		head_pitch = -0.1
 	if _windup >= 0.0:
 		head_pitch = deg_to_rad(40.0) * (1.0 - _windup / 0.45)
+	head_pitch += sin(_gait * 2.0) * 0.05 * moving   # nodding with the steps
 	_head.rotation.x = lerpf(_head.rotation.x, head_pitch, 1.0 - exp(-5.0 * delta))
 	_head.rotation.y = _look_yaw
 
@@ -432,6 +458,7 @@ func _call(pitch := 1.0) -> void:
 
 
 func _bite() -> void:
+	_lunge = 1.0
 	if not player:
 		return
 	var push := player.global_position - global_position
@@ -460,6 +487,9 @@ func take_hit(damage: float, from: Vector3) -> void:
 	var tw := create_tween()
 	tw.tween_property(_body, "scale", Vector3(1.06, 0.94, 1.06), 0.06)
 	tw.tween_property(_body, "scale", Vector3.ONE, 0.12)
+	# Knocked away from the blow.
+	var local := global_transform.basis.inverse() * (global_position - from)
+	_flinch = Vector2(clampf(-local.x, -1.0, 1.0) * 0.28, clampf(local.z, -1.0, 1.0) * 0.12)
 	if species.role == "defensive":
 		_enter(State.ATTACK)
 	else:
@@ -474,12 +504,24 @@ func _die(from: Vector3) -> void:
 	_call(0.7)
 	var side := 1.0 if (from - global_position).dot(global_transform.basis.x) < 0.0 else -1.0
 	var tw := create_tween()
-	tw.tween_property(_body, "rotation:z", side * PI * 0.5, 0.5).set_trans(Tween.TRANS_BOUNCE).set_ease(Tween.EASE_OUT)
+	# It staggers away from the blow, its legs buckle, then it goes over with its weight and settles.
+	tw.tween_property(_body, "rotation:z", -side * 0.18, 0.16).set_trans(Tween.TRANS_SINE).set_ease(Tween.EASE_OUT)
+	tw.parallel().tween_property(_body, "position:y", species.leg_len * 0.75 + species.body_h * 0.25, 0.16)
+	tw.parallel().tween_property(_head, "rotation:x", deg_to_rad(30), 0.16)
+	tw.tween_property(_body, "rotation:z", side * PI * 0.5, 0.42).set_trans(Tween.TRANS_QUAD).set_ease(Tween.EASE_IN)
 	tw.parallel().tween_property(_body, "rotation:x", 0.0, 0.3)
-	tw.parallel().tween_property(_body, "position:y", species.body_w * 0.55, 0.5)
-	tw.parallel().tween_property(_head, "rotation:x", deg_to_rad(15), 0.5)
+	tw.parallel().tween_property(_body, "position:y", species.body_w * 0.55, 0.42).set_trans(Tween.TRANS_QUAD).set_ease(Tween.EASE_IN)
+	tw.parallel().tween_property(_body, "position:z", 0.0, 0.3)
+	tw.parallel().tween_property(_head, "rotation:x", deg_to_rad(10), 0.42)
+	# A thump and a small rebound as it lands.
+	tw.tween_property(_body, "rotation:z", side * PI * 0.46, 0.08).set_trans(Tween.TRANS_SINE).set_ease(Tween.EASE_OUT)
+	tw.tween_property(_body, "rotation:z", side * PI * 0.5, 0.14).set_trans(Tween.TRANS_SINE).set_ease(Tween.EASE_IN)
+	# A last kick of the legs, then still.
 	for i in _legs.size():
-		tw.parallel().tween_property(_legs[i], "rotation:x", 0.15 * (1 if i % 2 == 0 else -1), 0.35)
+		tw.parallel().tween_property(_legs[i], "rotation:x", 0.35 * (1 if i % 2 == 0 else -1), 0.12)
+	tw.tween_interval(0.0)
+	for i in _legs.size():
+		tw.parallel().tween_property(_legs[i], "rotation:x", 0.12 * (1 if i % 2 == 0 else -1), 0.3).set_trans(Tween.TRANS_SINE)
 
 
 ## The carcass has been fully harvested.

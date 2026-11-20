@@ -16,6 +16,13 @@ const TOOL_TIP := -0.1
 const HELD_SCALE := {"hatchet": 0.62, "pickaxe": 0.62, "hammer": 0.62, "knife": 0.9, "spear": 0.6, "plan": 0.6}   ## (the torch stays full size: its flame is a child of the model)
 
 var _item: MeshInstance3D
+var _pivot: Node3D            ## between the arm (this node, which swings) and the item: breathing, sway, sprint,
+                              ## switching and landing ride on it, on top of whatever the swing is doing
+var _switch := 0.0            ## 1 just after switching items (the new one comes up from below), easing to 0
+var _land := 0.0              ## a landing's dip, easing away
+var _sprint := 0.0            ## eased toward 1 while sprinting
+var _time := 0.0
+var _place := 0.0             ## a quick push forward when something is put down
 var _mat: ShaderMaterial
 var _tween: Tween
 var _sway := Vector2.ZERO
@@ -30,9 +37,11 @@ func _ready() -> void:
 	rotation = Vector3(0.05, 0.12, 0.0)
 	_mat = ArtStyle.painted({"brush_strength": 0.16, "rim_amount": 0.3, "stroke_scale": 3.0, "edge_pool": 0.1})
 	# No hands: the held item floats in view (a clean, stylized look).
+	_pivot = Node3D.new()
+	add_child(_pivot)
 	_item = MeshInstance3D.new()
 	_item.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
-	add_child(_item)
+	_pivot.add_child(_item)
 	add_child(CaveShade.new())   # the held item is in the cave's dark too (a torch lights it)
 	Game.world_changed.connect(func() -> void:
 		ItemModels.clear_cache()
@@ -46,6 +55,8 @@ func held_material() -> Material:
 
 ## Show what's in the selected hotbar slot ("" = nothing in hand).
 func hold(item_id: String) -> void:
+	if item_id != _held:
+		_switch = 1.0   # the new thing comes up from below
 	_held = item_id
 	var info := ItemDB.info(item_id) if item_id != "" else {}
 	_held_type = String(info.tool.type) if info.has("tool") else ""
@@ -118,8 +129,9 @@ func _start() -> Tween:
 
 
 func _finish(tw: Tween, back_time: float) -> void:
-	tw.tween_property(self, "rotation", Vector3(0.05, 0.12, 0.0), back_time).set_trans(Tween.TRANS_SINE).set_ease(Tween.EASE_OUT)
-	tw.parallel().tween_property(self, "position", REST, back_time).set_trans(Tween.TRANS_SINE)
+	# Back to rest with a slight springy settle.
+	tw.tween_property(self, "rotation", Vector3(0.05, 0.12, 0.0), back_time).set_trans(Tween.TRANS_BACK).set_ease(Tween.EASE_OUT)
+	tw.parallel().tween_property(self, "position", REST, back_time).set_trans(Tween.TRANS_CUBIC).set_ease(Tween.EASE_OUT)
 	tw.tween_callback(func() -> void: _busy = false)
 
 
@@ -140,13 +152,27 @@ func swing(duration: float, tool_type := "") -> void:
 			tw.parallel().tween_property(self, "position", REST + Vector3(0.08, 0.08, 0.02), wind)
 			tw.tween_property(self, "rotation", Vector3(-0.6, -0.5, -0.6), hit).set_trans(Tween.TRANS_QUAD).set_ease(Tween.EASE_IN)
 			tw.parallel().tween_property(self, "position", REST + Vector3(-0.16, -0.04, -0.16), hit)
-		_:         # overhand chop (hatchet, pickaxe, rock, fist)
-			tw.tween_property(self, "rotation", Vector3(0.65, 0.2, 0.25), wind).set_trans(Tween.TRANS_SINE).set_ease(Tween.EASE_OUT)
-			tw.parallel().tween_property(self, "position", REST + Vector3(0.04, 0.13, 0.08), wind)
+		_:         # overhand chop (hatchet, pickaxe, rock, fist): a little dip first, a big wind-up, the blow
+			var dip := wind * 0.25
+			tw.tween_property(self, "rotation", Vector3(-0.12, 0.14, 0.06), dip).set_trans(Tween.TRANS_SINE).set_ease(Tween.EASE_OUT)
+			tw.parallel().tween_property(self, "position", REST + Vector3(0.01, -0.02, 0.02), dip)
+			tw.tween_property(self, "rotation", Vector3(0.7, 0.22, 0.28), wind - dip).set_trans(Tween.TRANS_BACK).set_ease(Tween.EASE_OUT)
+			tw.parallel().tween_property(self, "position", REST + Vector3(0.05, 0.14, 0.09), wind - dip).set_trans(Tween.TRANS_SINE).set_ease(Tween.EASE_OUT)
 			tw.tween_property(self, "rotation", Vector3(-0.95, -0.12, -0.15), hit).set_trans(Tween.TRANS_QUAD).set_ease(Tween.EASE_IN)
 			tw.parallel().tween_property(self, "position", REST + Vector3(-0.12, -0.06, -0.2), hit)
 	tw.tween_callback(func() -> void: strike.emit())
-	_finish(tw, duration - wind - hit)
+	# Follow-through: carried on a touch past the blow before coming back.
+	var through := minf(0.07, (duration - wind - hit) * 0.3)
+	tw.tween_property(self, "rotation", rotation_after(tool_type), through).set_trans(Tween.TRANS_SINE).set_ease(Tween.EASE_OUT)
+	_finish(tw, duration - wind - hit - through)
+
+
+## Where a swing's follow-through carries the arm (a little past the blow).
+static func rotation_after(tool_type: String) -> Vector3:
+	match tool_type:
+		"spear": return Vector3(-1.45, 0.12, 0.0)
+		"knife": return Vector3(-0.72, -0.62, -0.7)
+	return Vector3(-1.1, -0.16, -0.2)
 
 
 ## Interact: reach forward and close the hand; emits `grab`.
@@ -167,7 +193,9 @@ func eat(on_done: Callable) -> void:
 	var tw := _start()
 	tw.tween_property(self, "position", Vector3(0.05, -0.17, -0.26), 0.18).set_trans(Tween.TRANS_SINE)
 	tw.parallel().tween_property(self, "rotation", Vector3(0.4, 0.5, 0), 0.18)
-	tw.tween_property(self, "position", Vector3(0.05, -0.19, -0.25), 0.22)
+	for i in 3:   # three bites
+		tw.tween_property(self, "position", Vector3(0.05, -0.2, -0.23), 0.06).set_trans(Tween.TRANS_SINE)
+		tw.tween_property(self, "position", Vector3(0.05, -0.17, -0.26), 0.07).set_trans(Tween.TRANS_SINE)
 	tw.tween_callback(on_done)
 	_finish(tw, 0.25)
 
@@ -177,11 +205,35 @@ func add_sway(mouse_delta: Vector2) -> void:
 	_sway += mouse_delta * 0.0004
 
 
-func update_motion(delta: float, bob_phase: float, bob_amount: float) -> void:
+func update_motion(delta: float, bob_phase: float, bob_amount: float, sprinting := false) -> void:
+	_time += delta
 	_sway = _sway.lerp(Vector2.ZERO, 1.0 - exp(-8.0 * delta))
 	_sway = _sway.clamp(Vector2(-0.06, -0.06), Vector2(0.06, 0.06))
 	if not _busy:
 		position = REST + Vector3(-_sway.x + cos(bob_phase) * 0.012 * bob_amount, _sway.y - absf(sin(bob_phase)) * 0.02 * bob_amount, 0)
+	# The pivot: breathing when still, tilting with the mouse, held low and angled when sprinting, coming up after a
+	# switch, dipping on a landing, pushing forward when something's put down.
+	_sprint = lerpf(_sprint, 1.0 if sprinting else 0.0, 1.0 - exp(-6.0 * delta))
+	_switch = move_toward(_switch, 0.0, delta * 4.5)
+	_land = lerpf(_land, 0.0, 1.0 - exp(-9.0 * delta))
+	_place = move_toward(_place, 0.0, delta * 5.0)
+	var still := 1.0 - bob_amount
+	var breathe := sin(_time * 1.7) * 0.004 * still
+	var up := ease(_switch, 2.0)   # 1 -> 0, quick at the end
+	var push := sin(_place * PI) * 0.06
+	_pivot.position = Vector3(-0.03 * _sprint, breathe - 0.05 * _sprint - 0.28 * up - _land, -push)
+	_pivot.rotation = Vector3(-0.25 * _sprint + 0.6 * up + sin(_time * 1.7 + 0.6) * 0.01 * still - _land * 1.5,
+		0.35 * _sprint, -_sway.x * 2.5 + 0.2 * _sprint)
+
+
+## A landing knocks the held item down a little (`strength` 0..1).
+func land(strength: float) -> void:
+	_land = maxf(_land, clampf(strength, 0.0, 1.0) * 0.05)
+
+
+## Putting something down: a short push forward.
+func place() -> void:
+	_place = 1.0
 
 
 ## A held torch lights the area around you and has a flickering flame at its tip.
