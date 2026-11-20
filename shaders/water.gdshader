@@ -12,6 +12,7 @@ uniform float night = 0.0;
 uniform float depth_scale = 6.0;
 uniform float clarity = 2.2;            // metres of water you can see through near the shore
 uniform float foam_width = 1.1;
+uniform float flow = 0.0;               // rivers: ripples drift downstream (their UV runs along the river in metres)
 uniform sampler2D ripple_a : hint_normal, repeat_enable, filter_linear_mipmap;
 uniform sampler2D ripple_b : hint_normal, repeat_enable, filter_linear_mipmap;
 uniform sampler2D depth_tex : hint_depth_texture, filter_nearest;
@@ -36,7 +37,7 @@ void vertex() {
 }
 
 void fragment() {
-	vec2 uv = world_pos.xz;
+	vec2 uv = flow > 0.0 ? vec2(UV.x, -UV.y + TIME * flow * 1.3) : world_pos.xz;
 	vec3 n1 = texture(ripple_a, uv * 0.03 + TIME * vec2(0.010, 0.006)).rgb;
 	vec3 n2 = texture(ripple_b, uv * 0.055 - TIME * vec2(0.007, 0.011)).rgb;
 	vec3 nm = mix(n1, n2, 0.5);

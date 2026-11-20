@@ -477,7 +477,9 @@ static func _dress(plan: Dictionary, gen: WorldGen, walk: PackedFloat32Array) ->
 					stalagmites.append([f, len / 1.6])
 			else:
 				var ce: Variant = ceiling_at(plan, c + off)
-				if ce != null:
+				# Not under thin rock (by the mouths): there it couldn't be rooted in the ceiling without poking out
+				# of the ground above, and would hang in the air under it.
+				if ce != null and gen.get_base_height((ce as Vector3).x, (ce as Vector3).z) - (ce as Vector3).y > 1.3:
 					stalactites.append([ce, len])
 					if rng.randf() < 0.35:
 						drips.append(ce - Vector3(0, len, 0))

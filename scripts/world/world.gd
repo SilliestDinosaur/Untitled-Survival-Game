@@ -17,6 +17,7 @@ var _jobs := {}       # Vector2i -> {task, job}
 var _floors_seen := {}   # Rect2 -> true: the ground floors last seen (see _on_structures_changed)
 var _dirty := {}      # chunk coords whose ground changed and must be rebuilt
 var _water: MeshInstance3D
+var _rivers: Node3D
 
 
 func _ready() -> void:
@@ -291,6 +292,13 @@ func _build_water() -> void:
 	var m := (_water.mesh as PlaneMesh).material as ShaderMaterial
 	m.set_shader_parameter("shallow_color", pal.water_shallow)
 	m.set_shader_parameter("deep_color", pal.water_deep)
+	# The rivers' and ponds' water: the same paint, flowing.
+	if not _rivers:
+		_rivers = Node3D.new()
+		_rivers.name = "Rivers"
+		add_child(_rivers)
+	if Game.world_gen:
+		Rivers.build_meshes(Game.world_gen.rivers, _rivers, m)
 
 
 func _ripple_texture(seed_offset: int) -> NoiseTexture2D:

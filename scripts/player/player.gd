@@ -250,9 +250,10 @@ func _climb(wanted: Vector3, start: Vector3) -> bool:
 func _physics_process(delta: float) -> void:
 	var on_floor := is_on_floor()
 	var was_swimming := swimming
-	swimming = not Game.in_cave and global_position.y + 1.0 < Game.SEA_LEVEL
+	var water_y: float = Game.world_gen.water_level(global_position.x, global_position.z)
+	swimming = not Game.in_cave and global_position.y + 1.0 < water_y
 	if swimming and not was_swimming and velocity.y < -2.0:   # into the water
-		Effects.splash(get_parent(), Vector3(global_position.x, Game.SEA_LEVEL, global_position.z), clampf(-velocity.y / 8.0, 0.6, 1.6))
+		Effects.splash(get_parent(), Vector3(global_position.x, water_y, global_position.z), clampf(-velocity.y / 8.0, 0.6, 1.6))
 	var input := Input.get_vector("move_left", "move_right", "move_forward", "move_back") if not crafting else Vector2.ZERO
 	var dir := (transform.basis * Vector3(input.x, 0.0, input.y)).normalized()
 
@@ -274,7 +275,7 @@ func _physics_process(delta: float) -> void:
 
 	if swimming:
 		# Float near the surface; hold jump to rise, otherwise bob at chest height.
-		var target_y := Game.SEA_LEVEL - 1.35
+		var target_y := water_y - 1.35
 		var up := 3.0 if Input.is_action_pressed("jump") else (target_y - global_position.y) * 2.0
 		velocity.y = lerpf(velocity.y, up, 1.0 - exp(-4.0 * delta))
 		_jump_buffer = 0.0
@@ -288,11 +289,18 @@ func _physics_process(delta: float) -> void:
 
 	var accel := ground_accel if (on_floor or swimming) else air_accel
 	var w := 1.0 - exp(-accel * delta)
-	velocity.x = lerpf(velocity.x, dir.x * speed, w)
-	velocity.z = lerpf(velocity.z, dir.z * speed, w)
+	# A river's current carries you along while you swim (and tugs at you while you wade).
+	var current := Vector2.ZERO
+	if not Game.in_cave and global_position.y < water_y:
+		current = Rivers.flow_at(Game.world_gen.rivers, global_position.x, global_position.z) * (1.0 if swimming else 0.35)
+	velocity.x = lerpf(velocity.x, dir.x * speed + current.x, w)
+	velocity.z = lerpf(velocity.z, dir.z * speed + current.y, w)
 
 	var fall_speed := -velocity.y
 	_move_with_steps(delta, Vector3(dir.x, 0.0, dir.z) * speed)
+	# Swimming into a bank: pull yourself up and out onto it.
+	if swimming and is_on_wall() and dir != Vector3.ZERO and get_wall_normal().dot(dir) < -0.3:
+		velocity.y = maxf(velocity.y, 4.2)
 
 	# Landing: camera dip, thud, fall damage.
 	if is_on_floor() and not _was_on_floor and not swimming:
@@ -343,8 +351,8 @@ func _kick_dust(size: float, count: int) -> void:
 
 ## A blow landed: the arm hangs for a beat and the view jolts with it.
 func _blow(weight: float) -> void:
-	viewmodel.hit_stop(0.035 + 0.035 * weight)
-	kick(Vector3(0.012 * weight, randf_range(-0.006, 0.006) * weight, randf_range(-0.012, 0.012) * weight))
+	viewmodel.hit_stop(0.025 + 0.02 * weight)
+	kick(Vector3(0.006 * weight, randf_range(-0.003, 0.003) * weight, randf_range(-0.005, 0.005) * weight))
 
 
 ## Knock the camera (radians of pitch, yaw, roll); it springs back by itself.
@@ -399,7 +407,7 @@ func _update_camera(delta: float, sprinting: bool, input: Vector2) -> void:
 	_fov_kick = lerpf(_fov_kick, 9.0 if sprinting and horizontal > 6.0 else 0.0, 1.0 - exp(-6.0 * delta))
 	camera.fov = Settings.fov + _fov_kick
 	viewmodel.update_motion(delta, _bob_time, _bob_amount, sprinting and horizontal > 6.0)
-	underwater = not Game.in_cave and camera.global_position.y < Game.SEA_LEVEL - 0.05
+	underwater = not Game.in_cave and camera.global_position.y < Game.world_gen.water_level(camera.global_position.x, camera.global_position.z) - 0.05
 
 
 ## What the crosshair says about a building piece. The hammer shows its health (or, on a blueprint, how far it's
@@ -700,10 +708,11 @@ func _on_hit_resource(res: Dictionary, r: Dictionary, point: Vector3) -> void:
 		"tree":
 			Audio.play_3d("chop", point)
 			var bark := Effects.bark_color(r.kind)
-			Effects.splinters(get_parent(), point, bark.lightened(0.45), bark, 8)
+			Effects.splinters(get_parent(), point, bark.lightened(0.45), bark, 5)
 			if Effects.has_leaves(r.kind) and FloraLibrary.category_of(r.kind) == "tree":
 				var top := Vector3(point.x, (r.transform as Transform3D).origin.y + 3.5, point.z)
-				Effects.leaves(get_parent(), top, Effects.leaf_color(r.kind), 4, 1.2)
+				if randf() < 0.5:   # now and then a leaf or two comes down, not a shower every blow
+					Effects.leaves(get_parent(), top, Effects.leaf_color(r.kind), 2, 1.0)
 		"rock":
 			Audio.play_3d("clink", point, -2.0)
 			var col := pal.rock.lightened(0.1)
@@ -784,7 +793,7 @@ func drop_slot(slot: int, whole_stack := true) -> void:
 	var fwd := -camera.global_transform.basis.z
 	var pos := camera.global_position + fwd * 1.2
 	var ground: float = Game.world_gen.get_height(pos.x, pos.z)
-	pos.y = maxf(ground, Game.SEA_LEVEL) + 0.15
+	pos.y = maxf(ground, Game.world_gen.water_level(pos.x, pos.z)) + 0.15
 	Net.request("drop", {"slot": slot, "amount": int(s.count) if whole_stack else 1, "pos": pos})
 	Audio.play(Audio.sfx.click, -8.0, 0.8)
 

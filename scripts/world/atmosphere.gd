@@ -168,6 +168,9 @@ func _apply_time(_force := false) -> void:
 		var wm := (water.mesh as PlaneMesh).material as ShaderMaterial
 		wm.set_shader_parameter("sky_color", horizon.lerp(top, 0.35))
 		wm.set_shader_parameter("night", 1.0 - day)
+		if Rivers.material:
+			Rivers.material.set_shader_parameter("sky_color", horizon.lerp(top, 0.35))
+			Rivers.material.set_shader_parameter("night", 1.0 - day)
 
 
 func _point(light: DirectionalLight3D, toward: Vector3) -> void:

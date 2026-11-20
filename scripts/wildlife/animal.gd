@@ -159,7 +159,7 @@ func _pick_wander_target() -> void:
 		var t := position + Vector3(cos(a) * d, 0, sin(a) * d)
 		var h: float = Game.world_gen.get_height(t.x, t.z)
 		var max_h := 80.0 if species.habitat == "steep" else 55.0
-		if h <= 2.0 or h >= max_h:
+		if h <= 2.0 or h >= max_h or Game.world_gen.near_river(t.x, t.z, 0.0):
 			continue
 		var score := _rng.randf()
 		match species.habitat:
@@ -339,7 +339,8 @@ func _move(delta: float, want_dir: Vector3, want_speed: float) -> void:
 func _walkable(p: Vector3, h: float) -> bool:
 	if _cave:   # on the cave floor, no big step up or down, and near the lair
 		return not is_nan(h) and absf(h - position.y) < 0.7 and Vector2(p.x - home_pos.x, p.z - home_pos.z).length() < LAIR_LEASH
-	return h > 1.3 and h < 62.0 and Game.world_gen.get_normal(p.x, p.z).y > 0.7
+	# Wading into a river's shallows is fine; its deep middle isn't.
+	return h > 1.3 and h < 62.0 and Game.world_gen.get_normal(p.x, p.z).y > 0.7 and h > Game.world_gen.water_level(p.x, p.z) - 0.6
 
 
 ## The ground under p: the surface, or for a cave animal the cave floor (NAN where there's no floor to stand on).

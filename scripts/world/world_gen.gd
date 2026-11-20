@@ -107,11 +107,24 @@ func _init(seed_value: int, pal: WorldPalette) -> void:
 	if not pal.exotic:
 		_pick_fungal_home()
 		_fungal_limit = true
-	caves = Caves.plan(self)   # planned from the base ground, so it's the same on every machine
+	rivers = Rivers.plan(self)   # before the caves, so they run under the river beds
+	caves = Caves.plan(self)   # planned from the base ground, so it's the same on every machine   # planned from the base ground, so it's the same on every machine
 
 
 ## Terrain height in meters at world position (x, z). Sea level is 0.
 var caves: Dictionary = {}   ## the cave plan (see Caves.plan)
+var rivers: Dictionary = {}  ## the river plan (see Rivers.plan)
+
+
+## The height of the water's surface at (x, z): a river's or pond's where there is one, otherwise the sea's
+## (which also fills the lakes). Ground below it is under water.
+func water_level(x: float, z: float) -> float:
+	return maxf(Game.SEA_LEVEL, Rivers.surface_at(rivers, x, z))
+
+
+## Whether (x, z) is in a river or pond, or within `margin` metres of one (for keeping trees and rocks out).
+func near_river(x: float, z: float, margin := 0.6) -> bool:
+	return Rivers.near(rivers, x, z, margin)
 
 ## Metres added to the procedural ground by digging / piling / flattening. Keys are whole-metre
 ## cells (Vector2i). Copy-on-write: edits are replaced by a new dictionary, so worker threads that
@@ -196,6 +209,7 @@ func get_base_height(x: float, z: float) -> float:
 		var stepped := (floorf(f) + smoothstep(0.15, 1.0, f - floorf(f))) * step
 		land = lerpf(land, lerpf(raised, stepped, 0.6), smoothstep(0.0, 0.5, bad))
 	land = _carve_water(x, z, land, range_t, mask, bumps)
+	land = Rivers.carve(rivers, x, z, land)
 	# The seabed: a shallow shelf that drops away gradually offshore.
 	var offshore := smoothstep(0.5, 0.95, coast_raw)
 	var seabed := lerpf(-2.5, -24.0, offshore) + bumps * 0.6 * offshore
@@ -434,6 +448,12 @@ func get_terrain_color(height: float, normal_y: float, x: float, z: float) -> Co
 		col = col.lerp(pal.snow, smoothstep(70.0, 82.0, height) * smoothstep(0.6, 0.75, normal_y))
 	if height < -0.5:
 		col = pal.sand.darkened(0.25)   # seabed
+	# River beds and the wet banks: sand and gravel.
+	var wet := Rivers.wet(rivers, x, z)
+	if wet > 0.0:
+		col = col.lerp(pal.sand.lerp(pal.rock, 0.3).darkened(0.18), wet)
+		# The wet line where the water laps the bank: darker, so the river's edge reads like a beach's.
+		col = col.darkened(0.28 * Rivers.waterline(rivers, x, z))
 	return Color(col.r + jitter, col.g + jitter, col.b + jitter)
 
 
@@ -448,6 +468,6 @@ func find_spawn_point() -> Vector3:
 			var x := center + cos(a) * r
 			var z := center + sin(a) * r
 			var h := get_height(x, z)
-			if h > 3.0 and h < 22.0 and get_normal(x, z).y > 0.93:
+			if h > 3.0 and h < 22.0 and get_normal(x, z).y > 0.93 and not near_river(x, z, 4.0):
 				return Vector3(x, h, z)
 	return Vector3(center, get_height(center, center), center)

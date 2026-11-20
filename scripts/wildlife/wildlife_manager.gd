@@ -177,7 +177,7 @@ func _ring_spot(center: Vector3, near: float, far: float) -> Variant:
 		if x < 10.0 or z < 10.0 or x > Game.WORLD_SIZE - 10.0 or z > Game.WORLD_SIZE - 10.0:
 			continue
 		var h: float = Game.world_gen.get_height(x, z)
-		if h > 2.5 and h < 50.0 and Game.world_gen.get_normal(x, z).y > 0.82:
+		if h > 2.5 and h < 50.0 and Game.world_gen.get_normal(x, z).y > 0.82 and not Game.world_gen.near_river(x, z, 1.0):
 			return Vector3(x, h, z)
 	return null
 
@@ -226,7 +226,7 @@ func _spawn_herd(center: Vector3) -> void:
 	for i in _rng.randi_range(sp.herd.x, sp.herd.y):
 		var p: Vector3 = spot + Vector3(_rng.randf_range(-6, 6), 0, _rng.randf_range(-6, 6))
 		var h: float = Game.world_gen.get_height(p.x, p.z)
-		if h < 2.0:
+		if h < 2.0 or Game.world_gen.near_river(p.x, p.z, 0.5):
 			continue
 		var a := Animal.new()
 		add_child(a)

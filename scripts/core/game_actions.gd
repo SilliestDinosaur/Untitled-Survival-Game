@@ -573,7 +573,7 @@ static func walls_around(cell: Vector2i, level: int) -> int:
 
 ## Can a structure go here? Returns "" if fine, else the reason.
 static func placement_problem(pos: Vector3, kind := "", yaw := 0.0) -> String:
-	if pos.y < Game.SEA_LEVEL + 0.15:
+	if pos.y < Game.world_gen.water_level(pos.x, pos.z) + 0.15:
 		return "Can't build in water"
 	if is_building(kind) and not is_decor(kind):
 		if kind in FLOOR_KINDS:

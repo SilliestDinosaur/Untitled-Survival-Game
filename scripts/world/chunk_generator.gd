@@ -255,7 +255,7 @@ static func _place_resources(coord: Vector2i, origin: Vector3, gen: WorldGen, fl
 	for i in TREE_ATTEMPTS:
 		var a := _attempt(rng, origin, size)
 		var h := gen.get_height(a.x, a.z)
-		if h < 2.6 or h > 60.0:
+		if h < 2.6 or gen.near_river(a.x, a.z) or h > 60.0:
 			counter[0] += 1
 			continue
 		var nrm := gen.get_normal(a.x, a.z)
@@ -275,7 +275,7 @@ static func _place_resources(coord: Vector2i, origin: Vector3, gen: WorldGen, fl
 	for i in PALM_ATTEMPTS:
 		var a := _attempt(rng, origin, size)
 		var h := gen.get_height(a.x, a.z)
-		if h < 1.4 or h > 6.0 or gen.get_normal(a.x, a.z).y < 0.85 or gen.get_climate(a.x, a.z, h).x < 0.45 or a.r_place > 0.35:
+		if h < 1.4 or gen.near_river(a.x, a.z) or h > 6.0 or gen.get_normal(a.x, a.z).y < 0.85 or gen.get_climate(a.x, a.z, h).x < 0.45 or a.r_place > 0.35:
 			counter[0] += 1
 			continue
 		# Palms belong on beaches: warm shoreline on the island's edge (not a lake shore inland), with the sea within a
@@ -298,7 +298,7 @@ static func _place_resources(coord: Vector2i, origin: Vector3, gen: WorldGen, fl
 		var a := _attempt(rng, origin, size)
 		var h := gen.get_height(a.x, a.z)
 		var chance := 0.35 + clampf(h / 60.0, 0.0, 0.5)   # more rocks (and ore) up high
-		if h < 0.8 or gen.get_normal(a.x, a.z).y < 0.55 or a.r_place >= chance:
+		if h < 0.8 or gen.near_river(a.x, a.z) or gen.get_normal(a.x, a.z).y < 0.55 or a.r_place >= chance:
 			counter[0] += 1
 			continue
 		# Ore tiers by altitude: the world's first metal in the hills, the second in the
@@ -322,7 +322,7 @@ static func _place_resources(coord: Vector2i, origin: Vector3, gen: WorldGen, fl
 	for i in BUSH_ATTEMPTS:
 		var a := _attempt(rng, origin, size)
 		var h := gen.get_height(a.x, a.z)
-		if h < 2.2 or h > 50.0 or gen.get_normal(a.x, a.z).y < 0.8:
+		if h < 2.2 or gen.near_river(a.x, a.z) or h > 50.0 or gen.get_normal(a.x, a.z).y < 0.8:
 			counter[0] += 1
 			continue
 		var biome := _pick_biome(gen.biome_weights_at(a.x, a.z, h), a.r_biome)
@@ -335,7 +335,7 @@ static func _place_resources(coord: Vector2i, origin: Vector3, gen: WorldGen, fl
 		var a := _attempt(rng, origin, size)
 		var h := gen.get_height(a.x, a.z)
 		var nrm := gen.get_normal(a.x, a.z)
-		if h < 2.0 or nrm.y < 0.82:
+		if h < 2.0 or gen.near_river(a.x, a.z) or nrm.y < 0.82:
 			counter[0] += 1
 			continue
 		var biome := _pick_biome(gen.biome_weights_at(a.x, a.z, h), a.r_biome)
@@ -472,7 +472,7 @@ static func _place_ground_cover(coord: Vector2i, origin: Vector3, gen: WorldGen,
 			var h := gen.get_height(wx, wz)
 			if Caves.void_distance(gen.caves, Vector3(wx, h, wz)) < 1.0:
 				continue
-			if h < 2.0 or h > 55.0:
+			if h < 2.0 or gen.near_river(wx, wz) or h > 55.0:
 				continue
 			var nrm := gen.get_normal(wx, wz)
 			if nrm.y < 0.82:
@@ -500,7 +500,7 @@ static func _place_ground_cover(coord: Vector2i, origin: Vector3, gen: WorldGen,
 		var wx := origin.x + lx
 		var wz := origin.z + lz
 		var h := gen.get_height(wx, wz)
-		if h < 1.9 or h > 62.0:
+		if h < 1.9 or gen.near_river(wx, wz) or h > 62.0:
 			continue
 		var nrm := gen.get_normal(wx, wz)
 		if nrm.y < 0.8:
@@ -525,7 +525,7 @@ static func _place_ground_cover(coord: Vector2i, origin: Vector3, gen: WorldGen,
 		var wx := origin.x + lx
 		var wz := origin.z + lz
 		var h := gen.get_height(wx, wz)
-		if h < 2.0 or h > 55.0 or gen.get_normal(wx, wz).y < 0.8:
+		if h < 2.0 or gen.near_river(wx, wz) or h > 55.0 or gen.get_normal(wx, wz).y < 0.8:
 			continue
 		var w := gen.biome_weights_at(wx, wz, h)
 		var amount := 0.0
@@ -547,7 +547,7 @@ static func _place_ground_cover(coord: Vector2i, origin: Vector3, gen: WorldGen,
 		var wx := origin.x + lx
 		var wz := origin.z + lz
 		var h := gen.get_height(wx, wz)
-		if h < 2.2 or h > 58.0:
+		if h < 2.2 or gen.near_river(wx, wz) or h > 58.0:
 			continue
 		var w := gen.biome_weights_at(wx, wz, h)
 		# Flowers in meadows and autumn groves, plus alpine flowers on high gentle slopes.

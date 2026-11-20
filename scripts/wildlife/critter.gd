@@ -74,7 +74,7 @@ func _physics_process(delta: float) -> void:
 	var length := _rng.randf_range(1.2, 2.0) if _scared > 0.0 else _rng.randf_range(0.4, 0.9)
 	var to := position + dir * length
 	var h: float = Game.world_gen.get_height(to.x, to.z)
-	if h < 1.5:
+	if h < 1.5 or h < Game.world_gen.water_level(to.x, to.z):
 		_wait = 0.3
 		return
 	_hop_from = position

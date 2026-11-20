@@ -114,6 +114,14 @@ const SHROOM_COLOURS := [Color(0.55, 0.4, 1.0), Color(0.3, 0.85, 0.95), Color(1.
 const MAX_GLOW_LIGHTS := 22
 
 
+## How far above a planned ceiling spot a hanging thing starts, so it's rooted in the rock: the built ceiling can sit
+## a little higher than the planned one (the ground mesh only follows it to within its grid), and a thing hung from
+## exactly the planned spot would float under it. Up to a metre, but never out through the ground above.
+static func _root_lift(top: Vector3) -> float:
+	var ground: float = Game.world_gen.get_height(top.x, top.z)
+	return clampf(ground - top.y - 0.25, 0.0, 1.0)
+
+
 static func _drip_colour(theme: int, stone: Color) -> Color:
 	match theme:
 		Caves.Rock.ICE:
@@ -164,9 +172,12 @@ func _build_dressing(plan: Dictionary, rng: RandomNumberGenerator) -> void:
 		var path: Array = []
 		var radii: Array = []
 		var lean := Vector3(rng.randf_range(-0.06, 0.06), 0, rng.randf_range(-0.06, 0.06)) * length
+		var lift := maxf(_root_lift(top), 0.15)
+		path.append(top + Vector3(0, lift, 0))   # the root, up in the rock
+		radii.append(0.18 + length * 0.13)
 		for i in 6:
 			var t := i / 5.0
-			path.append(top + Vector3(0, 0.15 - t * (length + 0.15), 0) + lean * t * t)
+			path.append(top + Vector3(0, -t * length, 0) + lean * t * t)
 			radii.append(lerpf(0.16 + length * 0.12, 0.015, pow(t, 0.75)))
 		(a.rock as MeshKit).loft(path, radii, 7, c, Callable(), Callable(), true, true, 0.02)
 		a.n.rock += 1
@@ -256,13 +267,18 @@ func _build_dressing(plan: Dictionary, rng: RandomNumberGenerator) -> void:
 		var leafy: bool = int(hg[2]) == 0
 		var a := _area(top)
 		for k in rng.randi_range(3, 6):
-			var p := top + Vector3(rng.randf_range(-0.7, 0.7), 0.1, rng.randf_range(-0.7, 0.7))
+			var p := top + Vector3(rng.randf_range(-0.7, 0.7), 0.0, rng.randf_range(-0.7, 0.7))
 			if Caves.void_distance(Game.world_gen.caves, p - Vector3(0, 0.4, 0)) > -0.05:
 				continue
 			var l := length * rng.randf_range(0.5, 1.0)
 			var path: Array = []
 			var radii: Array = []
 			var sway := Vector3(rng.randf_range(-0.15, 0.15), 0, rng.randf_range(-0.15, 0.15))
+			var lift := maxf(_root_lift(p), 0.1)
+			if lift < 0.45:   # a thin lip of rock: the vine grows over it from the ground on top
+				lift = maxf(Game.world_gen.get_height(p.x, p.z) - p.y - 0.03, 0.1)
+			path.append(p + Vector3(0, lift, 0))   # grown from up in the rock, so it never hangs from thin air
+			radii.append(0.022 if leafy else 0.03)
 			for i in 6:
 				var t := i / 5.0
 				path.append(p + Vector3(0, -l * t, 0) + sway * sin(t * PI) + Vector3(sin(t * 7.0 + p.x), 0, cos(t * 6.0 + p.z)) * 0.03)
@@ -270,7 +286,7 @@ func _build_dressing(plan: Dictionary, rng: RandomNumberGenerator) -> void:
 			var vc := Color(0.24, 0.36, 0.16) if leafy else Color(0.62, 0.55, 0.44)
 			(a.rock as MeshKit).loft(path, radii, 4, _lit(vc, p), Callable(), Callable(), false, true)
 			if leafy:
-				for i in range(1, 6):
+				for i in range(2, 7):
 					if rng.randf() < 0.25:
 						continue
 					var lp: Vector3 = path[i] + Vector3(rng.randf_range(-0.06, 0.06), 0, rng.randf_range(-0.06, 0.06))
@@ -278,7 +294,7 @@ func _build_dressing(plan: Dictionary, rng: RandomNumberGenerator) -> void:
 						Transform3D(Basis(Vector3.UP, rng.randf() * TAU).scaled(Vector3(1.4, 0.35, 0.8)), lp),
 						_lit(Color(0.27, 0.45, 0.18).darkened(rng.randf_range(0.0, 0.25)), lp), 0.1, 0.05)
 			elif rng.randf() < 0.5:   # roots fork
-				var fork: Vector3 = path[2]
+				var fork: Vector3 = path[3]
 				(a.rock as MeshKit).loft([fork, fork + Vector3(rng.randf_range(-0.3, 0.3), -l * 0.35, rng.randf_range(-0.3, 0.3))], [0.014, 0.006], 4, _lit(vc, fork), Callable(), Callable(), false, true)
 		a.n.rock += 1
 	# Giant mushrooms in the fungal caves: a pale stalk, a broad glowing cap with gills underneath.
@@ -346,7 +362,9 @@ func _build_dressing(plan: Dictionary, rng: RandomNumberGenerator) -> void:
 			var len := minf(rng.randf_range(0.25, 1.3), headroom * 0.33)
 			if Caves.void_distance(Game.world_gen.caves, p) > -0.01 or Caves.void_distance(Game.world_gen.caves, p - Vector3(0, len + 0.3, 0)) > -0.01:
 				continue
-			(a.rock as MeshKit).loft([p, p - Vector3(0, len, 0)], [0.006, 0.004], 3, _lit(Color(0.75, 0.78, 0.72), p), Callable(), Callable(), false, false)
+			# Each thread runs up into the rock, so none hangs from the air under the ceiling.
+			var anchor := p + Vector3(0, maxf(_root_lift(p), 0.1), 0)
+			(a.rock as MeshKit).loft([anchor, p - Vector3(0, len, 0)], [0.006, 0.004], 3, _lit(Color(0.75, 0.78, 0.72), p), Callable(), Callable(), false, false)
 			(a.glow as MeshKit).add_primitive(MeshKit.sphere(rng.randf_range(0.014, 0.024), 5, 3), Transform3D(Basis(), p - Vector3(0, len, 0)), col, 0.0, 0.0)
 		a.n.rock += 1
 		a.n.glow += 1

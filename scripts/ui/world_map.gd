@@ -74,7 +74,10 @@ func _build_ground_rows(rows: int) -> void:
 			var z := (j + 0.5) * PX
 			var h := gen.get_base_height(x, z)
 			var col: Color
-			if h < Game.SEA_LEVEL:
+			var river := Rivers.surface_at(gen.rivers, x, z)
+			if h < river:
+				col = pal.water_shallow.lerp(pal.water_deep, 0.35)
+			elif h < Game.SEA_LEVEL:
 				col = pal.water_deep.lerp(Color(0.45, 0.66, 0.74), clampf(h / -8.0 + 0.2, 0.0, 1.0))
 			elif h < 2.5:
 				col = pal.sand

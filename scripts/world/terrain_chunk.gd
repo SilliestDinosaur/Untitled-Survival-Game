@@ -191,7 +191,7 @@ func resource_from_hit(body: CollisionObject3D, shape_idx: int) -> Dictionary:
 
 # --- Gathering feedback -----------------------------------------------------------
 
-const WOBBLE_TIME := 0.45
+const WOBBLE_TIME := 0.35
 
 
 ## Shake a tree / bush / rock that was just hit.
@@ -272,7 +272,8 @@ func _process(delta: float) -> void:
 		_wobbles[index] = t
 		# Damped sway, stronger for tall things.
 		var k := t / WOBBLE_TIME
-		var amount := sin((1.0 - k) * 28.0) * k * (0.06 if FloraLibrary.category_of(r.kind) == "tree" else 0.03)
+		# A small shiver, not a sway: the trunk barely moves, a tree's top a hand's width at most.
+		var amount := sin((1.0 - k) * 30.0) * k * k * (0.018 if FloraLibrary.category_of(r.kind) == "tree" else 0.012)
 		var axis := Vector3(cos(index * 1.7), 0, sin(index * 1.7)).normalized()
 		var wob := Transform3D(Basis(axis, amount) * xf.basis, xf.origin)
 		if _bare.has(index):
