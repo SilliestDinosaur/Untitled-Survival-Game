@@ -22,6 +22,9 @@ func _ready() -> void:
 	_add("leaves", Effects.falling_leaves(), Vector3(0, 7.0, 0))
 	_add("snow", Effects.snowfall(), Vector3(0, 7.0, 0))
 	_add("dust", Effects.dust_drift(), Vector3(0, 1.4, 0))
+	var motes := Effects.motes(Vector3(5, 1.6, 5), Color(0.4, 0.37, 0.33), 40)   # dust hanging in the still air of caves
+	motes.emitting = false
+	_add("cave_dust", motes, Vector3(0, 0.4, 0))
 
 
 func _add(key: String, p: CPUParticles3D, offset: Vector3) -> void:
@@ -56,7 +59,10 @@ func _process(delta: float) -> void:
 func _decide(eye: Vector3) -> void:
 	for key: String in _want:
 		_want[key] = 0.0
-	if Game.in_cave or Settings.quality == "Low":
+	if Settings.quality == "Low":
+		return
+	if Game.in_cave:
+		_want.cave_dust = 1.0
 		return
 	var b := Game.world_gen.get_biome(eye.x, eye.z)
 	var night := 1.0 - Game.daylight()

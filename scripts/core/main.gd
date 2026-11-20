@@ -29,6 +29,7 @@ var _pending_player := {}           ## saved player data to apply after loading
 var _models_ready := false   ## every item's model is built (during loading; see ItemModels.prewarm_some)
 var _orbit := 0.0
 var _ambience_timer := 0.0
+var _cave_sound_cd := 3.0
 var _ocean_level := 0.0
 var _autosave := AUTOSAVE_SECONDS
 var _cave_features: CaveFeatures
@@ -497,4 +498,16 @@ func _update_ambience(delta: float) -> void:
 				water += 1
 		_ocean_level = clampf(water / 4.0, 0.0, 1.0) * clampf(1.0 - p.y / 50.0, 0.1, 1.0)
 	var wind := 0.25 + clampf((p.y - 10.0) / 60.0, 0.0, 0.75)
-	Audio.set_ambience(wind, _ocean_level, delta)
+	# Underground: the cave's hollow tone, deeper the further from daylight; now and then a drip or a far rumble.
+	var cave := 0.0
+	if Game.in_cave and Game.world_gen:
+		cave = 1.0 - Caves.sky_seen(Game.world_gen.caves, p) * 0.8
+		_cave_sound_cd -= delta
+		if _cave_sound_cd <= 0.0:
+			_cave_sound_cd = randf_range(2.5, 7.0)
+			var where := p + Vector3(randf_range(-12, 12), randf_range(0, 4), randf_range(-12, 12))
+			if randf() < 0.12 * cave:
+				Audio.play_3d("rumble", where, -6.0, randf_range(0.7, 1.0))
+			else:
+				Audio.play_3d("drip", where, -12.0, randf_range(0.85, 1.2))
+	Audio.set_ambience(wind, _ocean_level, delta, cave)

@@ -24,6 +24,9 @@ func build(plan: Dictionary) -> void:
 	_build_glowcaps(plan.glow, rng)
 	if plan.has("stalactites"):
 		_build_dressing(plan, rng)
+		var bats := CaveBats.new()
+		add_child(bats)
+		bats.setup(plan.roosts)
 
 
 func _build_chests(chests: Array) -> void:
@@ -194,7 +197,7 @@ func _build_dressing(plan: Dictionary, rng: RandomNumberGenerator) -> void:
 		var at: Vector3 = pool[0]
 		var pr: float = pool[1]
 		var a := _area(at)
-		(a.water as MeshKit).add_primitive(MeshKit.cylinder(pr, pr * 0.92, 0.04, 20), Transform3D(Basis(), at), Color(0.06, 0.12, 0.14), 0.0, 0.0)
+		(a.water as MeshKit).add_primitive(MeshKit.cylinder(pr, pr * 0.9, 0.06, 20), Transform3D(Basis(), at - Vector3(0, 0.03, 0)), Color(0.08, 0.17, 0.2), 0.0, 0.0)
 		a.n.water += 1
 		for k in 14:
 			var ang := TAU * k / 14.0 + rng.randf_range(-0.1, 0.1)

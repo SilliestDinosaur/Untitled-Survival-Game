@@ -269,6 +269,65 @@ static func ocean(seconds := 8.0) -> AudioStreamWAV:
 	return to_stream(_make_loop(out, n, rate), true, rate)
 
 
+## A water drop landing in a pool: a quick falling "plip" with a soft tail.
+static func drip(rng: RandomNumberGenerator) -> AudioStreamWAV:
+	var n := int(RATE * 0.22)
+	var out := _buf(n)
+	var f0 := rng.randf_range(900.0, 1400.0)
+	var ph := 0.0
+	for i in n:
+		var t := float(i) / RATE
+		var f := f0 * (1.0 + 1.6 * exp(-t * 60.0))   # pitch drops fast as the bubble forms
+		ph += TAU * f / RATE
+		out[i] = sin(ph) * exp(-t * 22.0) * 0.5
+	return to_stream(out)
+
+
+## A distant rumble in the rock: low, slow-swelling noise.
+static func rumble(rng: RandomNumberGenerator) -> AudioStreamWAV:
+	var n := int(RATE * 2.6)
+	var out := _buf(n)
+	var lp := 0.0
+	var lp2 := 0.0
+	for i in n:
+		var t := float(i) / RATE
+		var env := sin(PI * clampf(t / 2.6, 0.0, 1.0)) * (0.7 + 0.3 * sin(t * 9.0))
+		lp += (rng.randf_range(-1.0, 1.0) - lp) * 0.02
+		lp2 += (lp - lp2) * 0.05
+		out[i] = lp2 * env * 9.0
+	return to_stream(out)
+
+
+## A bat's squeak: a tiny high chirp.
+static func squeak(rng: RandomNumberGenerator) -> AudioStreamWAV:
+	var n := int(RATE * 0.07)
+	var out := _buf(n)
+	var f0 := rng.randf_range(3200.0, 4200.0)
+	var ph := 0.0
+	for i in n:
+		var t := float(i) / RATE
+		ph += TAU * f0 * (1.0 - t * 4.0) / RATE
+		out[i] = sin(ph) * sin(PI * t / 0.07) * 0.22
+	return to_stream(out)
+
+
+## The hollow tone of a cave: a low drone with air moving through it (seamless loop).
+static func cave_tone(seconds := 8.0) -> AudioStreamWAV:
+	var rng := RandomNumberGenerator.new()
+	rng.seed = 41
+	var rate := 16000
+	var n := int(rate * seconds)
+	var out := PackedFloat32Array()
+	out.resize(n + rate)
+	var lp := 0.0
+	for i in out.size():
+		var t := float(i) / rate
+		lp += (rng.randf_range(-1.0, 1.0) - lp) * 0.006
+		var hum := sin(TAU * 55.0 * t) * 0.08 + sin(TAU * 82.4 * t + sin(t * 0.7)) * 0.05
+		out[i] = lp * 6.0 * (0.7 + 0.3 * sin(TAU * t / seconds)) + hum
+	return to_stream(_make_loop(out, n, rate), true, rate)
+
+
 static func _brown(n: int, rng: RandomNumberGenerator, step: float) -> PackedFloat32Array:
 	var out := PackedFloat32Array()
 	out.resize(n)

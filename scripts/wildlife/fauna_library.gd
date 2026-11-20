@@ -138,6 +138,7 @@ func _init(seed_value: int, pal: WorldPalette) -> void:
 		species.append(_make_quadruped(rng, ["hopper", "ferret"][rng.randi() % 2] if home != Biome.MARSH else "ferret", home))
 	for i in rng.randi_range(2, 3):
 		species.append(_make_bird(rng))
+	species.append(_make_cave_beast())   # last, so every other species keeps its number
 
 
 func by_role(role: String) -> Array[Species]:
@@ -161,10 +162,29 @@ func _coat(rng: RandomNumberGenerator) -> Color:
 
 
 ## A coat that fits the biome (natural worlds); exotic worlds keep their strange colors.
+## The beast of the deep chambers: pale-eyed and dark, with faintly glowing markings, hardier and harder-hitting
+## than anything on the surface. It lives only in caves (CAVE_HOME), guarding the chambers it lairs in.
+const CAVE_HOME := -2
+const CAVE_TRAITS := {"coat": "cave", "fur": true, "size": 1.15, "patterns": ["stripes", "spots"], "hp": 1.6, "night": 1.0,
+	"habitat": "cave", "ears": "small", "words": ["Gloom", "Hollow", "Deep"]}
+
+
+func _make_cave_beast() -> Species:
+	var rng := RandomNumberGenerator.new()
+	rng.seed = hash([Game.world_seed, "cave beast"])
+	var s := _make_quadruped(rng, "boar" if rng.randf() < 0.5 else "horned", CAVE_HOME)
+	s.biome_pref = {}
+	s.label = "Cave beast"
+	s.damage *= 1.25
+	s.herd = Vector2i(1, 1)
+	s.yield_scale *= 1.4
+	return s
+
+
 func _biome_coat(rng: RandomNumberGenerator, scheme: String) -> Color:
 	var c := _natural_coat(rng, scheme)
 	# Exotic worlds keep the biome's light/dark and saturation, but in the world's strange hue.
-	if _pal.exotic and scheme not in ["snow", "fungal"]:
+	if _pal.exotic and scheme not in ["snow", "fungal", "cave"]:
 		c = Color.from_hsv(fposmod(c.h + _exotic_shift, 1.0), minf(c.s * 1.25 + 0.1, 1.0), c.v)
 	return c
 
@@ -181,13 +201,14 @@ func _natural_coat(rng: RandomNumberGenerator, scheme: String) -> Color:
 		"rust": return Color.from_hsv(rng.randf_range(0.02, 0.06), rng.randf_range(0.5, 0.7), rng.randf_range(0.45, 0.62))
 		"fungal": return _pal.fungal_caps[rng.randi() % _pal.fungal_caps.size()].lerp(Color(0.85, 0.85, 0.9), 0.35)
 		"stone": return Color.from_hsv(rng.randf_range(0.06, 0.12), rng.randf_range(0.05, 0.18), rng.randf_range(0.5, 0.7))
+		"cave": return Color.from_hsv(rng.randf_range(0.55, 0.68), rng.randf_range(0.08, 0.18), rng.randf_range(0.26, 0.36))
 	return _coat(rng)
 
 
 func _make_quadruped(rng: RandomNumberGenerator, arch: String, home := -1) -> Species:
 	var a: Dictionary = ARCHETYPES[arch]
 	var role: String = a.role
-	var tr: Dictionary = BIOME_TRAITS.get(home, {})
+	var tr: Dictionary = CAVE_TRAITS if home == CAVE_HOME else BIOME_TRAITS.get(home, {})
 	var s := Species.new()
 	s.role = role
 	s.home = home
@@ -296,7 +317,7 @@ func _make_quadruped(rng: RandomNumberGenerator, arch: String, home := -1) -> Sp
 		pattern = pats[rng.randi() % pats.size()]
 	match String(tr.get("coat", "")):
 		"vivid": accent = Color.from_hsv(fposmod(coat.h + 0.5, 1.0), 0.3, 0.15) if rng.randf() < 0.5 else coat.darkened(0.6)   # bold markings
-		"fungal": accent = _pal.glow   # glowing spots
+		"fungal", "cave": accent = _pal.glow   # glowing spots
 		"snow": accent = coat.darkened(0.2)
 		"rust": accent = _pal.badlands_cream
 	var fur: bool = tr.get("fur", false)

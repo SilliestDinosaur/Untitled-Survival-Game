@@ -17,6 +17,10 @@ var _puppet_seen := {}         ## guest: net id -> seconds since last update
 var _critters: Array[Node3D] = []
 var _flocks: Array[Node3D] = []
 var _timer := 0.0
+var _lair_beasts := {}         ## host: lair index -> its beast
+var _lair_cleared := {}        ## host: lair index -> play time its beast was killed (it returns after a while)
+const LAIR_WAKE := 45.0        ## a lair's beast is there when someone comes this close
+const LAIR_RETURN := 1200.0    ## seconds before a killed lair beast's place is taken again
 var _rng := RandomNumberGenerator.new()
 
 
@@ -32,6 +36,8 @@ func clear() -> void:
 		list.clear()
 	_by_net_id.clear()
 	_puppet_seen.clear()
+	_lair_beasts.clear()
+	_lair_cleared.clear()
 
 
 func find_animal(id: int) -> Node:
@@ -71,6 +77,7 @@ func _physics_process(delta: float) -> void:
 				a.targets = targets
 		if _animals.size() < max_animals + (centers.size() - 1) * 8:
 			_spawn_herd(centers[_rng.randi() % centers.size()])
+		_tend_lairs(centers)
 	if _critters.size() < max_critters:
 		_spawn_critter(center)
 	if _flocks.size() < max_flocks:
@@ -188,7 +195,7 @@ func _pick_species(roles: Array, pos: Vector3) -> FaunaLibrary.Species:
 		weights[WorldGen.Biome.SNOW] = 1.5
 	var night := Game.is_night()
 	for s in Game.fauna.species:
-		if s.role in roles:
+		if s.role in roles and s.habitat != "cave":   # cave beasts only turn up in their lairs
 			var w := 0.0
 			for b: int in weights:
 				w += weights[b] * s.biome_pref.get(b, 0.02)
@@ -235,6 +242,48 @@ func _spawn_herd(center: Vector3) -> void:
 			_animals.erase(x)
 			_by_net_id.erase(x.net_id))
 		_animals.append(a)
+
+
+## Cave beasts: one in each lair someone is near (unless it was killed not long ago).
+func _tend_lairs(centers: Array) -> void:
+	var plan: Dictionary = Game.world_gen.caves if Game.world_gen else {}
+	if not plan.has("lairs"):
+		return
+	var sp: FaunaLibrary.Species = null
+	for s in Game.fauna.species:
+		if s.habitat == "cave":
+			sp = s
+	if sp == null:
+		return
+	for i in plan.lairs.size():
+		var lair: Vector3 = plan.lairs[i]
+		var b: Variant = _lair_beasts.get(i)
+		if b != null and is_instance_valid(b):
+			if (b as Animal).dead and not _lair_cleared.has(i):
+				_lair_cleared[i] = Game.play_time
+			continue
+		_lair_beasts.erase(i)
+		if _lair_cleared.has(i) and Game.play_time - float(_lair_cleared[i]) < LAIR_RETURN:
+			continue
+		_lair_cleared.erase(i)
+		var near := false
+		for c: Vector3 in centers:
+			if c.distance_to(lair) < LAIR_WAKE:
+				near = true
+		if not near:
+			continue
+		var a := Animal.new()
+		add_child(a)
+		a.setup(sp, lair, player)
+		a.net_id = _next_net_id
+		a.species_index = Game.fauna.species.find(sp)
+		_by_net_id[a.net_id] = a
+		_next_net_id += 1
+		a.removed.connect(func(x: Animal) -> void:
+			_animals.erase(x)
+			_by_net_id.erase(x.net_id))
+		_animals.append(a)
+		_lair_beasts[i] = a
 
 
 func _spawn_critter(center: Vector3) -> void:

@@ -9,6 +9,7 @@ var _variants := {}         # name -> Array[AudioStreamWAV] (picked at random)
 var _pool: Array[AudioStreamPlayer] = []
 var _pool_3d: Array[AudioStreamPlayer3D] = []
 var _wind: AudioStreamPlayer
+var _cave: AudioStreamPlayer
 var _ocean: AudioStreamPlayer
 var _rng := RandomNumberGenerator.new()
 
@@ -35,6 +36,11 @@ func _ready() -> void:
 	sfx.pickup = SoundGen.blip(1320.0, 0.05, 0.1)
 	sfx.tree_fall = SoundGen.tree_fall(_rng)
 	sfx.munch = SoundGen.munch(_rng)
+	for name in ["drip", "rumble", "squeak"]:
+		_variants[name] = []
+		for i in 3:
+			_variants[name].append(SoundGen.drip(_rng) if name == "drip" else (SoundGen.rumble(_rng) if name == "rumble" else SoundGen.squeak(_rng)))
+		sfx[name] = name
 	for i in 10:
 		var p := AudioStreamPlayer.new()
 		p.bus = "SFX"
@@ -50,6 +56,7 @@ func _ready() -> void:
 		_pool_3d.append(p3)
 	_wind = _loop_player(SoundGen.wind())
 	_ocean = _loop_player(SoundGen.ocean())
+	_cave = _loop_player(SoundGen.cave_tone())
 	Settings.apply()
 
 
@@ -125,8 +132,12 @@ func hover() -> void:
 	play(sfx.hover, -8.0, _rng.randf_range(0.97, 1.03))
 
 
-## Wind gets louder up high; the ocean gets louder near the shore.
-func set_ambience(wind_level: float, ocean_level: float, delta: float) -> void:
+## Wind gets louder up high; the ocean gets louder near the shore; underground the open air fades and the cave's own
+## hollow tone takes over (`cave_level` 0 outside .. 1 deep in).
+func set_ambience(wind_level: float, ocean_level: float, delta: float, cave_level := 0.0) -> void:
 	var k := 1.0 - exp(-delta * 1.5)
+	wind_level *= 1.0 - cave_level * 0.85
+	ocean_level *= 1.0 - cave_level
+	_cave.volume_db = lerpf(_cave.volume_db, linear_to_db(maxf(cave_level, 0.0005) * 0.5), k)
 	_wind.volume_db = lerpf(_wind.volume_db, linear_to_db(maxf(wind_level, 0.0005) * 0.35), k)
 	_ocean.volume_db = lerpf(_ocean.volume_db, linear_to_db(maxf(ocean_level, 0.0005) * 0.5), k)

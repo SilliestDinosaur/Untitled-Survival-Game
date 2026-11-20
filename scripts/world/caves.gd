@@ -293,8 +293,8 @@ static func _dress(plan: Dictionary, gen: WorldGen, walk: PackedFloat32Array) ->
 		if room and rng.randf() < 0.3:
 			var f: Variant = floor_at(plan, c + Vector3(rng.randf_range(-0.3, 0.3), 0, rng.randf_range(-0.3, 0.3)) * r)
 			if f != null:
-				var pr := r * rng.randf_range(0.35, 0.5)
-				pools.append([(f as Vector3) + Vector3(0, 0.12, 0), pr])
+				var pr := r * rng.randf_range(0.26, 0.36)   # inside the dip of the floor, so its edge meets the rock
+				pools.append([(f as Vector3) + Vector3(0, 0.07, 0), pr])
 				var ce: Variant = ceiling_at(plan, f)
 				if ce != null:
 					for k in 3:

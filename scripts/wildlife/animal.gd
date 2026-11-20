@@ -47,12 +47,17 @@ var _breath := 0.0
 var _rng := RandomNumberGenerator.new()
 var _collider: StaticBody3D
 var _world: Node
+var home_pos := Vector3.ZERO   ## cave beasts: their lair (they never stray far from it)
+var _cave := false
+const LAIR_LEASH := 14.0
 
 
 func setup(sp: FaunaLibrary.Species, pos: Vector3, p: Node3D) -> void:
 	species = sp
 	player = p
 	hp = sp.hp
+	_cave = sp.habitat == "cave"
+	home_pos = pos
 	_rng.randomize()
 	_yaw = _rng.randf() * TAU
 	_desired_yaw = _yaw
@@ -128,6 +133,15 @@ func _pick_wander_target() -> void:
 	# Herd members drift toward their leader instead of wandering off alone.
 	if is_instance_valid(leader) and not leader.dead:
 		_target = leader.position + Vector3(_rng.randf_range(-5, 5), 0, _rng.randf_range(-5, 5))
+		return
+	if _cave:   # pace about the lair
+		for i in 6:
+			var a := _rng.randf() * TAU
+			var t := home_pos + Vector3(cos(a), 0, sin(a)) * _rng.randf_range(2.0, LAIR_LEASH * 0.7)
+			if not is_nan(_ground_at(t)):
+				_target = t
+				return
+		_target = home_pos
 		return
 	# Habitat: marsh animals drift toward the water's edge, cliff dwellers toward slopes.
 	var best := position
@@ -300,7 +314,7 @@ func _move(delta: float, want_dir: Vector3, want_speed: float) -> void:
 	_speed = lerpf(_speed, want_speed * clampf(facing, 0.25, 1.0), 1.0 - exp(-3.0 * delta))
 	var forward := Vector3(-sin(_yaw), 0, -cos(_yaw))
 	var next := position + forward * _speed * delta
-	var h: float = Game.world_gen.get_height(next.x, next.z)
+	var h: float = _ground_at(next)
 	if _speed > 0.01:
 		if _walkable(next, h):
 			position.x = next.x
@@ -309,12 +323,24 @@ func _move(delta: float, want_dir: Vector3, want_speed: float) -> void:
 		else:
 			_speed *= 0.5
 			_steer_cd = 0.0
-	position.y = lerpf(position.y, Game.world_gen.get_height(position.x, position.z), 1.0 - exp(-14.0 * delta))
+	var gy := _ground_at(position)
+	if not is_nan(gy):
+		position.y = lerpf(position.y, gy, 1.0 - exp(-14.0 * delta))
 	rotation = Vector3(0, _yaw, 0)
 
 
 func _walkable(p: Vector3, h: float) -> bool:
+	if _cave:   # on the cave floor, no big step up or down, and near the lair
+		return not is_nan(h) and absf(h - position.y) < 0.7 and Vector2(p.x - home_pos.x, p.z - home_pos.z).length() < LAIR_LEASH
 	return h > 1.3 and h < 62.0 and Game.world_gen.get_normal(p.x, p.z).y > 0.7
+
+
+## The ground under p: the surface, or for a cave animal the cave floor (NAN where there's no floor to stand on).
+func _ground_at(p: Vector3) -> float:
+	if not _cave:
+		return Game.world_gen.get_height(p.x, p.z)
+	var f: Variant = Caves.floor_at(Game.world_gen.caves, Vector3(p.x, position.y + 0.9, p.z))
+	return NAN if f == null else (f as Vector3).y - 0.05
 
 
 ## Pick the heading closest to `want` whose next few meters are walkable and free of trees.
@@ -327,7 +353,7 @@ func _best_heading(want: Vector3) -> float:
 		var a: float = base + off
 		var dir := Vector3(-sin(a), 0, -cos(a))
 		var p := position + dir * look
-		var h: float = Game.world_gen.get_height(p.x, p.z)
+		var h: float = _ground_at(p)
 		if not _walkable(p, h):
 			continue
 		var score: float = -absf(off) - _obstacle_penalty(p)
@@ -377,8 +403,8 @@ func _animate(delta: float, graze: float, alert: float) -> void:
 	var side := Vector3(-fwd.z, 0, fwd.x)
 	var half := species.body_len * 0.5
 	var g: WorldGen = Game.world_gen
-	var pitch := atan2(g.get_height(position.x + fwd.x * half, position.z + fwd.z * half) - g.get_height(position.x - fwd.x * half, position.z - fwd.z * half), species.body_len)
-	var roll := atan2(g.get_height(position.x + side.x * 0.4, position.z + side.z * 0.4) - g.get_height(position.x - side.x * 0.4, position.z - side.z * 0.4), 0.8)
+	var pitch := 0.0 if _cave else atan2(g.get_height(position.x + fwd.x * half, position.z + fwd.z * half) - g.get_height(position.x - fwd.x * half, position.z - fwd.z * half), species.body_len)
+	var roll := 0.0 if _cave else atan2(g.get_height(position.x + side.x * 0.4, position.z + side.z * 0.4) - g.get_height(position.x - side.x * 0.4, position.z - side.z * 0.4), 0.8)
 	var turn_lean := clampf(angle_difference(_yaw, _desired_yaw), -0.6, 0.6) * stride * 0.25
 	_body.rotation.x = lerpf(_body.rotation.x, pitch * 0.8, 1.0 - exp(-8.0 * delta))
 	_body.rotation.z = lerpf(_body.rotation.z, roll * 0.6 + turn_lean, 1.0 - exp(-6.0 * delta))
@@ -490,7 +516,8 @@ func _puppet_step(delta: float) -> void:
 	var k := 1.0 - exp(-10.0 * delta)
 	position.x = lerpf(position.x, _net_pos.x, k)
 	position.z = lerpf(position.z, _net_pos.z, k)
-	position.y = lerpf(position.y, Game.world_gen.get_height(position.x, position.z), 1.0 - exp(-14.0 * delta))
+	var ground := _net_pos.y if _cave else Game.world_gen.get_height(position.x, position.z)
+	position.y = lerpf(position.y, ground, 1.0 - exp(-14.0 * delta))
 	_yaw = lerp_angle(_yaw, _net_yaw, k)
 	_desired_yaw = _net_yaw
 	rotation = Vector3(0, _yaw, 0)
