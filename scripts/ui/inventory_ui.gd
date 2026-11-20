@@ -136,6 +136,23 @@ class SlotView extends PanelContainer:
 					inv.split(index, i)
 					break
 			accept_event()
+		elif event.button_index == MOUSE_BUTTON_MIDDLE:
+			# Take one off the stack: onto the same item if there's room, else into the first free slot.
+			var to := -1
+			var s: Dictionary = inv.slots[index]
+			if not s.is_empty():
+				for i in Inventory.SIZE:
+					if i != index and not inv.slots[i].is_empty() and inv.slots[i].id == s.id and int(inv.slots[i].count) < ItemDB.stack_size(s.id):
+						to = i
+						break
+				if to < 0:
+					for i in Inventory.SIZE:
+						if inv.slots[i].is_empty():
+							to = i
+							break
+				if to >= 0:
+					inv.split_one(index, to)
+			accept_event()
 		elif event.button_index == MOUSE_BUTTON_LEFT and event.shift_pressed:
 			if ChestPanel.open_id != "":   # a chest is open: shift-click sends it in
 				ChestPanel.request({"structure": ChestPanel.open_id, "op": "quick", "from": "bag", "a": index})
@@ -303,10 +320,36 @@ class InventoryPanel extends Control:
 		var spacer := Control.new()
 		spacer.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 		title_row.add_child(spacer)
+		var sort := UITheme.button("Sort", false, 72)
+		sort.custom_minimum_size = Vector2(72, 32)
+		sort.tooltip_text = "Tidy the backpack: stacks merged, sorted by kind (the hotbar stays as it is)"
+		sort.pressed.connect(func() -> void:
+			inventory.sort_backpack()
+			Audio.play(Audio.sfx.click, -8.0, 1.1))
+		title_row.add_child(sort)
+		var stash := UITheme.button("Quick stack", false, 120)
+		stash.custom_minimum_size = Vector2(120, 32)
+		stash.tooltip_text = "Put everything from the backpack that a nearby chest already holds into that chest"
+		stash.pressed.connect(func() -> void:
+			if not player:
+				return
+			Net.request("quick_stack", {"pos": player.global_position}, func(res: Dictionary) -> void:
+				var n := int(res.get("moved", 0))
+				if n > 0:
+					Audio.play("thud", -8.0, 1.2)
+					_flash("Stashed %d item%s in %d chest%s" % [n, "" if n == 1 else "s", int(res.chests), "" if int(res.chests) == 1 else "s"])
+				else:
+					_flash("Nothing here goes in a nearby chest")))
+		title_row.add_child(stash)
+		var gap := Control.new()
+		gap.custom_minimum_size = Vector2(10, 0)
+		title_row.add_child(gap)
 		title_row.add_child(UITheme.label("Tab to close", 15, UITheme.INK_DIM))
 		col.add_child(title_row)
-		var help := UITheme.label("Drag to move  ·  Right-click to split  ·  Shift-click to send to/from the hotbar\nDrag outside to drop", 14, UITheme.INK_DIM)
+		var help := UITheme.label("Drag to move  ·  Right-click: split half  ·  Middle-click: take one  ·  Shift-click: to/from the hotbar\nDrag outside to drop", 14, UITheme.INK_DIM)
 		col.add_child(help)
+		_note = UITheme.label("", 14, UITheme.ACCENT_2.darkened(0.3))
+		col.add_child(_note)
 		var grid := GridContainer.new()
 		grid.columns = 8
 		grid.add_theme_constant_override("h_separation", 6)
@@ -329,6 +372,18 @@ class InventoryPanel extends Control:
 			if visible:
 				for sv in _slots:
 					sv.refresh())
+
+	var _note: Label
+
+	## A short message under the satchel's title (what Quick stack did).
+	func _flash(text: String) -> void:
+		if not _note:
+			return
+		_note.text = text
+		_note.modulate.a = 1.0
+		var tw := _note.create_tween()
+		tw.tween_interval(2.5)
+		tw.tween_property(_note, "modulate:a", 0.0, 0.6)
 
 	# Anything dropped on the background (outside the card) is dropped into the world.
 	func _can_drop_data(_at: Vector2, data: Variant) -> bool:
@@ -603,6 +658,7 @@ void fragment() {
 		var b := UITheme.button("Craft", on, 84)
 		b.custom_minimum_size = Vector2(84, 38)
 		b.size_flags_vertical = Control.SIZE_SHRINK_CENTER
+		b.tooltip_text = "Click: make one  ·  Shift: five  ·  Ctrl: as many as you can"
 		b.pressed.connect(func() -> void: _craft(r))
 		return b
 
@@ -623,11 +679,18 @@ void fragment() {
 			var c := "#3d6b2e" if have >= need else "#a3402a"
 			parts.append("[color=%s]%s %d/%d[/color]" % [c, ItemDB.display_name(item), have, need])
 		var text := "  ·  ".join(parts)
+		var n := GameActions.craftable_count(inventory, r)
+		if n > 1:
+			text += "  [color=#6b5a3e](can make %d)[/color]" % n
 		if (row.needs as RichTextLabel).text != text:
 			(row.needs as RichTextLabel).text = text
 
 	func _craft(r: Dictionary) -> void:
-		var times := 5 if Input.is_key_pressed(KEY_SHIFT) else 1
+		var times := 1
+		if Input.is_key_pressed(KEY_CTRL):
+			times = maxi(GameActions.craftable_count(inventory, r), 1)   # as many as the satchel holds the makings of
+		elif Input.is_key_pressed(KEY_SHIFT):
+			times = 5
 		player.craft(r, times, func(res: Dictionary) -> void:
 			if res.get("ok", false):
 				Audio.play("chop" if r.at in ["workbench", ""] else "clink", -6.0, 1.2)

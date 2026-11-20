@@ -201,6 +201,64 @@ func split(from: int, to: int) -> void:
 	changed.emit()
 
 
+## Middle-click: take one off a stack into an empty slot (or onto the same item).
+func split_one(from: int, to: int) -> void:
+	var a := slots[from]
+	if a.is_empty() or int(a.count) < 2 or from == to:
+		return
+	if remote:
+		Net.request("inv", {"op": "one", "a": from, "b": to})
+		return
+	var b := slots[to]
+	if b.is_empty():
+		slots[to] = {"id": a.id, "count": 1, "dur": a.get("dur", -1)}
+		a.count -= 1
+	elif b.id == a.id and int(b.count) < ItemDB.stack_size(a.id):
+		b.count += 1
+		a.count -= 1
+	changed.emit()
+
+
+## Tidy the backpack (the hotbar is left as it is): like stacks merged, then ordered by kind (tools, then
+## materials, food...), tier and name, empty slots at the end.
+func sort_backpack() -> void:
+	if remote:
+		Net.request("inv", {"op": "sort", "a": HOTBAR_SIZE, "b": HOTBAR_SIZE})
+		return
+	var items: Array = []
+	for i in range(HOTBAR_SIZE, SIZE):
+		if not slots[i].is_empty():
+			items.append(slots[i])
+		slots[i] = {}
+	# Merge stacks of the same thing (tools never stack).
+	var merged: Array = []
+	for s: Dictionary in items:
+		var done := false
+		if ItemDB.info(s.id).kind != "tool":
+			for m: Dictionary in merged:
+				if m.id == s.id and int(m.count) < ItemDB.stack_size(s.id):
+					var put := mini(int(s.count), ItemDB.stack_size(s.id) - int(m.count))
+					m.count = int(m.count) + put
+					s.count = int(s.count) - put
+					if int(s.count) <= 0:
+						done = true
+						break
+		if not done:
+			merged.append(s)
+	merged.sort_custom(func(a: Dictionary, b: Dictionary) -> bool: return _sort_key(a) < _sort_key(b))
+	for i in merged.size():
+		slots[HOTBAR_SIZE + i] = merged[i]
+	changed.emit()
+
+
+const _KIND_ORDER := {"tool": 0, "placeable": 1, "material": 2, "food": 3}
+
+
+static func _sort_key(s: Dictionary) -> String:
+	var info := ItemDB.info(s.id)
+	return "%d_%02d_%s_%04d" % [int(_KIND_ORDER.get(String(info.get("kind", "")), 4)), 9 - int(info.get("tier", 0)), String(info.get("name", s.id)), 9999 - int(s.count)]
+
+
 ## Shift-click: send a stack between the hotbar and the backpack.
 func quick_move(from: int) -> void:
 	var s := slots[from]

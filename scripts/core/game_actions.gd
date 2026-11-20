@@ -1122,6 +1122,41 @@ static func chest_op(player_id: int, a: Dictionary) -> Dictionary:
 	return {"ok": true}
 
 
+## Quick-stack: everything in the backpack (not the hotbar) that some nearby chest already holds goes into it.
+## Result: {ok, moved: item count put away, chests: how many chests took something}.
+const QUICK_STACK_REACH := 8.0
+static func quick_stack(player_id: int, at: Vector3) -> Dictionary:
+	var inv := Game.inventory_of(player_id)
+	var moved := 0
+	var used := 0
+	for sid: String in Game.structures:
+		var st: Dictionary = Game.structures[sid]
+		if not DECOR.get(st.kind, {}).has("slots") or is_blueprint(st) or _pos(st).distance_to(at) > QUICK_STACK_REACH:
+			continue
+		var chest := chest_slots(st)
+		var holds := {}
+		for c: Dictionary in chest:
+			if not c.is_empty():
+				holds[c.id] = true
+		var took := false
+		for i in range(Inventory.HOTBAR_SIZE, Inventory.SIZE):
+			var s: Dictionary = inv.slots[i]
+			if s.is_empty() or not holds.has(s.id):
+				continue
+			var before := int(s.count)
+			_stow(inv.slots, i, chest, null)
+			var after := 0 if (inv.slots[i] as Dictionary).is_empty() else int(inv.slots[i].count)
+			if after < before:
+				moved += before - after
+				took = true
+		if took:
+			used += 1
+	if moved > 0:
+		inv.changed.emit()
+		Game.structures_changed.emit()
+	return {"ok": true, "moved": moved, "chests": used}
+
+
 ## Put the stack in src[i] into dst: onto like stacks first, then the first empty slot (into a satchel, its own
 ## rules for where things go). Whatever doesn't fit stays where it was.
 static func _stow(src: Array, i: int, dst: Array, into: Inventory) -> void:

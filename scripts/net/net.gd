@@ -747,7 +747,11 @@ func run_action(pid: int, peer: int, action: String, a: Dictionary) -> Dictionar
 				"move": inv.move(int(a.a), int(a.b))
 				"split": inv.split(int(a.a), int(a.b))
 				"quick": inv.quick_move(int(a.a))
+				"one": inv.split_one(int(a.a), int(a.b))
+				"sort": inv.sort_backpack()
 			return {"ok": true}
+		"quick_stack":
+			return GameActions.quick_stack(pid, a.get("pos", Vector3.ZERO))
 		"chest":
 			return GameActions.chest_op(pid, a)
 		"reset":

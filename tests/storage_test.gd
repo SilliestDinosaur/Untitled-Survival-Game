@@ -9,6 +9,7 @@ var _game: Node
 var _f := 0
 var _fails: Array[String] = []
 var _GA: GDScript
+const HB := 8   ## the hotbar's size (Inventory.HOTBAR_SIZE: naming the class here breaks loading)
 
 
 func _initialize() -> void:
@@ -94,6 +95,31 @@ func _process(_d: float) -> bool:
 			_GA.chest_op(1, {"structure": sid, "op": "quick", "from": "chest", "a": i, "pos": here})
 	_check(_GA.chest_is_empty(st) and inv.count("wood") == 35 and inv.count("hatchet_t1") == 1, "everything comes back out")
 	_check(_GA.removal_problem(st) == "", "an empty chest can be taken down")
+	# Quick stack: the chest holds a little wood, so all the backpack's wood goes in (not the hatchet; not the hotbar).
+	inv.clear(true)
+	inv.add("wood", 3, true)
+	_GA.chest_op(1, {"structure": sid, "op": "quick", "from": "bag", "a": slot_of.call("wood"), "pos": here})
+	inv.add("hatchet_t1", 1, true)
+	for k in 3:
+		inv.slots[HB + 2 + k] = {"id": "wood", "count": 10, "dur": -1}
+	inv.slots[6] = {"id": "wood", "count": 4, "dur": -1}
+	var qs: Dictionary = _GA.quick_stack(1, here)
+	_check(int(qs.moved) == 30 and chest_count.call("wood") == 33 and inv.count("wood") == 4 and inv.count("hatchet_t1") == 1,
+		"quick stack puts away what the chest already holds (moved %d, %d in the chest, %d left)" % [int(qs.moved), chest_count.call("wood"), inv.count("wood")])
+	_check(int(_GA.quick_stack(1, here + Vector3(40, 0, 0)).moved) == 0, "and does nothing with no chest near")
+	# Sort: stacks merge, tools first, the hotbar left alone.
+	inv.clear(true)
+	inv.slots[HB + 5] = {"id": "stone", "count": 4, "dur": -1}
+	inv.slots[HB + 1] = {"id": "stone", "count": 6, "dur": -1}
+	inv.slots[HB + 9] = {"id": "hatchet_t1", "count": 1, "dur": 30}
+	inv.slots[2] = {"id": "wood", "count": 2, "dur": -1}
+	inv.sort_backpack()
+	_check(inv.slots[HB].get("id", "") == "hatchet_t1" and inv.slots[HB + 1].get("id", "") == "stone"
+		and int(inv.slots[HB + 1].count) == 10 and inv.slots[HB + 2].is_empty() and inv.slots[2].get("id", "") == "wood",
+		"sort merges stacks, puts tools first and leaves the hotbar")
+	# Take one.
+	inv.split_one(HB + 1, HB + 6)
+	_check(int(inv.slots[HB + 1].count) == 9 and int(inv.slots[HB + 6].get("count", 0)) == 1, "middle-click takes one off a stack")
 	# The panel.
 	_main._inventory.show_chest(sid)
 	_check(_main._inventory.visible and _main._inventory._chest.visible, "the chest's panel opens beside the satchel")
