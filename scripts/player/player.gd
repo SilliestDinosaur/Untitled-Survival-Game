@@ -447,7 +447,10 @@ func _update_looking_at() -> void:
 	looking_at = {}
 	if not ray.is_colliding():
 		return
-	var body := ray.get_collider() as CollisionObject3D
+	var hit_obj: Object = ray.get_collider()
+	if not is_instance_valid(hit_obj):
+		return   # removed this frame (just gathered or knocked down)
+	var body := hit_obj as CollisionObject3D
 	if not body or ray.get_collision_point().distance_to(camera.global_position) > REACH + 0.6:
 		return
 	if body.has_meta("cave_chest"):
@@ -835,7 +838,7 @@ func _update_placement() -> void:
 		# A station (or furniture, a light...) stands on the ground, or on the top of a floor when that's what you're
 		# aiming at.
 		pos.y = Game.world_gen.get_height(pos.x, pos.z)
-		if ray.is_colliding() and ray.get_collider().has_meta("structure") and ray.get_collision_normal().y > 0.7 \
+		if is_instance_valid(aimed) and (aimed as Node).has_meta("structure") and ray.get_collision_normal().y > 0.7 \
 				and ray.get_collision_point().distance_to(from) <= REACH + 2.0:
 			var top := ray.get_collision_point()
 			var under := GameActions.floor_under(top)
