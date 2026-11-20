@@ -77,8 +77,8 @@ func _process(_d: float) -> bool:
 		2:
 			if _f == 120:
 				var wm: Node = _main.get_node("Wildlife")
-				for a in wm.get_animals():
-					if is_instance_valid(a) and a.species.habitat == "cave":
+				for a in wm.get_animals():   # this lair's beast (another lair may be near enough to have woken too)
+					if is_instance_valid(a) and a.species.habitat == "cave" and (_beast == null or a.home_pos.distance_to(_lair) < _beast.home_pos.distance_to(_lair)):
 						_beast = a
 				_check(_beast != null, "a cave beast is in the lair when someone comes near")
 				if _beast == null:

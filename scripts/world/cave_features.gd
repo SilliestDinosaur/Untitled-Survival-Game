@@ -109,6 +109,24 @@ func _process(delta: float) -> void:
 const AREA := 32.0           ## pieces are merged per area this many metres square
 const DRIP_NEAR := 22.0      ## drips only run within this of the camera
 const GLOW_COLOURS := [Color(0.35, 1.0, 0.82), Color(0.72, 0.5, 1.0), Color(1.0, 0.72, 0.3)]
+const CRYSTAL_COLOURS := [Color(0.45, 0.85, 1.0), Color(0.75, 0.5, 1.0), Color(1.0, 0.5, 0.75)]
+const SHROOM_COLOURS := [Color(0.55, 0.4, 1.0), Color(0.3, 0.85, 0.95), Color(1.0, 0.45, 0.7)]
+const MAX_GLOW_LIGHTS := 22
+
+
+static func _drip_colour(theme: int, stone: Color) -> Color:
+	match theme:
+		Caves.Rock.ICE:
+			return Color(0.7, 0.84, 0.94)
+		Caves.Rock.SAND:
+			return Color(0.72, 0.55, 0.38)
+		Caves.Rock.FUNGAL:
+			return Color(0.5, 0.42, 0.52)
+		Caves.Rock.CRYSTAL:
+			return Color(0.42, 0.42, 0.52)
+		Caves.Rock.MOSS:
+			return stone.lerp(Color(0.4, 0.46, 0.32), 0.4)
+	return stone
 
 var _areas := {}             ## Vector2i -> {"rock": MeshKit, "glow": MeshKit, "water": MeshKit, "centre": Vector3}
 var _lanterns: Array = []
@@ -136,12 +154,13 @@ static func _lit(c: Color, p: Vector3) -> Color:
 func _build_dressing(plan: Dictionary, rng: RandomNumberGenerator) -> void:
 	var pal: WorldPalette = Game.palette
 	var drip_col := pal.rock.lerp(Color(0.72, 0.66, 0.56), 0.35)
-	# Stalactites: lumpy cones hanging from the ceiling, banded, pale and wet at the tip.
+	# Stalactites: lumpy cones hanging from the ceiling, banded, pale and wet at the tip (clear blue icicles in the
+	# ice caves, sandy in the sandstone, tinted in the fungal and crystal caves).
 	for st: Array in plan.stalactites:
 		var top: Vector3 = st[0]
 		var length: float = st[1]
 		var a := _area(top)
-		var c := _lit(drip_col.lerp(pal.rock, rng.randf() * 0.4), top - Vector3(0, length * 0.5, 0))
+		var c := _lit(_drip_colour(Caves.theme_at(plan, top), drip_col).lerp(pal.rock, rng.randf() * 0.25), top - Vector3(0, length * 0.5, 0))
 		var path: Array = []
 		var radii: Array = []
 		var lean := Vector3(rng.randf_range(-0.06, 0.06), 0, rng.randf_range(-0.06, 0.06)) * length
@@ -190,8 +209,101 @@ func _build_dressing(plan: Dictionary, rng: RandomNumberGenerator) -> void:
 			var sz := rng.randf_range(0.12, 0.3) * (1.2 - d / rad * 0.5)
 			var p := at + Vector3(cos(ang) * d, sz * 0.25 - 0.04, sin(ang) * d)
 			(a.rock as MeshKit).add_primitive(MeshKit.sphere(sz, 6, 4), Transform3D(Basis(Vector3.UP, rng.randf() * TAU).scaled(Vector3(1.2, 0.7, 1.0)), p),
-				_lit(pal.rock.darkened(rng.randf_range(0.0, 0.15)), p), 0.25, 0.04)
+				_lit(_drip_colour(Caves.theme_at(plan, at), pal.rock).darkened(rng.randf_range(0.1, 0.3)), p), 0.25, 0.04)
 		a.n.rock += 1
+	# Underground lakes: still dark water filling the bowl in a chamber's floor, wet stones along the shore.
+	for lk: Array in plan.get("lakes", []):
+		var at: Vector3 = lk[0]
+		var lr: float = lk[1]
+		var a := _area(at)
+		(a.water as MeshKit).add_primitive(MeshKit.cylinder(lr, lr, 0.04, 40), Transform3D(Basis(), at - Vector3(0, 0.02, 0)), Color(0.1, 0.26, 0.3), 0.0, 0.0)
+		a.n.water += 1
+		var stones := int(lr * 5.0)
+		for k in stones:
+			var ang := TAU * k / stones + rng.randf_range(-0.08, 0.08)
+			var p := at + Vector3(cos(ang) * (lr - 0.1), 0.0, sin(ang) * (lr - 0.1))
+			if rng.randf() < 0.35:
+				continue
+			(a.rock as MeshKit).add_primitive(MeshKit.sphere(rng.randf_range(0.1, 0.24), 6, 4), Transform3D(Basis().scaled(Vector3(1.3, 0.5, 1.0)), p),
+				_lit(pal.rock.darkened(0.3), p), 0.2, 0.03)
+		a.n.rock += 1
+	# Crystal caverns: six-sided crystals in clusters, glowing.
+	for cr: Array in plan.get("crystals", []):
+		var foot: Vector3 = cr[0]
+		var dir: Vector3 = cr[1]
+		var length: float = cr[2]
+		var col: Color = CRYSTAL_COLOURS[int(cr[3])]
+		var a := _area(foot)
+		for k in rng.randi_range(3, 6):
+			var d := (dir + Vector3(rng.randf_range(-0.45, 0.45), rng.randf_range(-0.3, 0.3), rng.randf_range(-0.45, 0.45))).normalized()
+			var l := length * (1.0 if k == 0 else rng.randf_range(0.35, 0.75))
+			var w := l * rng.randf_range(0.12, 0.17)
+			# Rooted well into the rock (the rock curves away under a cluster's outer crystals).
+			var base := foot - dir * 0.35 + Vector3(rng.randf_range(-0.15, 0.15), 0, rng.randf_range(-0.15, 0.15)) * (0.0 if k == 0 else 1.0)
+			var b := Basis(Quaternion(Vector3.UP, d)) * Basis(Vector3.UP, rng.randf() * TAU)
+			var shade := col.darkened(rng.randf_range(0.0, 0.3)).lerp(Color.WHITE, rng.randf_range(0.0, 0.2))
+			(a.glow as MeshKit).add_primitive(MeshKit.cylinder(w, w * 1.08, l + 0.35, 6), Transform3D(b, base + d * ((l + 0.35) * 0.5)), shade, 0.0, 0.0)
+			(a.glow as MeshKit).add_primitive(MeshKit.cylinder(0.0, w, w * 1.6, 6, false), Transform3D(b, base + d * (l + 0.35 + w * 0.8)), shade.lightened(0.25), 0.0, 0.0)
+		a.n.glow += 1
+		if k_lights < MAX_GLOW_LIGHTS + 8 and rng.randf() < 0.55:   # crystal caverns get their own share of lights
+			_glow_light(foot + dir * length * 0.6 + Vector3(0, 0.3, 0), col, 1.3, 8.0)
+		if dir.y > 0.5 and length > 1.0:
+			_solid(self, foot + Vector3(0, length * 0.4, 0), Vector3(length * 0.3, length * 0.8, length * 0.3))
+	# Vines over the cave mouths and from the ceilings of the green caves; pale roots deeper in.
+	for hg: Array in plan.get("hanging", []):
+		var top: Vector3 = hg[0]
+		var length: float = hg[1]
+		var leafy: bool = int(hg[2]) == 0
+		var a := _area(top)
+		for k in rng.randi_range(3, 6):
+			var p := top + Vector3(rng.randf_range(-0.7, 0.7), 0.1, rng.randf_range(-0.7, 0.7))
+			if Caves.void_distance(Game.world_gen.caves, p - Vector3(0, 0.4, 0)) > -0.05:
+				continue
+			var l := length * rng.randf_range(0.5, 1.0)
+			var path: Array = []
+			var radii: Array = []
+			var sway := Vector3(rng.randf_range(-0.15, 0.15), 0, rng.randf_range(-0.15, 0.15))
+			for i in 6:
+				var t := i / 5.0
+				path.append(p + Vector3(0, -l * t, 0) + sway * sin(t * PI) + Vector3(sin(t * 7.0 + p.x), 0, cos(t * 6.0 + p.z)) * 0.03)
+				radii.append(lerpf(0.022 if leafy else 0.03, 0.01, t))
+			var vc := Color(0.24, 0.36, 0.16) if leafy else Color(0.62, 0.55, 0.44)
+			(a.rock as MeshKit).loft(path, radii, 4, _lit(vc, p), Callable(), Callable(), false, true)
+			if leafy:
+				for i in range(1, 6):
+					if rng.randf() < 0.25:
+						continue
+					var lp: Vector3 = path[i] + Vector3(rng.randf_range(-0.06, 0.06), 0, rng.randf_range(-0.06, 0.06))
+					(a.rock as MeshKit).add_primitive(MeshKit.sphere(rng.randf_range(0.06, 0.1), 5, 3),
+						Transform3D(Basis(Vector3.UP, rng.randf() * TAU).scaled(Vector3(1.4, 0.35, 0.8)), lp),
+						_lit(Color(0.27, 0.45, 0.18).darkened(rng.randf_range(0.0, 0.25)), lp), 0.1, 0.05)
+			elif rng.randf() < 0.5:   # roots fork
+				var fork: Vector3 = path[2]
+				(a.rock as MeshKit).loft([fork, fork + Vector3(rng.randf_range(-0.3, 0.3), -l * 0.35, rng.randf_range(-0.3, 0.3))], [0.014, 0.006], 4, _lit(vc, fork), Callable(), Callable(), false, true)
+		a.n.rock += 1
+	# Giant mushrooms in the fungal caves: a pale stalk, a broad glowing cap with gills underneath.
+	for sh: Array in plan.get("shrooms", []):
+		var foot: Vector3 = sh[0]
+		var hgt: float = sh[1]
+		var col: Color = SHROOM_COLOURS[int(sh[2])]
+		var a := _area(foot)
+		var lean := Vector3(rng.randf_range(-0.12, 0.12), 0, rng.randf_range(-0.12, 0.12)) * hgt
+		var path: Array = []
+		var radii: Array = []
+		for i in 5:
+			var t := i / 4.0
+			path.append(foot + Vector3(0, -0.1 + t * hgt, 0) + lean * t * t)
+			radii.append(lerpf(0.16, 0.09, t) * (1.0 + hgt * 0.1))
+		(a.rock as MeshKit).loft(path, radii, 8, _lit(Color(0.78, 0.74, 0.66), foot + Vector3(0, 0.5, 0)), Callable(), Callable(), true, false)
+		var top: Vector3 = path[4]
+		var cap := hgt * 0.42 + 0.25
+		(a.glow as MeshKit).add_primitive(MeshKit.sphere(cap, 14, 7), Transform3D(Basis().scaled(Vector3(1.0, 0.42, 1.0)), top + Vector3(0, 0.05, 0)), col, 0.08, 0.04)
+		(a.glow as MeshKit).add_primitive(MeshKit.cylinder(cap * 0.95, 0.12, cap * 0.12, 14), Transform3D(Basis(), top - Vector3(0, 0.02, 0)), col.darkened(0.45), 0.0, 0.0)
+		a.n.rock += 1
+		a.n.glow += 1
+		_solid(self, foot + Vector3(0, hgt * 0.5, 0), Vector3(0.36, hgt, 0.36))
+		if k_lights < MAX_GLOW_LIGHTS and rng.randf() < 0.4:
+			_glow_light(top + Vector3(0, -0.4, 0), col, 0.7, 6.0)
 	# Still pools: dark water in a shallow basin, a rim of wet stones.
 	for pool: Array in plan.pools:
 		var at: Vector3 = pool[0]
@@ -218,7 +330,7 @@ func _build_dressing(plan: Dictionary, rng: RandomNumberGenerator) -> void:
 			(a.glow as MeshKit).add_primitive(MeshKit.sphere(sz, 6, 3), Transform3D(Basis(Quaternion(Vector3.UP, nrm)).scaled(Vector3(1.0, 0.35, 1.0)), p),
 				col.darkened(rng.randf_range(0.0, 0.35)), 0.2, 0.0)
 		a.n.glow += 1
-		if k_lights < 14 and rng.randf() < 0.3:
+		if k_lights < MAX_GLOW_LIGHTS and rng.randf() < 0.3:
 			_glow_light(at + nrm * 0.4, col, 0.5, 4.5)
 	# Glow-worms: silk threads hanging from the ceiling, a glowing bead at the end of each.
 	for w: Array in plan.worms:
@@ -238,7 +350,7 @@ func _build_dressing(plan: Dictionary, rng: RandomNumberGenerator) -> void:
 			(a.glow as MeshKit).add_primitive(MeshKit.sphere(rng.randf_range(0.014, 0.024), 5, 3), Transform3D(Basis(), p - Vector3(0, len, 0)), col, 0.0, 0.0)
 		a.n.rock += 1
 		a.n.glow += 1
-		if k_lights < 14 and rng.randf() < 0.35:
+		if k_lights < MAX_GLOW_LIGHTS and rng.randf() < 0.35:
 			_glow_light(top - Vector3(0, 0.8, 0), col, 0.45, 5.0)
 	# Old miners' camps.
 	for camp: Array in plan.camps:

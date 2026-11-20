@@ -24,7 +24,7 @@ func _process(_d: float) -> bool:
 	match _step:
 		0:
 			if _f == 5:
-				_main.create_world("Voxel Test", 6161)
+				_main.create_world("Voxel Test", 8181)
 			if _main.state == _main.State.PLAYING:
 				_ChunkScript = load("res://scripts/world/chunk_generator.gd")
 				_VoxelScript = load("res://scripts/world/voxel_terrain.gd")
@@ -37,8 +37,8 @@ func _process(_d: float) -> bool:
 			# A centre chunk whose eight neighbours are all cave ground too, found from the cave plan.
 			var cx := -1
 			var cz := -1
-			for r: int in plan.roots:
-				var rp: Vector3 = plan.nodes[r].p
+			for nd: Dictionary in plan.nodes:
+				var rp: Vector3 = nd.p
 				for dz in range(-3, 4):
 					for dx in range(-3, 4):
 						if cx >= 0:

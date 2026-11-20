@@ -6,7 +6,8 @@ extends RefCounted
 ## so every machine plans the same caves. VoxelTerrain subtracts the planned voids from the ground.
 ##
 ## A plan is a Dictionary: {entrances, roots, nodes, rooms, chests, glow, segs, buckets}.
-## segs are [a: Vector3, b: Vector3, ra: float, rb: float] tunnel pieces; buckets map a 16 m grid
+## segs are [a: Vector3, b: Vector3, ra: float, rb: float, walk_a, walk_b, floor_a, floor_b, ceiling, theme_a,
+## theme_b] tunnel pieces (a capsule cut flat at its floor, and at its ceiling for lake basins); buckets map a 16 m grid
 ## cell to the segs that reach it, for quick lookups. A plan is read-only once made, so worker
 ## threads can use it safely.
 
@@ -17,6 +18,88 @@ const LINK_DISTANCE := 260.0
 const MAX_DEPTH := 24.0      ## tunnels never go deeper than this under the ground above
 const CLEARANCE := 1.5       ## metres of rock left over the top of a tunnel
 const BUCKET := 16.0
+
+## What a cave's rock is like, from the land above it (and a few deep chambers of crystal).
+enum Rock { STONE, ICE, MOSS, SAND, FUNGAL, CRYSTAL }
+const NO_FLOOR := -1.0e9
+const NO_CEILING := 1.0e9
+const MAX_LAKES := 5
+const MAX_CRYSTAL_ROOMS := 4
+
+
+static func theme_for_biome(b: int) -> int:
+	match b:
+		WorldGen.Biome.SNOW, WorldGen.Biome.TUNDRA, WorldGen.Biome.TAIGA:
+			return Rock.ICE
+		WorldGen.Biome.FOREST, WorldGen.Biome.JUNGLE, WorldGen.Biome.MARSH, WorldGen.Biome.AUTUMN:
+			return Rock.MOSS
+		WorldGen.Biome.DESERT, WorldGen.Biome.BADLANDS, WorldGen.Biome.DRYLANDS, WorldGen.Biome.BEACH:
+			return Rock.SAND
+		WorldGen.Biome.FUNGAL:
+			return Rock.FUNGAL
+	return Rock.STONE
+
+
+## The cave rock's colour for a theme (sRGB), on a wall or (up-facing) a floor.
+static func theme_rock(theme: int, floor_up: float, y: float) -> Color:
+	var stone: Color = Game.palette.rock.darkened(0.3)
+	match theme:
+		Rock.ICE:
+			return Color(0.5, 0.6, 0.68).lerp(Color(0.8, 0.86, 0.9), floor_up)
+		Rock.MOSS:
+			return stone.lerp(Color(0.24, 0.3, 0.17), 0.35 + 0.5 * floor_up)
+		Rock.SAND:
+			var band := 0.5 + 0.5 * sin(y * 2.3 + sin(y * 0.7) * 1.5)
+			return Color(0.56, 0.38, 0.25).lerp(Color(0.7, 0.53, 0.36), band).lerp(Color(0.66, 0.52, 0.38), floor_up * 0.5)
+		Rock.FUNGAL:
+			return Color(0.3, 0.24, 0.33).lerp(Color(0.38, 0.28, 0.42), floor_up)
+		Rock.CRYSTAL:
+			return Color(0.2, 0.2, 0.28).lerp(Color(0.28, 0.27, 0.36), floor_up)
+	return stone
+
+
+## The theme of the cave nearest p (the nearer end of the nearest piece), or -1 out of the caves.
+static func theme_at(plan: Dictionary, p: Vector3) -> int:
+	var hit := _nearest_piece(plan, p)
+	if hit.is_empty():
+		return -1
+	var sg: Array = hit.s
+	return int(sg[9]) if float(hit.t) < 0.5 else int(sg[10])
+
+
+## The cave wall's colour at p (blended along the nearest piece between its two ends' themes), sRGB.
+static func rock_color(plan: Dictionary, p: Vector3, up: float) -> Color:
+	var hit := _nearest_piece(plan, p)
+	var f := clampf((up - 0.45) / 0.4, 0.0, 1.0)
+	if hit.is_empty():
+		return theme_rock(Rock.STONE, f, p.y)
+	var sg: Array = hit.s
+	var ta := int(sg[9])
+	var tb := int(sg[10])
+	var c := theme_rock(ta, f, p.y)
+	if tb != ta:
+		c = c.lerp(theme_rock(tb, f, p.y), smoothstep(0.2, 0.8, float(hit.t)))
+	return c
+
+
+static func _nearest_piece(plan: Dictionary, p: Vector3) -> Dictionary:
+	if plan.is_empty():
+		return {}
+	var key := Vector2i(floori(p.x / BUCKET), floori(p.z / BUCKET))
+	if not plan.buckets.has(key):
+		return {}
+	var best := 99.0
+	var out := {}
+	for si: int in plan.buckets[key]:
+		var sg: Array = plan.segs[si]
+		var a: Vector3 = sg[0]
+		var ab: Vector3 = sg[1] - a
+		var t := clampf((p - a).dot(ab) / maxf(ab.length_squared(), 0.0001), 0.0, 1.0)
+		var d := _piece_distance(sg, p)
+		if d < best:
+			best = d
+			out = {"s": sg, "t": t}
+	return out
 
 
 ## Hillside spots where an entrance can open: steep faces between the lowlands and the peaks.
@@ -69,7 +152,7 @@ static func plan(gen: WorldGen) -> Dictionary:
 	for e in spots.size():
 		var s: Vector3 = spots[e]
 		# The mouth: just under the slope, so the void breaks the surface and makes an opening.
-		var root := _add_node(nodes, Vector3(s.x, gen.get_base_height(s.x, s.z) - 0.8, s.z), 2.4, e)
+		var root := _add_node(nodes, Vector3(s.x, gen.get_base_height(s.x, s.z) - 0.8, s.z), 2.4, e, 0.6)
 		roots.append(root)
 		# Start heading into the hill (uphill, and down a little).
 		var g := _base_grad(gen, s.x, s.z)   # points uphill
@@ -79,6 +162,9 @@ static func plan(gen: WorldGen) -> Dictionary:
 		var start_dir := (uphill.normalized() + Vector3(0, -0.4, 0)).normalized()
 		# Frontier items: [node index, direction, radius, steps left, tree]
 		var frontier: Array = [[root, start_dir, 2.4, 14 + rng.randi() % 10, e]]
+		var stretch := 0       # steps left of a hall or a crawl
+		var stretch_r := 0.0
+		var stretch_k := 0.8
 		while not frontier.is_empty() and nodes.size() < MAX_NODES:
 			var pick: int = rng.randi() % frontier.size()
 			var item: Array = frontier[pick]
@@ -98,22 +184,38 @@ static func plan(gen: WorldGen) -> Dictionary:
 				# Mostly tunnels, now and then a chamber (bigger, and a point for chests).
 				var is_room := rng.randf() < 0.1
 				var nr := clampf(rad + rng.randf_range(-0.5, 0.5), 1.2, 3.6)
+				var nk := 0.8
+				# Now and then a stretch of a different shape: a wide low hall, or a tight crawl.
+				if stretch <= 0 and rng.randf() < 0.08:
+					stretch = rng.randi_range(3, 6)
+					if rng.randf() < 0.55:
+						stretch_r = rng.randf_range(3.2, 4.0)   # hall
+						stretch_k = 0.62
+					else:
+						stretch_r = rng.randf_range(1.4, 1.55)  # narrow squeeze
+						stretch_k = 0.7
+				if stretch > 0:
+					stretch -= 1
+					nr = stretch_r
+					nk = stretch_k
+					is_room = false
 				if is_room:
 					nr = rng.randf_range(4.5, 7.5)
+					nk = 0.55   # chambers have wide floors
 				var fit: Variant = null
 				# A few headings: one that would cut through another tunnel at a different height (a hole in that one's
 				# floor) or drop away too steeply is swapped for a turn.
 				for attempt in 4:
 					var d := dir if attempt == 0 else dir.rotated(Vector3.UP, (0.7 + 0.35 * attempt) * (1.0 if attempt % 2 == 1 else -1.0))
-					fit = _follow(gen, nodes[cur], nodes[cur].p + d * length, nr)
-					if fit != null and _breaks_floor(nodes, fit, nr):
+					fit = _follow(gen, nodes[cur], nodes[cur].p + d * length, nr, nk)
+					if fit != null and _breaks_floor(nodes, fit, nr, nk):
 						fit = null
 					if fit != null:
 						dir = d
 						break
 				if fit == null:
 					break   # the rock ends here (or it would have to drop away too steeply): this branch stops
-				var nxt := _add_node(nodes, fit, nr, tree)
+				var nxt := _add_node(nodes, fit, nr, tree, nk)
 				edges.append([cur, nxt])
 				if is_room:
 					rooms.append(nxt)
@@ -154,16 +256,69 @@ static func plan(gen: WorldGen) -> Dictionary:
 	for r: int in rooms:
 		var n: Dictionary = nodes[r]
 		if chests.size() < 6 and rng.randf() < 0.45:
-			chests.append(n.p + Vector3(float(n.r) * 0.4, -float(n.r) + 1.0, 0.0))
+			chests.append(Vector3(n.p.x + float(n.r) * 0.4, _floor_of(n) + 1.0, n.p.z))
 	for i in nodes.size():
 		if glow.size() >= 90:
 			break
 		if rng.randf() < 0.1:
 			var n: Dictionary = nodes[i]
 			var ang := rng.randf() * TAU
-			glow.append(n.p + Vector3(cos(ang) * float(n.r) * 0.5, -float(n.r) * 0.8, sin(ang) * float(n.r) * 0.5))
+			glow.append(Vector3(n.p.x + cos(ang) * float(n.r) * 0.5, _floor_of(n), n.p.z + sin(ang) * float(n.r) * 0.5))
 	# How far each node is from daylight: the walk along the tunnels from the nearest mouth.
 	var walk := _walk_from(nodes, edges, roots)
+	# The rock takes after the land above: icy under the cold, mossy and rooty under the woods, sandstone under the
+	# dry lands, purple under the fungal grove.
+	for n: Dictionary in nodes:
+		var q: Vector3 = n.p
+		var weights: Dictionary = gen.biome_weights_at(q.x, q.z, gen.get_base_height(q.x, q.z))
+		var lead := WorldGen.Biome.MEADOW
+		var lw := -1.0
+		for b: int in weights:
+			if float(weights[b]) > lw:
+				lw = float(weights[b])
+				lead = b
+		n.theme = theme_for_biome(lead)
+	# Crystal caverns deep in, and underground lakes in other chambers.
+	var crystal_rooms: Array = []
+	var lakes: Array = []      # [water centre, water radius, room node]
+	var extra: Array = []      # extra pieces: lake basins and rifts
+	for r: int in rooms:
+		var n: Dictionary = nodes[r]
+		if crystal_rooms.size() < MAX_CRYSTAL_ROOMS and walk[r] > 35.0 and rng.randf() < 0.35:
+			n.theme = Rock.CRYSTAL
+			crystal_rooms.append(r)
+		elif lakes.size() < MAX_LAKES and walk[r] > 12.0 and rng.randf() < 0.3:
+			# A shallow bowl in the chamber's floor: under a metre deep at the middle, its sides a gentle slope you
+			# can walk out up (a sphere's cap, cut flat at the floor so it doesn't touch the chamber above).
+			var f := _floor_of(n)
+			# A lake's chamber is a big low hall: wider, its floor kept where it was (so the tunnels still meet it),
+			# where the rock above has room for it.
+			var big_r := minf(float(n.r) * 1.4, 9.5)
+			var big_k := 0.45
+			if f + big_k * big_r + big_r + CLEARANCE <= gen.get_base_height(n.p.x, n.p.z):
+				n.r = big_r
+				n.k = big_k
+				n.p = Vector3(n.p.x, f + big_k * big_r, n.p.z)
+			var rr := float(n.r) * sqrt(1.0 - float(n.k) * float(n.k)) * 0.8
+			var dep := 0.95
+			var big := (rr * rr + dep * dep) / (2.0 * dep)
+			var cen := Vector3(n.p.x, f - dep + big, n.p.z)
+			var water_y := f - 0.12
+			var h := cen.y - water_y
+			lakes.append([Vector3(n.p.x, water_y, n.p.z), sqrt(maxf(big * big - h * h, 0.0)) + 0.12, r])
+			extra.append([cen, cen + Vector3(0, 0.01, 0), big, big, walk[r], walk[r], NO_FLOOR, NO_FLOOR, f + 0.05, n.theme, n.theme])
+	# Rifts: tall cracks rising over some tunnels.
+	for i in nodes.size():
+		var n: Dictionary = nodes[i]
+		if walk[i] < 8.0 or float(n.r) > 3.0 or rng.randf() > 0.05:
+			continue
+		var top := gen.get_base_height(n.p.x, n.p.z) - CLEARANCE - 1.0
+		var rise := minf(rng.randf_range(3.0, 7.0), top - n.p.y)
+		if rise < 2.0:
+			continue
+		var rr := minf(float(n.r) * 0.55, 1.1)
+		var f := _floor_of(n)
+		extra.append([n.p, n.p + Vector3(rng.randf_range(-0.8, 0.8), rise, rng.randf_range(-0.8, 0.8)), rr, rr * 0.5, walk[i], walk[i], f, f, NO_CEILING, n.theme, n.theme])
 	# Tunnel pieces: each edge is two straight pieces with a slight bend, so they read as dug rock. Each piece also
 	# carries the walk from daylight at its two ends.
 	var segs: Array = []
@@ -178,11 +333,12 @@ static func plan(gen: WorldGen) -> Dictionary:
 		var wm := minf(wa + a.p.distance_to(mid), wb + b.p.distance_to(mid))
 		# Each piece carries its floor at both ends: the tunnel is cut flat there (see _piece_distance), so the floor
 		# runs straight from node to node instead of dipping into the bottom of each round chamber.
-		var fa := float(a.p.y) - FLOOR_K * float(a.r)
-		var fb := float(b.p.y) - FLOOR_K * float(b.r)
+		var fa := _floor_of(a)
+		var fb := _floor_of(b)
 		var fm := (fa + fb) * 0.5
-		segs.append([a.p, mid, float(a.r), mid_r, wa, wm, fa, fm])
-		segs.append([mid, b.p, mid_r, float(b.r), wm, wb, fm, fb])
+		segs.append([a.p, mid, float(a.r), mid_r, wa, wm, fa, fm, NO_CEILING, a.theme, b.theme])
+		segs.append([mid, b.p, mid_r, float(b.r), wm, wb, fm, fb, NO_CEILING, a.theme, b.theme])
+	segs.append_array(extra)
 	var buckets := {}
 	for si in segs.size():
 		var s: Array = segs[si]
@@ -196,7 +352,7 @@ static func plan(gen: WorldGen) -> Dictionary:
 					buckets[key] = []
 				buckets[key].append(si)
 	var out := {"entrances": spots, "roots": roots, "nodes": nodes, "rooms": rooms, "chests": chests,
-		"glow": glow, "segs": segs, "buckets": buckets}
+		"glow": glow, "segs": segs, "buckets": buckets, "lakes": lakes, "crystal_rooms": crystal_rooms}
 	_dress(out, gen, walk)
 	return out
 
@@ -237,6 +393,15 @@ static func _dress(plan: Dictionary, gen: WorldGen, walk: PackedFloat32Array) ->
 	var camps: Array = []
 	var lairs: Array = []
 	var roosts: Array = []
+	var crystals: Array = []   # [foot, direction it grows, length, colour index]
+	var hanging: Array = []    # [ceiling spot, length, kind: 0 leafy vine, 1 pale roots]
+	var shrooms: Array = []    # [foot, height, colour index]
+	var lake_at := {}
+	for lk: Array in plan.lakes:
+		lake_at[int(lk[2])] = lk
+	var crystal_room := {}
+	for r: int in plan.crystal_rooms:
+		crystal_room[r] = true
 	var is_room := {}
 	for r: int in plan.rooms:
 		is_room[r] = true
@@ -252,13 +417,32 @@ static func _dress(plan: Dictionary, gen: WorldGen, walk: PackedFloat32Array) ->
 		var c: Vector3 = n.p
 		var r := float(n.r)
 		var w: float = walk[i]
+		var theme := int(n.theme)
+		# Vines hang over the mouths (thickest where the land above is green), and roots and vines from the ceilings
+		# of the green caves further in.
+		var vine_chance := 0.0
+		if w < 6.0:
+			vine_chance = 0.9 if theme == Rock.MOSS else (0.45 if theme == Rock.STONE else 0.0)
+		elif theme == Rock.MOSS:
+			vine_chance = 0.55 if is_room.has(i) else 0.3
+		if rng.randf() < vine_chance:
+			for k in (4 if w < 6.0 else 2):
+				var ce: Variant = ceiling_at(plan, c + Vector3(rng.randf_range(-0.6, 0.6), 0, rng.randf_range(-0.6, 0.6)) * r)
+				if ce != null:
+					var under: Variant = floor_at(plan, (ce as Vector3) - Vector3(0, 0.3, 0))
+					var room_h: float = (ce as Vector3).y - (under as Vector3).y if under != null else 2.0
+					hanging.append([ce, minf(rng.randf_range(0.8, 2.8), room_h * 0.7), 0 if w < 30.0 else 1])
 		if w < 6.0:
 			continue   # leave the mouths clear
 		var depth := gen.get_base_height(c.x, c.z) - c.y
 		var room: bool = is_room.has(i)
 		# Ore and crystals, hugging the walls on the floor. Deeper rock holds better: the second metal near the
 		# top, the third further down, crystals deepest.
-		var tries := 3 if room else 1
+		var crystal: bool = crystal_room.has(i)
+		var lake: bool = lake_at.has(i)
+		var tries := (6 if crystal else 3) if room else 1
+		if lake:
+			tries = 0
 		for t in tries:
 			var ang := rng.randf() * TAU
 			var roll := rng.randf()
@@ -269,19 +453,25 @@ static func _dress(plan: Dictionary, gen: WorldGen, walk: PackedFloat32Array) ->
 			if at == null:
 				continue
 			var kind := "ore_t2"
-			if depth > 13.0 and kind_roll < 0.12 + clampf((w - 40.0) / 250.0, 0.0, 0.14):
+			if crystal and kind_roll < 0.6:
+				kind = "gem_t4"
+			elif depth > 13.0 and kind_roll < 0.12 + clampf((w - 40.0) / 250.0, 0.0, 0.14):
 				kind = "gem_t4"
 			elif depth > 7.0 and kind_roll < 0.7:
 				kind = "ore_t3"
 			ores.append([at, kind])
 		# Stalagmites and stalactites: clusters in chambers, a few in the tunnels.
 		var spikes := rng.randi_range(3, 7) if room else (rng.randi_range(0, 2) if rng.randf() < 0.4 else 0)
+		if theme == Rock.ICE:
+			spikes += 2 if room else (1 if rng.randf() < 0.5 else 0)   # icicles
+		elif theme == Rock.SAND or crystal:
+			spikes /= 2
 		for t in spikes:
 			var ang := rng.randf() * TAU
 			var off := Vector3(cos(ang), 0, sin(ang)) * r * rng.randf_range(0.25, 0.8)
 			var up := rng.randf() < 0.5
 			var len := rng.randf_range(0.5, 1.0) * minf(r * 0.45, 2.6)
-			if up:
+			if up and not lake:
 				var f: Variant = settle(plan, c + off, 0.35)
 				if f != null and stalagmites.size() < MAX_STALAGMITES and rng.randf() < 0.75:
 					stalagmites.append([f, len / 1.6])
@@ -292,21 +482,27 @@ static func _dress(plan: Dictionary, gen: WorldGen, walk: PackedFloat32Array) ->
 					if rng.randf() < 0.35:
 						drips.append(ce - Vector3(0, len, 0))
 		# Pillars where a chamber is tall enough: floor to ceiling, thick in the middle.
-		if room and rng.randf() < 0.45:
+		if room and not lake and not crystal and rng.randf() < 0.45:
 			var ang := rng.randf() * TAU
 			var at := c + Vector3(cos(ang), 0, sin(ang)) * r * 0.45
 			var f: Variant = floor_at(plan, at)
 			var ce: Variant = ceiling_at(plan, at)
 			if f != null and ce != null and (ce as Vector3).y - (f as Vector3).y > 2.5:
 				pillars.append([f, (ce as Vector3).y, rng.randf_range(0.45, 0.8)])
-		# Rubble along the tunnels.
-		if rng.randf() < 0.22:
+		# Rubble along the tunnels (heaps of it in the crumbling sandstone).
+		if not lake and rng.randf() < (0.45 if theme == Rock.SAND else 0.22):
 			var ang := rng.randf() * TAU
 			var f: Variant = floor_at(plan, c + Vector3(cos(ang), 0, sin(ang)) * r * 0.5)
 			if f != null:
 				rubble.append([f, rng.randf_range(0.5, 1.1)])
 		# A still pool in some chambers, with water dripping into it.
-		if room and rng.randf() < 0.3:
+		if lake:
+			# Water drips into the lake from the ceiling.
+			var ce: Variant = ceiling_at(plan, c)
+			if ce != null:
+				for k in 5:
+					drips.append((ce as Vector3) + Vector3(rng.randf_range(-1, 1), 0, rng.randf_range(-1, 1)) * float(lake_at[i][1]) * 0.6)
+		elif room and not crystal and rng.randf() < 0.3:
 			var f: Variant = floor_at(plan, c + Vector3(rng.randf_range(-0.3, 0.3), 0, rng.randf_range(-0.3, 0.3)) * r)
 			if f != null:
 				var pr := r * rng.randf_range(0.26, 0.36)   # inside the dip of the floor, so its edge meets the rock
@@ -315,6 +511,36 @@ static func _dress(plan: Dictionary, gen: WorldGen, walk: PackedFloat32Array) ->
 				if ce != null:
 					for k in 3:
 						drips.append((ce as Vector3) + Vector3(rng.randf_range(-1, 1), 0, rng.randf_range(-1, 1)) * pr * 0.5)
+		# A crystal cavern: great glowing crystals growing from the floor by the walls, out of the walls, and down from
+		# the ceiling, each room its own colour.
+		if crystal:
+			var hue := rng.randi() % 3
+			for k in rng.randi_range(9, 14):
+				var ang := rng.randf() * TAU
+				var out := Vector3(cos(ang), 0, sin(ang))
+				var where := rng.randf()
+				if where < 0.45:
+					var f: Variant = settle(plan, c + out * r * rng.randf_range(0.45, 0.7), 0.3)
+					if f != null:
+						crystals.append([f, (Vector3.UP * 1.4 + out * rng.randf_range(0.2, 0.9)).normalized(), rng.randf_range(0.6, 2.2), hue])
+				elif where < 0.8:
+					var wall: Variant = wall_at(plan, c + Vector3(0, rng.randf_range(-0.2, 0.5) * r, 0), out)
+					if wall != null:
+						crystals.append([wall, (-out + Vector3(0, rng.randf_range(-0.3, 0.6), 0)).normalized(), rng.randf_range(0.5, 1.5), hue])
+				else:
+					var ce: Variant = ceiling_at(plan, c + out * r * rng.randf_range(0.0, 0.5))
+					if ce != null:
+						crystals.append([ce, (Vector3.DOWN * 1.5 + out * rng.randf_range(0.0, 0.6)).normalized(), rng.randf_range(0.5, 1.4), hue])
+		# Giant glowing mushrooms in the fungal caves.
+		if theme == Rock.FUNGAL and not lake and rng.randf() < (0.8 if room else 0.25):
+			for k in (rng.randi_range(2, 4) if room else 1):
+				var ang := rng.randf() * TAU
+				var f: Variant = settle(plan, c + Vector3(cos(ang), 0, sin(ang)) * r * rng.randf_range(0.3, 0.6), 0.5)
+				if f != null:
+					var ce: Variant = ceiling_at(plan, f as Vector3 + Vector3(0, 0.3, 0))
+					var headroom: float = (ce as Vector3).y - (f as Vector3).y if ce != null else 2.5
+					if headroom > 1.6:
+						shrooms.append([f, minf(rng.randf_range(1.0, 2.6), headroom - 0.5), rng.randi() % 3])
 		# Glowing moss on the walls and glow-worms on the ceilings, more of them the further from daylight.
 		var dark := clampf((w - 15.0) / 40.0, 0.0, 1.0)
 		if rng.randf() < 0.25 * dark:
@@ -332,7 +558,9 @@ static func _dress(plan: Dictionary, gen: WorldGen, walk: PackedFloat32Array) ->
 			if ce != null:
 				roosts.append(ce)
 		# A cave beast's lair in deep chambers; an old miners' camp in others.
-		if room and w > 45.0 and lairs.size() < 4 and rng.randf() < 0.4:
+		if lake or crystal:
+			pass
+		elif room and w > 45.0 and lairs.size() < 4 and rng.randf() < 0.4:
 			var f: Variant = floor_at(plan, c)
 			if f != null:
 				lairs.append(f)
@@ -375,6 +603,22 @@ static func _dress(plan: Dictionary, gen: WorldGen, walk: PackedFloat32Array) ->
 	pillars = away.call(pillars, 3.6)
 	rubble = away.call(rubble, 3.2)
 	pools = away.call(pools, 4.0)
+	shrooms = away.call(shrooms, 3.2)
+	# Nothing stands in a lake (the chests and glowcaps placed with the tunnels included).
+	var dry := func(list: Array) -> Array:
+		return list.filter(func(it: Variant) -> bool:
+			var p: Vector3 = it[0] if it is Array else it
+			for lk: Array in plan.lakes:
+				var wp: Vector3 = lk[0]
+				if Vector2(p.x - wp.x, p.z - wp.z).length() < float(lk[1]) + 0.5 and absf(p.y - wp.y) < 2.5:
+					return false
+			return true)
+	ores = dry.call(ores)
+	stalagmites = dry.call(stalagmites)
+	rubble = dry.call(rubble)
+	shrooms = dry.call(shrooms)
+	plan.chests = dry.call(plan.chests)
+	plan.glow = dry.call(plan.glow)
 	plan.ores = ores
 	plan.stalagmites = stalagmites
 	plan.stalactites = stalactites
@@ -387,6 +631,9 @@ static func _dress(plan: Dictionary, gen: WorldGen, walk: PackedFloat32Array) ->
 	plan.camps = camps
 	plan.lairs = lairs
 	plan.roosts = roosts
+	plan.crystals = crystals
+	plan.hanging = hanging
+	plan.shrooms = shrooms
 
 
 ## Where the miners' camp keeps its things, in the camp's own frame (x right, z back): the stacked crates, the
@@ -554,17 +801,17 @@ const FLOOR_UP := 0.45
 
 ## A node placed after `from`, near p, with radius r: its floor (y - r) no steeper from `from`'s floor than the
 ## cave allows, and fitted under the ground like any node. Null if no such place fits (the branch ends there).
-static func _follow(gen: WorldGen, from: Dictionary, p: Vector3, r: float) -> Variant:
+static func _follow(gen: WorldGen, from: Dictionary, p: Vector3, r: float, k := 0.8) -> Variant:
 	var fit: Variant = _fit(gen, p, r)
 	if fit == null:
 		return null
 	var q: Vector3 = fit
 	var run := Vector2(q.x - from.p.x, q.z - from.p.z).length()
-	var prev_floor: float = from.p.y - FLOOR_K * float(from.r)
-	var floor_y := clampf(q.y - FLOOR_K * r, prev_floor - FLOOR_DOWN * run, prev_floor + FLOOR_UP * run)
+	var prev_floor: float = _floor_of(from)
+	var floor_y := clampf(q.y - k * r, prev_floor - FLOOR_DOWN * run, prev_floor + FLOOR_UP * run)
 	var top := gen.get_base_height(q.x, q.z) - r - CLEARANCE
 	var low := maxf(top - MAX_DEPTH, Game.SEA_LEVEL + r + 1.0)
-	var y := floor_y + FLOOR_K * r
+	var y := floor_y + k * r
 	if y > top + 0.01 or y < low - 0.01:
 		return null   # the ground won't hold a floor that follows on gently here
 	return Vector3(q.x, y, q.z)
@@ -574,12 +821,17 @@ static func _follow(gen: WorldGen, from: Dictionary, p: Vector3, r: float) -> Va
 ## you can walk both ways.
 static func _walkable_link(a: Dictionary, b: Dictionary) -> bool:
 	var run := Vector2(a.p.x - b.p.x, a.p.z - b.p.z).length()
-	var rise := absf((a.p.y - FLOOR_K * float(a.r)) - (b.p.y - FLOOR_K * float(b.r)))
+	var rise := absf(_floor_of(a) - _floor_of(b))
 	return rise <= minf(FLOOR_DOWN, FLOOR_UP) * run
 
 
-static func _add_node(nodes: Array, p: Vector3, r: float, tree: int) -> int:
-	nodes.append({"p": p, "r": r, "tree": tree})
+## A node's floor height: its middle less its share k of the radius (see FLOOR_K).
+static func _floor_of(n: Dictionary) -> float:
+	return float(n.p.y) - float(n.get("k", FLOOR_K)) * float(n.r)
+
+
+static func _add_node(nodes: Array, p: Vector3, r: float, tree: int, k := FLOOR_K) -> int:
+	nodes.append({"p": p, "r": r, "tree": tree, "k": k, "theme": Rock.STONE})
 	var key := Vector2i(floori(p.x / NODE_CELL), floori(p.z / NODE_CELL))
 	var grid: Dictionary = _node_grid
 	if not grid.has(key):
@@ -594,8 +846,8 @@ static var _node_grid := {}   ## node indices by 16 m cell, for the plan being m
 
 ## Whether a node at p (radius r) would overlap another tunnel whose floor is at a height you couldn't walk between
 ## over that distance: one would open a pit or a ledge in the other's floor.
-static func _breaks_floor(nodes: Array, p: Vector3, r: float) -> bool:
-	var f := p.y - FLOOR_K * r
+static func _breaks_floor(nodes: Array, p: Vector3, r: float, k := FLOOR_K) -> bool:
+	var f := p.y - k * r
 	var cx := floori(p.x / NODE_CELL)
 	var cz := floori(p.z / NODE_CELL)
 	for dz in range(-1, 2):
@@ -608,10 +860,10 @@ static func _breaks_floor(nodes: Array, p: Vector3, r: float) -> bool:
 				if run > r + rn + 0.5:
 					continue
 				# One above the other with rock between: fine.
-				var fn := q.y - FLOOR_K * rn
+				var fn := _floor_of(n)
 				if q.y + rn < f - 0.6 or p.y + r < fn - 0.6:
 					continue
-				if absf(fn - f) > 0.5 * run + 2.5:
+				if absf(fn - f) > 0.5 * run + 1.4:
 					return true
 	return false
 
@@ -693,7 +945,7 @@ static func sky_seen(plan: Dictionary, p: Vector3) -> float:
 		var a: Vector3 = s[0]
 		var ab: Vector3 = s[1] - a
 		var t := clampf((p - a).dot(ab) / maxf(ab.length_squared(), 0.0001), 0.0, 1.0)
-		var d := maxf(p.distance_to(a + ab * t) - lerpf(float(s[2]), float(s[3]), t), lerpf(float(s[6]), float(s[7]), t) - p.y)
+		var d := _piece_distance(s, p)
 		if d < best:
 			best = d
 			best_walk = lerpf(float(s[4]), float(s[5]), t)
@@ -708,5 +960,5 @@ static func _piece_distance(s: Array, p: Vector3) -> float:
 	var ab: Vector3 = s[1] - a
 	var t := clampf((p - a).dot(ab) / maxf(ab.length_squared(), 0.0001), 0.0, 1.0)
 	var d := p.distance_to(a + ab * t) - lerpf(float(s[2]), float(s[3]), t)
-	# The flat floor: no void below it.
-	return maxf(d, lerpf(float(s[6]), float(s[7]), t) - p.y)
+	# The flat floor: no void below it (and, for a lake's basin, none above its flat top).
+	return maxf(maxf(d, lerpf(float(s[6]), float(s[7]), t) - p.y), p.y - float(s[8]))
