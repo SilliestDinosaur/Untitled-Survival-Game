@@ -97,6 +97,12 @@ func _ready() -> void:
 	set_active(false)
 
 
+## Places marked on the map: [{"pos": [x, z], "name", "color" (index)}], and where you last fell ([x, y, z] or []).
+var markers: Array = []
+var death_pos: Array = []
+const MAX_MARKERS := 24
+
+
 ## Everything about the player that goes into a save file.
 func to_save_data() -> Dictionary:
 	return {
@@ -109,6 +115,8 @@ func to_save_data() -> Dictionary:
 		"warmth": stats.warmth,
 		"effects": stats.effects.duplicate(),
 		"inventory": inventory.to_data(),
+		"markers": markers.duplicate(true),
+		"death": death_pos,
 	}
 
 
@@ -126,6 +134,8 @@ func apply_save_data(d: Dictionary) -> void:
 	stats.stamina = float(d.get("stamina", stats.max_stamina))
 	stats.warmth = float(d.get("warmth", stats.max_warmth))
 	stats.effects = d.get("effects", {})
+	markers = d.get("markers", [])
+	death_pos = d.get("death", [])
 	if d.has("inventory"):
 		inventory.from_data(d.inventory)
 	elif d.has("items"):   # older saves: item counts only

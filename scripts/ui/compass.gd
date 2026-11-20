@@ -47,7 +47,7 @@ func _draw() -> void:
 		draw_circle(at, 7.5, Color(0.12, 0.09, 0.07, 0.85 * alpha))
 		draw_circle(at, 5.8, Color(m.color, alpha))
 		var font := UITheme.BOLD_FONT
-		var initial: String = String(m.name).substr(0, 1).to_upper()
+		var initial: String = String(m.get("icon", "")) if String(m.get("icon", "")) != "" else String(m.name).substr(0, 1).to_upper()
 		var iw := font.get_string_size(initial, HORIZONTAL_ALIGNMENT_LEFT, -1, 11).x
 		draw_string(font, at + Vector2(-iw * 0.5, 4.0), initial, HORIZONTAL_ALIGNMENT_LEFT, -1, 11, Color(1, 1, 1, alpha))
 		if off:

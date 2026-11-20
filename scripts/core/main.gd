@@ -117,6 +117,8 @@ func _ready() -> void:
 
 	# Dying drops everything you carried and sends you back to the spawn point.
 	player.stats.died.connect(func() -> void:
+		var at: Vector3 = player.global_position
+		player.death_pos = [at.x, at.y, at.z]   # marked on the map and compass, to go back for your things
 		player.reset_inventory()
 		_start_loading(_spawn, "You collapsed... waking up on")
 		save_now())

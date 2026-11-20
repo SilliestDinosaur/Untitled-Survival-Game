@@ -227,9 +227,19 @@ func show_arrival(world_name: String) -> void:
 ## Bearings and colours of the other players, for the compass (north = -Z).
 func _friend_markers() -> Array:
 	var out := []
+	var here: Vector3 = player.global_position
+	# Your own marks, and where you last fell (your things are lying there).
+	var mine := func(x: float, z: float, name: String, col: Color, icon: String) -> void:
+		var d := Vector2(x - here.x, z - here.z)
+		if d.length() < 2.0:
+			return
+		out.append({"bearing": fposmod(rad_to_deg(atan2(d.x, -d.y)), 360.0), "name": name, "color": col, "icon": icon})
+	if player.death_pos.size() == 3:
+		mine.call(float(player.death_pos[0]), float(player.death_pos[2]), "Where you fell", Color(0.75, 0.2, 0.18), "✝")
+	for m: Dictionary in player.markers:
+		mine.call(float(m.pos[0]), float(m.pos[1]), String(m.name), WorldMap.MARK_COLORS[int(m.get("color", 0)) % WorldMap.MARK_COLORS.size()], "")
 	if not Net.is_online():
 		return out
-	var here: Vector3 = player.global_position
 	for peer: int in Net.avatars:
 		var a = Net.avatars[peer]
 		if not a.has_pose:

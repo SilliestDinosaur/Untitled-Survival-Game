@@ -1,7 +1,14 @@
 class_name WorldMap
 extends Control
 ## The map: the whole island, under a veil of fog that lifts where you've been. Shows the cave
-## entrances you've found, your bases, your friends and where you are. Opened with the map key.
+## entrances you've found, your bases, your friends, your own marks, where you last fell and where you are.
+## Opened with the map key. Click to put a mark down (and name it), right-click a mark to take it away.
+
+const MARK_COLORS := [Color(0.85, 0.55, 0.2), Color(0.3, 0.6, 0.85), Color(0.45, 0.72, 0.35), Color(0.7, 0.42, 0.75), Color(0.85, 0.75, 0.3)]
+var _origin := Vector2.ZERO
+var _side_px := 1.0
+var _naming := -1           ## the mark being named
+var _name_edit: LineEdit
 
 const PX := 8.0            ## metres per terrain pixel on the map
 const ROWS_PER_FRAME := 24 ## terrain rows built per frame (keeps opening the map smooth)
@@ -116,6 +123,8 @@ func _draw() -> void:
 	var box := minf(size.x, size.y) * 0.84
 	var side := box
 	var origin := (size - Vector2(side, side)) * 0.5
+	_origin = origin
+	_side_px = side
 	draw_rect(Rect2(Vector2.ZERO, size), Color(0.02, 0.02, 0.03, 0.72))
 	draw_rect(Rect2(origin, Vector2(side, side)).grow(14.0), UITheme.PAPER)
 	draw_rect(Rect2(origin, Vector2(side, side)).grow(14.0), UITheme.INK, false, 2.0)
@@ -157,6 +166,23 @@ func _draw() -> void:
 			draw_circle(at, 4.6, col)
 			var initial := String(a.display_name).substr(0, 1).to_upper()
 			draw_string(UITheme.BOLD_FONT, at + Vector2(7, 4), initial, HORIZONTAL_ALIGNMENT_LEFT, -1, 13, UITheme.INK)
+	# Where you fell, and your marks.
+	if player and player.death_pos.size() == 3:
+		var at := _to_map(Vector3(player.death_pos[0], 0, player.death_pos[2]), origin, side)
+		draw_circle(at, 8.0, Color(0.12, 0.08, 0.07))
+		draw_string(UITheme.BOLD_FONT, at + Vector2(-5, 5), "✝", HORIZONTAL_ALIGNMENT_LEFT, -1, 15, Color(0.95, 0.4, 0.35))
+		draw_string(UITheme.BOLD_FONT, at + Vector2(11, 5), "Where you fell", HORIZONTAL_ALIGNMENT_LEFT, -1, 13, UITheme.INK)
+	if player:
+		for i in player.markers.size():
+			var m: Dictionary = player.markers[i]
+			var at := _to_map(Vector3(m.pos[0], 0, m.pos[1]), origin, side)
+			var col: Color = MARK_COLORS[int(m.get("color", 0)) % MARK_COLORS.size()]
+			# A pin: a dot on a little stalk.
+			draw_line(at, at - Vector2(0, 12), UITheme.INK, 2.0, true)
+			draw_circle(at - Vector2(0, 14), 6.0, UITheme.INK)
+			draw_circle(at - Vector2(0, 14), 4.6, col)
+			if i != _naming:
+				draw_string(UITheme.BOLD_FONT, at + Vector2(9, -9), String(m.name), HORIZONTAL_ALIGNMENT_LEFT, -1, 14, UITheme.INK)
 	# You.
 	if player:
 		var at := _to_map(player.global_position, origin, side)
@@ -167,4 +193,65 @@ func _draw() -> void:
 		draw_colored_polygon(PackedVector2Array([tip, at - dir * 4.0 + side_v * 5.0, at - dir * 4.0 - side_v * 5.0]), UITheme.ACCENT)
 	# North, and how to close.
 	draw_string(UITheme.HEADING_FONT, Vector2(size.x * 0.5 - 6, origin.y - 22), "N", HORIZONTAL_ALIGNMENT_LEFT, -1, 20, UITheme.INK)
-	draw_string(UITheme.BOLD_FONT, Vector2(origin.x, origin.y + side + 40), "Walk around to uncover the island  ·  M or Esc to close", HORIZONTAL_ALIGNMENT_LEFT, -1, 15, Color(0.92, 0.9, 0.84))
+	draw_string(UITheme.BOLD_FONT, Vector2(origin.x, origin.y + side + 40), "Walk around to uncover the island  ·  Click to mark a place, right-click a mark to remove it  ·  M or Esc to close", HORIZONTAL_ALIGNMENT_LEFT, -1, 15, Color(0.92, 0.9, 0.84))
+
+
+## Click: a new mark there, named straight away. Right-click: the mark under the mouse goes.
+func _gui_input(event: InputEvent) -> void:
+	if not (event is InputEventMouseButton and event.pressed) or player == null:
+		return
+	var mp: Vector2 = event.position
+	var rel := (mp - _origin) / _side_px
+	if rel.x < 0.0 or rel.y < 0.0 or rel.x > 1.0 or rel.y > 1.0:
+		return
+	var world := rel * Game.WORLD_SIZE
+	if event.button_index == MOUSE_BUTTON_RIGHT:
+		var near := -1
+		var best := 14.0
+		for i in player.markers.size():
+			var at := _to_map(Vector3(player.markers[i].pos[0], 0, player.markers[i].pos[1]), _origin, _side_px) - Vector2(0, 10)
+			if at.distance_to(mp) < best:
+				best = at.distance_to(mp)
+				near = i
+		if near >= 0:
+			player.markers.remove_at(near)
+			_end_naming()
+			Audio.play(Audio.sfx.click, -8.0, 0.8)
+			queue_redraw()
+		accept_event()
+	elif event.button_index == MOUSE_BUTTON_LEFT:
+		if player.markers.size() >= player.MAX_MARKERS:
+			return
+		player.markers.append({"pos": [world.x, world.y], "name": "Mark %d" % (player.markers.size() + 1), "color": player.markers.size() % MARK_COLORS.size()})
+		Audio.play(Audio.sfx.click, -8.0, 1.2)
+		_start_naming(player.markers.size() - 1, mp)
+		accept_event()
+
+
+func _start_naming(i: int, at: Vector2) -> void:
+	_end_naming()
+	_naming = i
+	_name_edit = LineEdit.new()
+	_name_edit.text = String(player.markers[i].name)
+	_name_edit.select_all_on_focus = true
+	_name_edit.max_length = 24
+	_name_edit.custom_minimum_size = Vector2(170, 0)
+	_name_edit.position = at + Vector2(10, -32)
+	add_child(_name_edit)
+	_name_edit.grab_focus()
+	_name_edit.select_all()
+	_name_edit.text_submitted.connect(func(_t: String) -> void: _end_naming())
+	_name_edit.focus_exited.connect(_end_naming)
+	queue_redraw()
+
+
+func _end_naming() -> void:
+	if _naming >= 0 and _name_edit and _naming < player.markers.size():
+		var t := _name_edit.text.strip_edges()
+		player.markers[_naming].name = t if t != "" else "Mark %d" % (_naming + 1)
+	_naming = -1
+	if _name_edit:
+		var e := _name_edit
+		_name_edit = null
+		e.queue_free()
+	queue_redraw()
