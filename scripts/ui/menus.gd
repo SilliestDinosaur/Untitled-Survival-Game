@@ -662,6 +662,7 @@ class MultiplayerBox extends VBoxContainer:
 	var _lan_row: HBoxContainer
 	var _lan: Label
 	var _info: Label
+	var _retry: Button
 	var _who: Label
 
 	func _ready() -> void:
@@ -684,6 +685,12 @@ class MultiplayerBox extends VBoxContainer:
 		_info.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 		_info.custom_minimum_size = Vector2(340, 0)
 		add_child(_info)
+		_retry = UITheme.button("Try again", false, 160)
+		_retry.custom_minimum_size = Vector2(160, 34)
+		_retry.pressed.connect(func() -> void:
+			Net.retry_relay()
+			refresh())
+		add_child(_retry)
 		_who = UITheme.label("", 15, UITheme.INK)
 		_who.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 		_who.custom_minimum_size = Vector2(340, 0)
@@ -720,8 +727,15 @@ class MultiplayerBox extends VBoxContainer:
 		match "ok" if Net.relay_state == "ok" else ("working" if Net.relay_state == "working" and Net.upnp_state != "ok" else Net.upnp_state):
 			"working": _info.text = "Setting up..."
 			"ok": _info.text = "Give your friend the invite code. They enter it under Play with Friends."
-			"failed": _info.text = "Your router didn't allow automatic setup, so the invite code isn't available. Friends on your Wi-Fi can use the same-network code. For internet play, forward UDP port %d to this computer, or both join a virtual LAN (Tailscale, ZeroTier, Radmin) and share that address." % Net.port
+			"failed":
+				if Net.relay_state == "failed" and Net.relay_server() != "":
+					# The usual cause: the matchmaking server is down or has moved (say so, rather than blame the router).
+					_info.text = "Couldn't get an invite code: the matchmaking server (%s) %s. It's tried again every 30 seconds. Friends on your Wi-Fi can still use the same-network code." % [
+						Net.relay_server(), "isn't answering" if Net.relay_error == "unreachable" else "didn't reply"]
+				else:
+					_info.text = "Your router didn't allow automatic setup, so the invite code isn't available. Friends on your Wi-Fi can use the same-network code. For internet play, forward UDP port %d to this computer, or both join a virtual LAN (Tailscale, ZeroTier, Radmin) and share that address." % Net.port
 			_: _info.text = "Let up to %d friends join this world. Their characters are saved here." % (Net.MAX_PLAYERS - 1) if not Net.is_client() else ""
+		_retry.visible = Net.is_host() and Net.relay_state == "failed" and Net.invite_code == ""
 		var names: Array[String] = []
 		for p: int in Net.players:
 			names.append(String(Net.players[p].name))

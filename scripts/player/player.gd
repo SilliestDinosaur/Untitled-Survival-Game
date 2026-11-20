@@ -931,6 +931,9 @@ const FIRE_WARMTH_RANGE := 7.0
 ## How cold it is here right now, and how much nearby fire (or a held torch) warms you.
 func _update_exposure() -> void:
 	fire_distance = INF
+	# Back where you fell: its mark has done its job.
+	if death_pos.size() == 3 and global_position.distance_to(Vector3(death_pos[0], death_pos[1], death_pos[2])) < 3.0:
+		death_pos = []
 	var p := global_position
 	var gen: WorldGen = Game.world_gen
 	var night := 1.0 - Game.daylight()

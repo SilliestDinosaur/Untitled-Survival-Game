@@ -55,6 +55,7 @@ var invite_code := ""        ## for friends anywhere: the meeting server's code,
 var lan_code := ""           ## works on the same network
 var upnp_state := ""         ## "" | working | ok | failed
 var relay_state := ""        ## "" | working | ok | failed: the host's registration with the meeting server
+var relay_error := ""        ## why the meeting server didn't give a code: "" | "unreachable" | "no_answer"
 var relay_code := ""         ## the host's code on the meeting server (the invite code when it's there)
 var joining := false         ## a guest is finding the host through the meeting server
 var join_route := ""         ## how this guest got in: "address" | "direct" (punched through) | "relay"
@@ -184,15 +185,25 @@ func relay_server() -> String:
 	return env if env != "" else RELAY_SERVER
 
 
+## Host: ask the meeting server for a code again now (the menu's Try again), rather than at the next retry.
+func retry_relay() -> void:
+	if is_host() and relay_state == "failed" and relay_server() != "":
+		_relay_host_start()
+		status_changed.emit(_host_status())
+
+
 ## Host: register with the meeting server so friends anywhere can find this game by its code.
 func _relay_host_start() -> void:
 	relay_state = "working"
 	_relay = RelayClient.new()
 	add_child(_relay)
 	var relay := _relay
-	if not await relay.open(relay_server()) or not await relay.register():
+	var opened: bool = await relay.open(relay_server())
+	var registered: bool = opened and await relay.register()
+	if not registered:
 		if relay == _relay and is_host():
 			relay_state = "failed"
+			relay_error = "unreachable" if not opened else "no_answer"
 			_relay_retry = RELAY_RETRY
 			_relay = null
 			status_changed.emit(_host_status())
@@ -209,6 +220,7 @@ func _relay_host_start() -> void:
 	_relay_keepalive = RELAY_KEEPALIVE
 	relay_code = relay.oid.substr(0, 4) + "-" + relay.oid.substr(4) if relay.oid.length() == RELAY_CODE_LENGTH else relay.oid
 	relay_state = "ok"
+	relay_error = ""
 	invite_code = relay_code
 	status_changed.emit(_host_status())
 	invite_ready.emit()

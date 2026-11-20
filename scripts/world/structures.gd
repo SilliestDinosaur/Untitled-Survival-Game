@@ -404,8 +404,12 @@ func _apply_door(root: Node3D, st: Dictionary) -> void:
 	# It swings (with a little give at the end), rather than jumping open or shut. Its collision moves at once.
 	if not is_equal_approx(float(pivot.get_meta("to", 0.0)), ang) and pivot.is_inside_tree() and root.has_meta("shown"):
 		pivot.set_meta("to", ang)
+		var old: Variant = pivot.get_meta("swing") if pivot.has_meta("swing") else null   # shut again mid-swing: this takes over
+		if old is Tween and (old as Tween).is_valid():
+			(old as Tween).kill()
 		var tw := pivot.create_tween()
 		tw.tween_property(pivot, "rotation:y", ang, 0.5).set_trans(Tween.TRANS_BACK).set_ease(Tween.EASE_OUT)
+		pivot.set_meta("swing", tw)
 	else:
 		pivot.set_meta("to", ang)
 		pivot.rotation.y = ang
