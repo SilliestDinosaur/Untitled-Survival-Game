@@ -225,9 +225,15 @@ func _build_dressing(plan: Dictionary, rng: RandomNumberGenerator) -> void:
 		var top: Vector3 = w[0]
 		var col: Color = GLOW_COLOURS[int(w[1])]
 		var a := _area(top)
+		# Threads no longer than a third of the head-room here, each starting in the air just under the ceiling (one
+		# that would start in the rock, where the ceiling dips, is left out).
+		var under: Variant = Caves.floor_at(Game.world_gen.caves, top - Vector3(0, 0.3, 0))
+		var headroom: float = top.y - (under as Vector3).y if under != null else 1.5
 		for k in rng.randi_range(8, 16):
-			var p := top + Vector3(rng.randf_range(-0.9, 0.9), 0.05, rng.randf_range(-0.9, 0.9))
-			var len := rng.randf_range(0.25, 1.3)
+			var p := top + Vector3(rng.randf_range(-0.9, 0.9), -0.06, rng.randf_range(-0.9, 0.9))
+			var len := minf(rng.randf_range(0.25, 1.3), headroom * 0.33)
+			if Caves.void_distance(Game.world_gen.caves, p) > -0.01 or Caves.void_distance(Game.world_gen.caves, p - Vector3(0, len + 0.3, 0)) > -0.01:
+				continue
 			(a.rock as MeshKit).loft([p, p - Vector3(0, len, 0)], [0.006, 0.004], 3, _lit(Color(0.75, 0.78, 0.72), p), Callable(), Callable(), false, false)
 			(a.glow as MeshKit).add_primitive(MeshKit.sphere(rng.randf_range(0.014, 0.024), 5, 3), Transform3D(Basis(), p - Vector3(0, len, 0)), col, 0.0, 0.0)
 		a.n.rock += 1

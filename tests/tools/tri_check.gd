@@ -48,6 +48,9 @@ func _run() -> void:
 	if OS.get_environment("FLORA") != "":
 		_run_flora()
 		return
+	if OS.get_environment("EXTRA") != "":
+		_run_extra()
+		return
 	var ids: Array = []
 	var only := OS.get_environment("ITEMS")
 	if only != "":
@@ -103,6 +106,35 @@ func _run_flora() -> void:
 			print("%-22s tris %6d  inverted %4d (slivers %4d)  degenerate %3d  nan %3d  %s" % [
 				key, report.tris, report.inverted, report.inverted_sliver, report.degenerate, report.nan, "ok" if bad == 0 else "BAD"])
 	print("RESULT: ", "PASS" if total_bad == 0 else "FAIL", " (%d problems in plant meshes)" % total_bad)
+	quit()
+
+
+## EXTRA=1 (with ZFIGHT=1): what the item and plant checks don't cover: everything built in the caves (supply
+## chests, camps, dripstone, moss) and every animal's body, head and legs.
+func _run_extra() -> void:
+	var meshes := {}
+	var walk := func(n: Node, f: Callable) -> void:
+		for c in n.get_children():
+			if c is MeshInstance3D and (c as MeshInstance3D).mesh is ArrayMesh:
+				meshes["%s/%s" % [n.name, c.name]] = (c as MeshInstance3D).mesh
+			f.call(c, f)
+	var cf := _main.get_node_or_null("CaveFeatures")
+	if cf:
+		walk.call(cf, walk)
+	var game := root.get_node("Game")
+	for sp in game.fauna.species:
+		for m in [sp.body_mesh, sp.head_mesh, sp.leg_mesh, sp.hind_leg_mesh, sp.wing_mesh]:
+			if m:
+				meshes["%s %d" % [sp.name, meshes.size()]] = m
+	var total := 0
+	var verbose := OS.get_environment("VERBOSE") != ""
+	for key: String in meshes:
+		var z := _zfight(meshes[key], verbose)
+		if z > 0:
+			print("%-30s zfight %d" % [key, z])
+			total += z
+	print("checked %d meshes" % meshes.size())
+	print("RESULT: ", "PASS" if total == 0 else "FAIL", " (%d problems)" % total)
 	quit()
 
 
@@ -175,7 +207,8 @@ func _check(mesh: ArrayMesh, verbose: bool, id: String) -> Dictionary:
 	return out
 
 
-## Pairs of triangles that z-fight: same plane (within 0.08 mm: closer than the depth buffer can tell apart), same facing, overlapping, and not neighbours on one
+## Pairs of triangles that z-fight: same plane (within 0.01 mm: closer than the depth buffer can tell apart at
+## play distances), same facing, overlapping, and not neighbours on one
 ## surface (they share no corner).
 func _zfight(mesh: ArrayMesh, verbose: bool) -> int:
 	if mesh == null or mesh.get_surface_count() == 0:
@@ -201,7 +234,7 @@ func _zfight(mesh: ArrayMesh, verbose: bool) -> int:
 			continue
 		var i := tris.size()
 		tris.append([a, b, c, n, d])
-		var key := [roundi(n.x * 30.0), roundi(n.y * 30.0), roundi(n.z * 30.0), roundi(d * 300.0)]
+		var key := [roundi(n.x * 30.0), roundi(n.y * 30.0), roundi(n.z * 30.0), roundi(d * 20000.0)]
 		if not buckets.has(key):
 			buckets[key] = []
 		buckets[key].append(i)
@@ -224,7 +257,7 @@ func _zfight(mesh: ArrayMesh, verbose: bool) -> int:
 				seen[Vector2i(i, j)] = true
 				var A: Array = tris[i]
 				var B: Array = tris[j]
-				if (A[3] as Vector3).dot(B[3]) < 0.998 or absf(float(A[4]) - float(B[4])) > 0.00008:
+				if (A[3] as Vector3).dot(B[3]) < 0.998 or absf(float(A[4]) - float(B[4])) > 0.00001:
 					continue
 				if _shares_corner(A, B):
 					continue

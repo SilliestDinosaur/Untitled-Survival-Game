@@ -249,7 +249,7 @@ static func _dress(plan: Dictionary, gen: WorldGen, walk: PackedFloat32Array) ->
 			var kind_roll := rng.randf()
 			if ores.size() >= MAX_ORES or roll > (0.55 if room else 0.16):
 				continue
-			var at: Variant = floor_at(plan, c + Vector3(cos(ang), 0, sin(ang)) * r * 0.62)
+			var at: Variant = settle(plan, c + Vector3(cos(ang), 0, sin(ang)) * r * 0.62, 0.4)
 			if at == null:
 				continue
 			var kind := "ore_t2"
@@ -266,7 +266,7 @@ static func _dress(plan: Dictionary, gen: WorldGen, walk: PackedFloat32Array) ->
 			var up := rng.randf() < 0.5
 			var len := rng.randf_range(0.5, 1.0) * minf(r * 0.45, 2.6)
 			if up:
-				var f: Variant = floor_at(plan, c + off)
+				var f: Variant = settle(plan, c + off, 0.35)
 				if f != null and stalagmites.size() < MAX_STALAGMITES and rng.randf() < 0.75:
 					stalagmites.append([f, len / 1.6])
 			else:
@@ -321,10 +321,44 @@ static func _dress(plan: Dictionary, gen: WorldGen, walk: PackedFloat32Array) ->
 			if f != null:
 				lairs.append(f)
 		elif room and w > 20.0 and camps.size() < 4 and rng.randf() < 0.35:
-			var f: Variant = floor_at(plan, c + Vector3(r * 0.2, 0, -r * 0.15))
+			var f: Variant = settle(plan, c, 1.2)
 			if f != null:
-				camps.append([f, rng.randf() * TAU])
-				plan.chests.append((f as Vector3) + Vector3(cos(0.6), 0, sin(0.6)) * 1.6)   # the camp's crate of supplies
+				var turn := rng.randf() * TAU
+				var facing: Variant = _camp_facing(plan, f, turn)
+				if facing != null:
+					camps.append([f, float(facing)])
+					var crate: Variant = settle(plan, (f as Vector3) + Basis(Vector3.UP, float(facing)) * CAMP_CHEST, 0.6)
+					if crate != null:
+						plan.chests.append(crate)   # the camp's crate of supplies
+	# The chests and glowcaps placed with the tunnels: down onto the floor, and clear of the walls (they were put
+	# by the room's size, and stood in the air or in the rock).
+	for i in plan.chests.size():
+		var s: Variant = null
+		for clear in [0.6, 0.4, 0.2]:
+			s = settle(plan, plan.chests[i], clear)
+			if s != null:
+				break
+		if s != null:
+			plan.chests[i] = s
+	var glow: Array = []
+	for g: Vector3 in plan.glow:
+		var s: Variant = settle(plan, g + Vector3(0, 0.5, 0), 0.25)
+		if s != null:
+			glow.append(s)
+	plan.glow = glow
+	# A camp's ground is clear: no stalagmite, pillar, pool, rubble or deposit among its things.
+	var away := func(list: Array, reach: float) -> Array:
+		return list.filter(func(it: Variant) -> bool:
+			var p: Vector3 = it[0] if it is Array else it
+			for camp: Array in camps:
+				if Vector2(p.x - camp[0].x, p.z - camp[0].z).length() < reach and absf(p.y - camp[0].y) < 3.0:
+					return false
+			return true)
+	ores = away.call(ores, 3.2)
+	stalagmites = away.call(stalagmites, 3.2)
+	pillars = away.call(pillars, 3.6)
+	rubble = away.call(rubble, 3.2)
+	pools = away.call(pools, 4.0)
 	plan.ores = ores
 	plan.stalagmites = stalagmites
 	plan.stalactites = stalactites
@@ -337,6 +371,67 @@ static func _dress(plan: Dictionary, gen: WorldGen, walk: PackedFloat32Array) ->
 	plan.camps = camps
 	plan.lairs = lairs
 	plan.roosts = roosts
+
+
+## Where the miners' camp keeps its things, in the camp's own frame (x right, z back): the stacked crates, the
+## mine cart, the bedroll, the bones, and its supply chest. (Matches CaveFeatures._build_camp.)
+const CAMP_SPOTS := [Vector3(1.6, 0, -0.7), Vector3(1.9, 0, -0.5), Vector3(-1.6, 0, 0.6), Vector3(0.2, 0, 1.3), Vector3(-0.8, 0, 1.5)]
+const CAMP_CHEST := Vector3(1.3, 0, 1.0)
+
+
+## A facing for a camp at `at` where all its things stand on floor near its height and clear of the walls
+## (tries eight turns from `turn`), or null if the chamber's too cramped.
+static func _camp_facing(plan: Dictionary, at: Vector3, turn: float) -> Variant:
+	for k in 8:
+		var yaw := turn + TAU * k / 8.0
+		var ok := true
+		for spot: Vector3 in CAMP_SPOTS + [CAMP_CHEST]:
+			var p: Vector3 = at + Basis(Vector3.UP, yaw) * spot
+			if void_distance(plan, p + Vector3(0, 0.6, 0)) > -0.2:
+				ok = false
+				break
+			var room := 1.0
+			for kk in 4:
+				room = minf(room, side_room(plan, p + Vector3(0, 0.6, 0), Vector3(cos(TAU * kk / 4.0), 0, sin(TAU * kk / 4.0)), 0.5))
+			if room < 0.5:
+				ok = false
+				break
+			var f: Variant = floor_at(plan, p + Vector3(0, 0.6, 0))
+			if f == null or absf((f as Vector3).y - at.y) > 0.4:
+				ok = false
+				break
+		if ok:
+			return yaw
+	return null
+
+
+## A spot on the cave floor near p with at least `clear` metres of room to the walls all round (measured level, half
+## a metre up, so the floor's own curve doesn't count): pushed away from whichever walls are too close, then
+## dropped onto the floor. Null if there's no room.
+static func settle(plan: Dictionary, p: Vector3, clear: float) -> Variant:
+	var q := p
+	for i in 8:
+		var probe := q + Vector3(0, 0.5, 0)
+		var f: Variant = floor_at(plan, probe if void_distance(plan, probe) < -0.3 else q + Vector3(0, 1.0, 0))
+		if f == null:
+			return null
+		q = f
+		var push := Vector3.ZERO
+		for k in 8:
+			var dir := Vector3(cos(TAU * k / 8.0), 0, sin(TAU * k / 8.0))
+			var dist := side_room(plan, q + Vector3(0, 0.5, 0), dir, clear)
+			if dist < clear:
+				push -= dir * (clear - dist)
+		if push.length() < 0.01:
+			return q
+		q += push * 0.6
+	return null
+
+
+## How far level from p along dir to a wall, up to `reach` (reach if it's further).
+static func side_room(plan: Dictionary, p: Vector3, dir: Vector3, reach: float) -> float:
+	var hit: Variant = _march(plan, p, dir, reach + 0.05)
+	return reach + 0.05 if hit == null else p.distance_to(hit)
 
 
 ## The cave floor straight below p (p inside a tunnel), or null if p isn't in one.

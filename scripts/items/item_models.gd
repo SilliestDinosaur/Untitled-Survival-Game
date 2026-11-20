@@ -1005,15 +1005,18 @@ static func _fiber(k: MeshKit, at: Vector3) -> void:
 	var rng := RandomNumberGenerator.new()
 	rng.seed = 23
 	var green := Color(0.7, 0.66, 0.36)
+	# Strands laid side by side in two layers (not through one another), each with its own gentle wave.
 	for i in 9:
-		var off := rng.randf_range(-0.01, 0.01)
+		var row := i % 2
+		var off := (float(i) - 4.0) * 0.0026 + rng.randf_range(-0.0003, 0.0003)
+		var wave := rng.randf_range(0.0, TAU)
 		var path: Array = []
 		var radii: Array = []
 		for s in 9:
 			var t := s / 8.0
-			path.append(at + Vector3(-0.055 + t * 0.11, sin(t * PI) * 0.004 + off * 0.6, off + sin(t * TAU) * 0.003))
-			radii.append(0.0018)
-		k.loft(path, radii, 4, green.lightened(rng.randf_range(-0.1, 0.12)), Callable(), Callable(), true, true)
+			path.append(at + Vector3(-0.055 + t * 0.11, sin(t * PI) * 0.004 + row * 0.0034, off + sin(t * TAU + wave) * 0.0006))
+			radii.append(0.0016)
+		k.loft(path, radii, 5, green.lightened(rng.randf_range(-0.1, 0.12)), Callable(), Callable(), true, true)
 	var tie: Array = []
 	var tr: Array = []
 	for j in 13:

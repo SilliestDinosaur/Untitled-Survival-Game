@@ -522,9 +522,9 @@ func commit(material: Material) -> ArrayMesh:
 			var to := _parts[pi + 1] if pi + 1 < _parts.size() else verts.size()
 			if to <= from:
 				continue
-			# Steps on each axis that differ for any two parts built within a dozen of each other (neighbouring parts
-			# are the ones that touch), so their faces never land in one plane.
-			var off := Vector3(float(pi % 13) - 6.0, float((pi * 5) % 17) - 8.0, float((pi * 7) % 19) - 9.0) * (nudge / 9.0)
+			# Steps of ~0.02 mm on each axis that are different for every two parts of a model (they only repeat after
+			# a hundred parts), so no two parts' faces land in one plane.
+			var off := Vector3(float((pi * 37) % 149) - 74.0, float((pi * 41) % 151) - 75.0, float((pi * 43) % 157) - 78.0) * (nudge / 75.0)
 			for vi in range(from, to):
 				verts[vi] += off
 		_parts.clear()

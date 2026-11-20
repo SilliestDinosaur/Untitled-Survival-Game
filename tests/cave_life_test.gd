@@ -41,6 +41,24 @@ func _process(_d: float) -> bool:
 					bad += 1
 			_check(bad <= plan.ores.size() / 10, "ore sits on the cave floors (%d of %d off)" % [bad, plan.ores.size()])
 			_check(plan.ores.any(func(o: Array) -> bool: return o[1] == "ore_t3"), "deep rock holds the third metal")
+			# Nothing floats or sinks, and nothing stands in the walls.
+			var lists := {"chests": plan.chests, "glowcaps": plan.glow, "ores": plan.ores.map(func(o: Array) -> Vector3: return o[0]),
+				"stalagmites": plan.stalagmites.map(func(o: Array) -> Vector3: return o[0]), "camps": plan.camps.map(func(o: Array) -> Vector3: return o[0])}
+			var room := {"chests": 0.18, "glowcaps": 0.15, "ores": 0.38, "stalagmites": 0.33, "camps": 0.5}
+			for name: String in lists:
+				var off := 0
+				var tight := 0
+				for p: Vector3 in lists[name]:
+					var under: float = _C.void_distance(plan, p - Vector3(0, 0.12, 0))
+					var over: float = _C.void_distance(plan, p + Vector3(0, 0.12, 0))
+					if not (under > 0.0 and over < 0.0):
+						off += 1   # the floor isn't right under it
+					for k in 8:
+						if _C.side_room(plan, p + Vector3(0, 0.5, 0), Vector3(cos(TAU * k / 8.0), 0, sin(TAU * k / 8.0)), room[name]) < float(room[name]) - 0.03:
+							tight += 1
+							break
+				_check(off <= (lists[name] as Array).size() / 40, "%s stand on the cave floor (%d of %d off it)" % [name, off, (lists[name] as Array).size()])
+				_check(tight == 0, "%s keep clear of the walls (%d too close)" % [name, tight])
 			# A deposit is a resource in its chunk, with the id the plan gives it.
 			var o0: Vector3 = plan.ores[0][0]
 			var coord := Vector2i(floori(o0.x / _game.CHUNK_SIZE), floori(o0.z / _game.CHUNK_SIZE))
