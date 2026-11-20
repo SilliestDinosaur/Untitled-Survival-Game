@@ -945,7 +945,7 @@ func _update_exposure() -> void:
 			_heat += 0.45
 		return
 	var h := gen.get_height(p.x, p.z)
-	var w := gen.get_biome_weights(gen.get_climate(p.x, p.z, h))
+	var w := gen.biome_weights_at(p.x, p.z, h)
 	var cold_biome := 0.0
 	for b: int in WorldGen.COLD_BIOMES:
 		cold_biome += w.get(b, 0.0)

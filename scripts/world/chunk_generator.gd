@@ -259,7 +259,7 @@ static func _place_resources(coord: Vector2i, origin: Vector3, gen: WorldGen, fl
 			counter[0] += 1
 			continue
 		var nrm := gen.get_normal(a.x, a.z)
-		var biome := _pick_biome(gen.get_biome_weights(gen.get_climate(a.x, a.z, h)), a.r_biome)
+		var biome := _pick_biome(gen.biome_weights_at(a.x, a.z, h), a.r_biome)
 		var density: float = FloraLibrary.BIOME_TREE_DENSITY[biome] * gen.get_forest_clump(a.x, a.z) * 1.6
 		if h > 46.0:
 			density *= 0.35   # sparse up in the highlands
@@ -325,7 +325,7 @@ static func _place_resources(coord: Vector2i, origin: Vector3, gen: WorldGen, fl
 		if h < 2.2 or h > 50.0 or gen.get_normal(a.x, a.z).y < 0.8:
 			counter[0] += 1
 			continue
-		var biome := _pick_biome(gen.get_biome_weights(gen.get_climate(a.x, a.z, h)), a.r_biome)
+		var biome := _pick_biome(gen.biome_weights_at(a.x, a.z, h), a.r_biome)
 		if a.r_place >= FloraLibrary.BIOME_BUSH_DENSITY[biome]:
 			counter[0] += 1
 			continue
@@ -338,7 +338,7 @@ static func _place_resources(coord: Vector2i, origin: Vector3, gen: WorldGen, fl
 		if h < 2.0 or nrm.y < 0.82:
 			counter[0] += 1
 			continue
-		var biome := _pick_biome(gen.get_biome_weights(gen.get_climate(a.x, a.z, h)), a.r_biome)
+		var biome := _pick_biome(gen.biome_weights_at(a.x, a.z, h), a.r_biome)
 		if h > 50.0:
 			biome = Biome.DESERT if a.r_biome < 0.5 else Biome.DRYLANDS   # rocky highlands: stones & boulders
 		if a.r_place >= FloraLibrary.BIOME_CLUTTER_DENSITY[biome]:
@@ -477,7 +477,7 @@ static func _place_ground_cover(coord: Vector2i, origin: Vector3, gen: WorldGen,
 			var nrm := gen.get_normal(wx, wz)
 			if nrm.y < 0.82:
 				continue
-			var w := gen.get_biome_weights(gen.get_climate(wx, wz, h))
+			var w := gen.biome_weights_at(wx, wz, h)
 			var amount := 0.0
 			var table: Dictionary = pass_def[2]
 			for b: int in w:
@@ -505,7 +505,7 @@ static func _place_ground_cover(coord: Vector2i, origin: Vector3, gen: WorldGen,
 		var nrm := gen.get_normal(wx, wz)
 		if nrm.y < 0.8:
 			continue
-		var w := gen.get_biome_weights(gen.get_climate(wx, wz, h))
+		var w := gen.biome_weights_at(wx, wz, h)
 		var amount := 0.0
 		for b: int in w:
 			amount += w[b] * FloraLibrary.BIOME_GRASS[b]
@@ -527,7 +527,7 @@ static func _place_ground_cover(coord: Vector2i, origin: Vector3, gen: WorldGen,
 		var h := gen.get_height(wx, wz)
 		if h < 2.0 or h > 55.0 or gen.get_normal(wx, wz).y < 0.8:
 			continue
-		var w := gen.get_biome_weights(gen.get_climate(wx, wz, h))
+		var w := gen.biome_weights_at(wx, wz, h)
 		var amount := 0.0
 		for b: int in w:
 			amount += w[b] * FloraLibrary.BIOME_FERNS[b]
@@ -549,7 +549,7 @@ static func _place_ground_cover(coord: Vector2i, origin: Vector3, gen: WorldGen,
 		var h := gen.get_height(wx, wz)
 		if h < 2.2 or h > 58.0:
 			continue
-		var w := gen.get_biome_weights(gen.get_climate(wx, wz, h))
+		var w := gen.biome_weights_at(wx, wz, h)
 		# Flowers in meadows and autumn groves, plus alpine flowers on high gentle slopes.
 		var alpine := smoothstep(40.0, 55.0, h) * 0.5
 		if keep > w[Biome.MEADOW] * 0.7 + w[Biome.AUTUMN] * 0.2 + alpine or gen.get_normal(wx, wz).y < 0.85:

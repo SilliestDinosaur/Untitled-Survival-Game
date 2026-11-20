@@ -104,6 +104,9 @@ func _init(seed_value: int, pal: WorldPalette) -> void:
 	_lake.fractal_octaves = 2
 	lake_amount = rng.randf_range(0.0, 1.0)
 
+	if not pal.exotic:
+		_pick_fungal_home()
+		_fungal_limit = true
 	caves = Caves.plan(self)   # planned from the base ground, so it's the same on every machine
 
 
@@ -243,6 +246,105 @@ func get_climate(x: float, z: float, height: float) -> Vector2:
 	return Vector2(t, get_moisture(x, z))
 
 
+## The weights at a place: the climate's, except that the fungal grove only grows in one region of the island (the
+## patch of its climate found by _pick_fungal_home); elsewhere its climate goes to its neighbours. Exotic worlds
+## keep every grove their climate makes.
+func biome_weights_at(x: float, z: float, h: float) -> Dictionary:
+	var w := get_biome_weights(get_climate(x, z, h))
+	if _fungal_limit and w.has(Biome.FUNGAL):
+		var keep := _fungal_keep(x, z)
+		if keep < 1.0:
+			w[Biome.FUNGAL] = float(w[Biome.FUNGAL]) * keep
+			var total := 0.0
+			for b: int in w:
+				total += float(w[b])
+			for b: int in w:
+				w[b] = float(w[b]) / total
+	return w
+
+
+const FUNGAL_CELL := 32.0
+const FUNGAL_N := 64              ## 2048 / 32
+var fungal_home := Vector2(-1e9, -1e9)   ## the middle of the island's one fungal grove (none if it has none)
+var _fungal_cells := PackedFloat32Array()   ## 1 in the grove's cells (its one connected patch), else 0
+var _fungal_limit := false
+
+
+## How much of the fungal grove's claim holds here (0 outside its region, 1 inside; soft at the edge).
+func _fungal_keep(x: float, z: float) -> float:
+	if _fungal_cells.is_empty():
+		return 0.0
+	var fx := clampf(x / FUNGAL_CELL - 0.5, 0.0, FUNGAL_N - 1.001)
+	var fz := clampf(z / FUNGAL_CELL - 0.5, 0.0, FUNGAL_N - 1.001)
+	var i := int(fx)
+	var j := int(fz)
+	var tx := fx - i
+	var tz := fz - j
+	var a := lerpf(_fungal_cells[j * FUNGAL_N + i], _fungal_cells[j * FUNGAL_N + i + 1], tx)
+	var b := lerpf(_fungal_cells[(j + 1) * FUNGAL_N + i], _fungal_cells[(j + 1) * FUNGAL_N + i + 1], tx)
+	return lerpf(a, b, tz)
+
+
+## The one fungal grove: where its climate is strongest on the island's land, and the patch of cells around that
+## where it's the leading biome, joined to it (flood fill), with a cell's margin round it.
+func _pick_fungal_home() -> void:
+	var lead := PackedByteArray()
+	lead.resize(FUNGAL_N * FUNGAL_N)
+	var best := 0.5
+	var start := -1
+	for j in FUNGAL_N:
+		for i in FUNGAL_N:
+			var x := (i + 0.5) * FUNGAL_CELL
+			var z := (j + 0.5) * FUNGAL_CELL
+			if island_mask(x, z) < 0.5:
+				continue
+			var h := get_base_height(x, z)
+			if h < 2.0 or h > 55.0:
+				continue
+			var w := get_biome_weights(get_climate(x, z, h))
+			var f: float = w.get(Biome.FUNGAL, 0.0)
+			var top := true
+			for b: int in w:
+				if float(w[b]) > f:
+					top = false
+					break
+			if top:
+				lead[j * FUNGAL_N + i] = 1
+				if f > best:
+					best = f
+					start = j * FUNGAL_N + i
+	_fungal_cells.resize(FUNGAL_N * FUNGAL_N)
+	_fungal_cells.fill(0.0)
+	if start < 0:
+		return
+	fungal_home = Vector2((start % FUNGAL_N + 0.5) * FUNGAL_CELL, (start / FUNGAL_N + 0.5) * FUNGAL_CELL)
+	var stack := [start]
+	while not stack.is_empty():
+		var c: int = stack.pop_back()
+		if _fungal_cells[c] > 0.0 or lead[c] == 0:
+			continue
+		_fungal_cells[c] = 1.0
+		var ci := c % FUNGAL_N
+		var cj := c / FUNGAL_N
+		for d: Vector2i in [Vector2i(1, 0), Vector2i(-1, 0), Vector2i(0, 1), Vector2i(0, -1)]:
+			var ni := ci + d.x
+			var nj := cj + d.y
+			if ni >= 0 and nj >= 0 and ni < FUNGAL_N and nj < FUNGAL_N:
+				stack.append(nj * FUNGAL_N + ni)
+	# A margin of one cell, so its edge blends rather than being cut at the cell line.
+	var grown := _fungal_cells.duplicate()
+	for c in FUNGAL_N * FUNGAL_N:
+		if _fungal_cells[c] > 0.0:
+			var ci := c % FUNGAL_N
+			var cj := c / FUNGAL_N
+			for d: Vector2i in [Vector2i(1, 0), Vector2i(-1, 0), Vector2i(0, 1), Vector2i(0, -1)]:
+				var ni := ci + d.x
+				var nj := cj + d.y
+				if ni >= 0 and nj >= 0 and ni < FUNGAL_N and nj < FUNGAL_N:
+					grown[nj * FUNGAL_N + ni] = maxf(grown[nj * FUNGAL_N + ni], 1.0)
+	_fungal_cells = grown
+
+
 ## Soft weights for the climate biomes (sum to 1). Used for color blending + plant choice.
 func get_biome_weights(climate: Vector2) -> Dictionary:
 	var weights := {}
@@ -266,7 +368,7 @@ func get_biome(x: float, z: float) -> int:
 		return Biome.SNOW
 	if h > 52.0:
 		return Biome.HIGHLANDS
-	var w := get_biome_weights(get_climate(x, z, h))
+	var w := biome_weights_at(x, z, h)
 	var best := Biome.MEADOW
 	for b: int in w:
 		if w[b] > w[best]:
@@ -283,7 +385,7 @@ func get_surface(x: float, z: float) -> String:
 		return "snow"
 	if h > 52.0 or get_normal(x, z).y < 0.72:
 		return "rock"
-	var w := get_biome_weights(get_climate(x, z, h))
+	var w := biome_weights_at(x, z, h)
 	if w[Biome.DESERT] > 0.5:
 		return "sand"
 	if w[Biome.BADLANDS] > 0.5:
@@ -302,7 +404,7 @@ func get_forest_clump(x: float, z: float) -> float:
 func get_terrain_color(height: float, normal_y: float, x: float, z: float) -> Color:
 	var jitter := (fposmod(sin(x * 12.9898 + z * 78.233) * 43758.5453, 1.0) - 0.5) * 0.02
 	var pal := palette
-	var w := get_biome_weights(get_climate(x, z, height))
+	var w := biome_weights_at(x, z, height)
 	var ground := Color(0, 0, 0)
 	for b: int in w:
 		ground += pal.ground[b] * w[b]

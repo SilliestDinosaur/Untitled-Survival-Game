@@ -185,7 +185,7 @@ func _ring_spot(center: Vector3, near: float, far: float) -> Variant:
 ## Pick a species that likes the biome at this spot.
 func _pick_species(roles: Array, pos: Vector3) -> FaunaLibrary.Species:
 	var gen: WorldGen = Game.world_gen
-	var weights := gen.get_biome_weights(gen.get_climate(pos.x, pos.z, pos.y))
+	var weights := gen.biome_weights_at(pos.x, pos.z, pos.y)
 	var options: Array = []
 	var total := 0.0
 	# Altitude biomes aren't in the climate weights: add them so mountain species turn up there.
