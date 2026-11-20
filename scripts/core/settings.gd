@@ -57,6 +57,9 @@ var anti_aliasing := "MSAA 2x"
 var render_scale := 1.0
 var ambient_occlusion := true
 var glow := true
+var camera_shake := true         ## camera kicks, shakes and leans
+var screen_effects := true       ## frost, warmth, hurt and underwater on the screen
+var depth_of_field := true       ## background blur in crafting and menus
 var vsync := false
 var fps_cap := 0
 var grass := "Medium"
@@ -121,6 +124,9 @@ func load_settings() -> void:
 	render_scale = cfg.get_value("video", "render_scale", render_scale)
 	ambient_occlusion = cfg.get_value("video", "ambient_occlusion", ambient_occlusion)
 	glow = cfg.get_value("video", "glow", glow)
+	camera_shake = cfg.get_value("video", "camera_shake", camera_shake)
+	screen_effects = cfg.get_value("video", "screen_effects", screen_effects)
+	depth_of_field = cfg.get_value("video", "depth_of_field", depth_of_field)
 	vsync = cfg.get_value("video", "vsync", vsync)
 	fps_cap = cfg.get_value("video", "fps_cap", fps_cap)
 	grass = cfg.get_value("video", "grass", grass)
@@ -143,7 +149,7 @@ func save_settings() -> void:
 	cfg.set_value("video", "quality", quality)
 	cfg.set_value("video", "model_detail", model_detail)
 	cfg.set_value("video", "show_fps", show_fps)
-	for k: String in ["shadow_quality", "anti_aliasing", "render_scale", "ambient_occlusion", "glow", "vsync", "fps_cap", "grass", "leaf_detail"]:
+	for k: String in ["shadow_quality", "anti_aliasing", "render_scale", "ambient_occlusion", "glow", "camera_shake", "screen_effects", "depth_of_field", "vsync", "fps_cap", "grass", "leaf_detail"]:
 		cfg.set_value("video", k, get(k))
 	cfg.set_value("audio", "master_volume", master_volume)
 	cfg.set_value("audio", "music_volume", music_volume)

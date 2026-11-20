@@ -378,6 +378,7 @@ func _toggle_inventory(open: bool, station := "") -> void:
 		if station != "":
 			Audio.play("chop" if station == "workbench" else "clink" if station == "forge" else "rustle", -10.0, 0.9)
 	_inventory.visible = open
+	Game.menu_open = open
 	Input.mouse_mode = Input.MOUSE_MODE_VISIBLE if open else Input.MOUSE_MODE_CAPTURED
 
 
@@ -387,6 +388,7 @@ func _pause_game() -> void:
 	if Net.is_online():
 		player.set_physics_process(false)   # stand still while the menu is open
 	Input.mouse_mode = Input.MOUSE_MODE_VISIBLE
+	Game.menu_open = true
 	_pause.show()
 	save_now()   # pausing is a natural checkpoint
 
@@ -397,6 +399,7 @@ func _resume() -> void:
 	player.set_physics_process(true)
 	_pause.hide()
 	_settings.hide()
+	Game.menu_open = false
 	Input.mouse_mode = Input.MOUSE_MODE_CAPTURED
 
 

@@ -161,6 +161,7 @@ func _finished_fx(root: Node3D, st: Dictionary) -> void:
 	Effects.chips(self, root.to_global(Vector3(0, h * 0.5, 0)), col, 14, 0.07, 3.0)
 	Effects.dust(self, root.to_global(Vector3(0, 0.2, 0)), col.lightened(0.15), 10, 0.8, 0.7)
 	Audio.play_3d("thud", root.global_position, -4.0, 0.8)
+	Game.impact.emit(root.global_position, 0.35)
 	root.scale = Vector3(1.0, 0.94, 1.0)
 	var tw := root.create_tween()
 	tw.tween_property(root, "scale", Vector3.ONE, 0.35).set_trans(Tween.TRANS_BACK).set_ease(Tween.EASE_OUT)

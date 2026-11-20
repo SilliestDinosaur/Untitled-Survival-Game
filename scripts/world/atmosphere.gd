@@ -22,6 +22,8 @@ var _day_top: Color
 var _day_horizon: Color
 var _day_sun: Color
 var _update_cd := 0.0
+var _grade: GradientTexture1D   ## colour grading: a per-channel curve, re-tinted with the time of day
+var _grade_key := Vector2(-1, -1)
 ## (Caves aren't darkened here: the world's light stays the same everywhere, and cave walls and the things in caves
 ## see less of the sky by their own shading, see Caves.sky_seen and CaveShade.)
 
@@ -71,8 +73,23 @@ func _ready() -> void:
 	environment.adjustment_contrast = 0.98
 	environment.ssao_radius = 1.5
 	environment.ssao_intensity = 1.6
-	environment.glow_intensity = 0.35
-	environment.glow_bloom = 0.05
+	# Bloom: only the really bright things (flames, embers, molten metal, lamps, the sun on water) glow, in wide
+	# soft levels rather than a haze over everything.
+	environment.glow_intensity = 0.55
+	environment.glow_strength = 1.05
+	environment.glow_bloom = 0.02
+	environment.glow_hdr_threshold = 0.95
+	environment.glow_hdr_scale = 2.2
+	environment.glow_blend_mode = Environment.GLOW_BLEND_MODE_SOFTLIGHT
+	for i in 7:
+		environment.set_glow_level(i, [0.0, 0.0, 1.0, 0.9, 0.7, 0.4, 0.0][i])
+	_grade = GradientTexture1D.new()
+	_grade.width = 128
+	_grade.gradient = Gradient.new()
+	environment.adjustment_color_correction = _grade
+	var fx := CameraFx.new()   # menu blur
+	fx.process_mode = Node.PROCESS_MODE_ALWAYS
+	add_child(fx)
 
 	var world_env := WorldEnvironment.new()
 	world_env.environment = environment
@@ -145,6 +162,7 @@ func _apply_time(_force := false) -> void:
 	environment.ambient_light_sky_contribution = lerpf(SKY_AMBIENT_NIGHT, SKY_AMBIENT_DAY, day)
 	environment.fog_sun_scatter = 0.35 + golden * 0.4
 	environment.adjustment_saturation = lerpf(0.55, 1.1, day)
+	_regrade(day, golden)
 	var water := get_tree().get_first_node_in_group("water") as MeshInstance3D
 	if water and water.mesh:
 		var wm := (water.mesh as PlaneMesh).material as ShaderMaterial
@@ -206,6 +224,22 @@ func apply_settings() -> void:
 	environment.glow_enabled = Settings.glow
 	DisplayServer.window_set_vsync_mode(DisplayServer.VSYNC_ENABLED if Settings.vsync else DisplayServer.VSYNC_DISABLED)
 	Engine.max_fps = Settings.fps_cap
+
+
+## Colour grading by the light: cool, lifted shadows at night; warm highlights in the golden hours; neutral by day.
+## (Only rebuilt when the light has moved on a bit.)
+func _regrade(day: float, golden: float) -> void:
+	var key := Vector2(snappedf(day, 0.03), snappedf(golden, 0.03))
+	if key == _grade_key:
+		return
+	_grade_key = key
+	var night := 1.0 - day
+	var shadow := Color(0.0, 0.0, 0.0).lerp(Color(0.02, 0.035, 0.07), night).lerp(Color(0.04, 0.02, 0.03), golden * 0.6)
+	var mid := Color(0.5, 0.5, 0.5).lerp(Color(0.47, 0.5, 0.56), night * 0.7).lerp(Color(0.55, 0.49, 0.42), golden * 0.7)
+	var high := Color(1, 1, 1).lerp(Color(0.9, 0.95, 1.0), night * 0.6).lerp(Color(1.0, 0.94, 0.82), golden * 0.8)
+	var g := _grade.gradient
+	g.offsets = PackedFloat32Array([0.0, 0.5, 1.0])
+	g.colors = PackedColorArray([shadow, mid, high])
 
 
 func _cloud_texture() -> NoiseTexture2D:

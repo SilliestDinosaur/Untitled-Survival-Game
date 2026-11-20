@@ -21,6 +21,8 @@ var _banner: VBoxContainer
 var _banner_name: Label
 var _damage_fx: ColorRect
 var _water_fx: ColorRect
+var _mood: ColorRect          ## frost / warmth / hurt / underwater, on the picture itself (screen_mood.gdshader)
+var _mood_v := Vector4.ZERO   ## frost, warm, hurt, water (eased)
 var _damage := 0.0
 var _last_biome := -1
 var _biome_timer := 0.0
@@ -56,6 +58,14 @@ func _ready() -> void:
 	set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
 	mouse_filter = Control.MOUSE_FILTER_IGNORE
 
+	_mood = ColorRect.new()
+	_mood.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
+	_mood.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	var mm := ShaderMaterial.new()
+	mm.shader = preload("res://shaders/screen_mood.gdshader")
+	_mood.material = mm
+	_mood.visible = false
+	add_child(_mood)
 	_water_fx = _overlay(Color(0.05, 0.25, 0.35), 0.0, 0.9)
 	_damage_fx = _overlay(Color(0.65, 0.02, 0.02), 0.0, 0.5)
 	_cold_fx = _overlay(Color(0.7, 0.85, 1.0), 0.0, 0.75)
@@ -165,6 +175,22 @@ func _ready() -> void:
 	_debug = UITheme.label("", 14, UITheme.TEXT, 4)
 	_debug.position = Vector2(14, 10)
 	add_child(_debug)
+
+
+## The screen-mood pass: only drawn while something's showing (it reads the whole screen back).
+func _update_mood(delta: float, chill: float, low: float, s: PlayerStats) -> void:
+	var want := Vector4.ZERO
+	if Settings.screen_effects and player.crafting == null:
+		want = Vector4(chill, smoothstep(1.0, 6.0, s.heat), low, 1.0 if player.underwater else 0.0)
+	_mood_v = _mood_v.lerp(want, 1.0 - exp(-3.0 * delta))
+	var on := _mood_v.x > 0.01 or _mood_v.y > 0.01 or _mood_v.z > 0.01 or _mood_v.w > 0.01
+	_mood.visible = on
+	if on:
+		var m := _mood.material as ShaderMaterial
+		m.set_shader_parameter("frost", _mood_v.x)
+		m.set_shader_parameter("warm", _mood_v.y)
+		m.set_shader_parameter("hurt", _mood_v.z)
+		m.set_shader_parameter("water", _mood_v.w)
 
 
 func _overlay(tint: Color, intensity: float, softness: float) -> ColorRect:
@@ -335,6 +361,7 @@ func _process(delta: float) -> void:
 	var wm := _water_fx.material as ShaderMaterial
 	wm.set_shader_parameter("intensity", lerpf(float(wm.get_shader_parameter("intensity")), water_target, 1.0 - exp(-10.0 * delta)))
 	wm.set_shader_parameter("softness", 0.95)
+	_update_mood(delta, chill, low, s)
 
 	_debug.visible = _debug_on or Settings.show_fps
 	if _debug.visible:

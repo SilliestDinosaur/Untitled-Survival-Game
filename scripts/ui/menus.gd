@@ -414,6 +414,9 @@ class SettingsPanel extends Control:
 		_check(gfx, "Leaf details on trees", Settings.leaf_detail, func(on: bool) -> void: Settings.leaf_detail = on)
 		_check(gfx, "Ambient occlusion", Settings.ambient_occlusion, func(on: bool) -> void: Settings.ambient_occlusion = on)
 		_check(gfx, "Glow", Settings.glow, func(on: bool) -> void: Settings.glow = on)
+		_check(gfx, "Depth of field (crafting & menus)", Settings.depth_of_field, func(on: bool) -> void: Settings.depth_of_field = on)
+		_check(gfx, "Screen effects (frost, warmth, hurt)", Settings.screen_effects, func(on: bool) -> void: Settings.screen_effects = on)
+		_check(gfx, "Camera shake & sway", Settings.camera_shake, func(on: bool) -> void: Settings.camera_shake = on)
 		var note := UITheme.label("Model detail sets how smooth plants, rocks, animals and items are.\nView distance, model detail and grass apply as new terrain loads.", 14, UITheme.INK_DIM)
 		gfx.get_parent().get_parent().add_child(note)
 

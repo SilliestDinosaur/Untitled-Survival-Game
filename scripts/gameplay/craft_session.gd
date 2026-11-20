@@ -105,6 +105,13 @@ var _tint_mat: ShaderMaterial
 var _molten_mat: StandardMaterial3D
 var _last_stage := ""
 var _spoon_mesh: ArrayMesh
+var _fx: Node3D                ## the station's running eye candy (bubbles, steam, sawdust in the air, heat haze)
+var _shimmer: MeshInstance3D   ## heat haze over hot metal
+var _bubbles: CPUParticles3D
+var _steam: CPUParticles3D
+var _focus := 0.0              ## the camera's focus distance (eased)
+var _dof: DofBlur
+const COALS := Vector3(0.0, 0.98, -0.05)   ## the forge's fire bed, in its own frame
 
 static var _mat: ShaderMaterial
 
@@ -239,7 +246,10 @@ func begin(p: Node, r: Dictionary, times: int) -> void:
 	_cam.global_transform = player.camera.global_transform
 	_cam.fov = player.camera.fov
 	_cam.current = true
+	_cam.set_meta("own_focus", true)   # (CameraFx leaves this one's depth of field to us)
+	_dof = DofBlur.attach(_cam)
 	_build_props()
+	_build_fx()
 	_start_item()
 	_go_to_view(func() -> void: _busy = false)
 
@@ -352,6 +362,79 @@ func _build_props() -> void:
 		Mode.COOK: _build_spit()
 		Mode.SMELT: _build_foundry()
 		Mode.SMITH: _build_bucket()
+
+
+## The running effects for this station's work: a pot on the boil, a smoking spit, heat haze over hot metal,
+## sawdust hanging over the bench.
+func _build_fx() -> void:
+	_fx = Node3D.new()
+	add_child(_fx)
+	match mode:
+		Mode.COOK:
+			if recipe.out == "stew" and _pot_surface:
+				_bubbles = Effects.bubbles(_inner_radius(POT_PROFILE, 0.13) * 0.7, Color(0.55, 0.42, 0.3))
+				_fx.add_child(_bubbles)
+				_steam = Effects.smoke(0.3, Color(0.92, 0.93, 0.96))
+				_fx.add_child(_steam)
+			else:
+				_steam = Effects.smoke(0.25, Color(0.5, 0.48, 0.46))   # fat smoking off the meat
+				_fx.add_child(_steam)
+		Mode.SMELT, Mode.SMITH:
+			_shimmer = Effects.shimmer(Vector2(0.35, 0.55))
+			_fx.add_child(_shimmer)
+		Mode.CARVE:
+			var dust := Effects.motes(Vector3(0.5, 0.25, 0.35), Color(0.9, 0.78, 0.55), 26)
+			_fx.add_child(dust)
+			dust.global_position = _xf * Vector3(0.06, 1.05, _bench_side() * 0.07)
+		Mode.KNAP:
+			var grit := Effects.motes(Vector3(0.3, 0.2, 0.3), Color(0.8, 0.8, 0.82), 12)
+			_holder().add_child(grit)
+			grit.position = Vector3(0, -0.1, -0.5)
+
+
+## Each frame: keep the running effects with the work, and the camera focused on it.
+func _update_fx(delta: float) -> void:
+	if _bubbles and _pot_surface:
+		_bubbles.global_position = _pot_surface.global_position + Vector3(0, 0.008, 0)
+		_bubbles.emitting = not _done
+	if _steam:
+		_steam.global_position = _pot_surface.global_position + Vector3(0, 0.02, 0) if _pot_surface else work_point()
+		_steam.emitting = not _done
+	if _shimmer:
+		var hot := 0.0
+		if mode == Mode.SMITH and is_instance_valid(_piece):
+			_shimmer.global_position = work_point() + Vector3(0, 0.03, 0)
+			if step_id() in ["heat", "hammer", "quench"] and not (step_id() == "quench" and step_t >= 1.0):
+				hot = smoothstep(0.35, 0.9, heat)
+		elif mode == Mode.SMELT and _crucible:
+			_shimmer.global_position = _crucible.global_position + Vector3(0, 0.12, 0)
+			hot = smoothstep(0.3, 0.85, heat) if step_id() != "load" else 0.3
+		Effects.set_shimmer(_shimmer, hot if not _done else 0.0)
+	# Depth of field: sharp on the work, the station's surroundings going soft behind it.
+	if _dof:
+		var d := _cam.global_position.distance_to(work_point())
+		_focus = d if _focus <= 0.0 else lerpf(_focus, d, 1.0 - exp(-6.0 * delta))
+		_dof.set_blur(_focus + 0.3, 1.6, 0.6 if Settings.depth_of_field else 0.0)
+
+
+## A perfect strike: the bits fly in slow motion, a flash, and the view punches in a touch.
+func _perfect_fx(show: Callable) -> void:
+	var at := work_point()
+	Effects.slow_motion(0.5, show)
+	Effects.twinkle(self, at + Vector3(0, 0.04, 0), Color(0.85, 1.0, 0.65), 6, 0.3)
+	var hot := mode in [Mode.SMITH, Mode.SMELT]
+	Effects.flash(self, at + Vector3(0, 0.15, 0), Color(1.0, 0.6, 0.3) if hot else Color(1.0, 0.95, 0.8), 1.6 if hot else 0.8, 2.0, 0.3)
+	_punch(2.5)
+
+
+## Zoom in a little and back (a perfect strike, a finished piece).
+func _punch(degrees: float) -> void:
+	if _cam == null or not Settings.camera_shake:
+		return
+	var base := _view_fov(_view_key) if _view_key != "" else _cam.fov
+	var tw := create_tween()
+	tw.tween_property(_cam, "fov", base - degrees, 0.07).set_trans(Tween.TRANS_QUAD).set_ease(Tween.EASE_OUT)
+	tw.tween_property(_cam, "fov", base, 0.4).set_trans(Tween.TRANS_SINE).set_ease(Tween.EASE_IN_OUT)
 
 
 func _mesh_node(mesh: Mesh, parent: Node3D, mat: Material = null) -> MeshInstance3D:
@@ -818,6 +901,8 @@ func _holding() -> bool:
 func _process(delta: float) -> void:
 	if feedback.has("age"):
 		feedback.age += delta
+	if not _closing:
+		_update_fx(delta)
 	if _busy or _closing:
 		return
 	_lock = maxf(_lock - delta, 0.0)
@@ -850,6 +935,11 @@ func _pump(delta: float, holding: bool) -> void:
 		step_t += rate * 0.3 * delta
 	if holding and fmod(Time.get_ticks_msec() / 1000.0, 0.45) < delta:
 		Audio.play_3d("swoosh", work_point(), -14.0, 0.55)
+		# Each push of the bellows throws a shower of embers off the coals, bigger the hotter they are.
+		var coals: Vector3 = _xf * COALS
+		Effects.sparks(self, coals, Color(1.0, 0.55, 0.18), roundi(4 + heat * 10.0), 1.2 + heat * 1.8)
+		if heat > 0.5:
+			Effects.flash(self, coals + Vector3(0, 0.2, 0), Color(1.0, 0.5, 0.2), 0.8 * heat, 2.5, 0.35)
 
 
 ## Pouring: holding tips the crucible and fills the mould. Let go at the line; over the top spills (and you pour
@@ -866,6 +956,7 @@ func _pour(delta: float, holding: bool) -> void:
 		if fill >= POUR_BAND.x and fill <= POUR_BAND.y:
 			feedback = {"text": "Perfect!", "color": Color(0.75, 1.0, 0.6), "age": 0.0}
 			step_t = 1.0
+			_perfect_fx(func() -> void: Effects.sparks(self, work_point(), Color(1.0, 0.6, 0.2), 10, 1.5))
 		elif fill < POUR_BAND.x:
 			feedback = {"text": "More", "color": Color(1.0, 0.92, 0.6), "age": 0.0}
 	if step_t < 1.0:
@@ -963,11 +1054,17 @@ func strike() -> void:
 		if good:
 			step_t = minf(step_t + 1.0 / n, 1.0)
 			_drops += 1
-		_show_drop(good)
+		if q >= PERFECT_Q:
+			_perfect_fx(func() -> void: _show_drop(good))
+		else:
+			_show_drop(good)
 		cue_t = randf()   # it starts swaying from somewhere new
 		return
 	step_t = minf(step_t + gain, 1.0)
-	_show_strike(good)
+	if q >= PERFECT_Q:
+		_perfect_fx(func() -> void: _show_strike(good))
+	else:
+		_show_strike(good)
 	match mech():
 		Mech.DIAL:
 			cue_t = 0.0   # turned: the other side starts again
@@ -1108,7 +1205,13 @@ func _show_done() -> void:
 	if _glow:
 		_glow.visible = false
 	_tint_mat.set_shader_parameter("tint_color", Color.WHITE)
-	Effects.twinkle(self, work_point() + Vector3(0, 0.08, 0), Color(1.0, 0.92, 0.6), 7, 0.35)
+	# A finishing flourish: a ring of light round it, a flash, a twinkle, and the view pushing in.
+	var fin := work_point() + Vector3(0, 0.08, 0)
+	Effects.slow_motion(0.6, func() -> void:
+		Effects.ring(self, fin, Color(1.0, 0.9, 0.55), 22, 0.45)
+		Effects.twinkle(self, fin, Color(1.0, 0.92, 0.6), 9, 0.35))
+	Effects.flash(self, fin + Vector3(0, 0.2, 0), Color(1.0, 0.92, 0.75), 1.4, 2.5, 0.6)
+	_punch(4.0)
 	match mode:
 		Mode.SMELT:
 			_ingot.global_transform = Transform3D(_ingot.global_basis, _ingot.global_position + Vector3(0, 0.05, 0))

@@ -90,6 +90,17 @@ func _pose_tool(at: Vector3, roll: float, turn: float, pitch := 0.0) -> void:
 	_item.transform = Transform3D(rot.scaled(Vector3.ONE * float(HELD_SCALE.get(_held_type, 1.0))), at)
 
 
+## Hit-stop: the swing hangs for a moment as it bites (only the arm: the world and the network go on).
+func hit_stop(seconds := 0.06) -> void:
+	if not _tween or not _tween.is_valid():
+		return
+	_tween.set_speed_scale(0.05)
+	var tw := _tween
+	get_tree().create_timer(seconds, false, false, true).timeout.connect(func() -> void:
+		if tw.is_valid():
+			tw.set_speed_scale(1.0))
+
+
 func is_busy() -> bool:
 	return _busy
 

@@ -56,6 +56,8 @@ var _bob_amount := 0.0
 var _last_step := 0
 var _land_dip := 0.0
 var _fov_kick := 0.0
+var _kick := Vector3.ZERO     ## camera rotation knocked by a blow (pitch, yaw, roll), springing back
+var _lean := 0.0              ## roll into a strafe
 var _cold := 0.0
 var _heat := 0.0
 var _exposure_timer := 0.0
@@ -87,7 +89,9 @@ func _ready() -> void:
 		Audio.play("clink", -2.0, 0.6))
 	reset_inventory()
 	stats.damaged.connect(func(amount: float) -> void:
-		_shake = minf(_shake + amount / 20.0, 1.0))
+		_shake = minf(_shake + amount / 20.0, 1.0)
+		kick(Vector3(randf_range(0.02, 0.04), randf_range(-0.03, 0.03), randf_range(-0.04, 0.04)) * clampf(amount / 15.0, 0.4, 1.5)))
+	Game.impact.connect(_on_impact)
 	set_active(false)
 
 
@@ -279,7 +283,9 @@ func _physics_process(delta: float) -> void:
 
 	# Landing: camera dip, thud, fall damage.
 	if is_on_floor() and not _was_on_floor and not swimming:
-		_land_dip = clampf(fall_speed * 0.012, 0.0, 0.25)
+		_land_dip = clampf(fall_speed * 0.018, 0.0, 0.35)
+		if fall_speed > 4.0:
+			kick(Vector3(-clampf(fall_speed * 0.004, 0.0, 0.06), 0.0, randf_range(-0.01, 0.01)))
 		if fall_speed > 3.0:
 			Audio.land(fall_speed / 12.0)
 		if fall_speed > 5.0:
@@ -321,6 +327,29 @@ func _kick_dust(size: float, count: int) -> void:
 	Effects.dust(get_parent(), p + Vector3(0, 0.1, 0), col.lightened(0.1), count, 0.35 * size, 0.6 * size)
 
 
+## A blow landed: the arm hangs for a beat and the view jolts with it.
+func _blow(weight: float) -> void:
+	viewmodel.hit_stop(0.035 + 0.035 * weight)
+	kick(Vector3(0.012 * weight, randf_range(-0.006, 0.006) * weight, randf_range(-0.012, 0.012) * weight))
+
+
+## Knock the camera (radians of pitch, yaw, roll); it springs back by itself.
+func kick(by: Vector3) -> void:
+	if Settings.camera_shake:
+		_kick += by
+
+
+## Something heavy landed nearby (a tree coming down, a piece finished): a shake that fades with distance.
+func _on_impact(at: Vector3, strength: float) -> void:
+	if not active:
+		return
+	var d := global_position.distance_to(at)
+	var s := strength * clampf(1.0 - d / 25.0, 0.0, 1.0)
+	if s > 0.01:
+		_shake = minf(_shake + s * 0.6, 1.0)
+		kick(Vector3(s * 0.02, 0.0, randf_range(-1.0, 1.0) * s * 0.02))
+
+
 func _update_camera(delta: float, sprinting: bool, input: Vector2) -> void:
 	var horizontal := Vector2(velocity.x, velocity.z).length()
 	var moving := (is_on_floor() or swimming) and horizontal > 0.5 and input != Vector2.ZERO
@@ -344,7 +373,14 @@ func _update_camera(delta: float, sprinting: bool, input: Vector2) -> void:
 	# Screen shake when hurt (decays quickly).
 	_shake = maxf(_shake - delta * 2.5, 0.0)
 	var shake := Vector3(randf_range(-1, 1), randf_range(-1, 1), 0) * _shake * _shake * 0.08
+	if not Settings.camera_shake:
+		shake = Vector3.ZERO
 	camera.position = bob + Vector3(0, -_land_dip, 0) + shake
+	# Blows knock the view and it springs back; strafing leans into the turn a little.
+	_kick = _kick.lerp(Vector3.ZERO, 1.0 - exp(-12.0 * delta))
+	var lean_to := -input.x * (0.03 if sprinting else 0.015) if Settings.camera_shake and is_on_floor() else 0.0
+	_lean = lerpf(_lean, lean_to, 1.0 - exp(-6.0 * delta))
+	camera.rotation = Vector3(_kick.x, _kick.y, _kick.z + _lean)
 
 	_fov_kick = lerpf(_fov_kick, 9.0 if sprinting and horizontal > 6.0 else 0.0, 1.0 - exp(-6.0 * delta))
 	camera.fov = Settings.fov + _fov_kick
@@ -561,6 +597,7 @@ func _on_strike() -> void:
 			hint.emit("Press %s to butcher" % Settings.code_label(Settings.binding_of("interact")))
 			return
 		hit_landed.emit()
+		_blow(0.9)
 		# Fighting something that fights back is combat; chasing down prey is a hunt.
 		if animal.state in [animal.State.ATTACK, animal.State.WARN] or animal.species.role == "defensive":
 			Music.combat_ping(0.8)
@@ -572,6 +609,7 @@ func _on_strike() -> void:
 		return
 	if look.has("structure"):
 		hit_landed.emit()
+		_blow(0.6)
 		var hammer: bool = ItemDB.tool_stats(inventory.selected_item()).get("type", "") == "hammer"
 		Audio.play_3d("clink" if hammer else "chop", point, -2.0, 1.15 if hammer else 0.8)
 		var smat := GameActions.piece_mat(String(Game.structures.get(look.structure, {}).get("kind", "")))
@@ -620,6 +658,7 @@ func _on_hit_resource(res: Dictionary, r: Dictionary, point: Vector3) -> void:
 	if not res.get("ok", false):
 		return
 	hit_landed.emit()
+	_blow(1.0 if target in ["tree", "rock"] else 0.4)
 	_drop_overflow(res.items, point)
 	match target:
 		"tree":

@@ -12,6 +12,7 @@ const MAX_BURSTS := 48
 const MAT_DUST := {"wood": Color(0.72, 0.56, 0.38), "stone": Color(0.62, 0.62, 0.64), "brick": Color(0.74, 0.46, 0.36)}
 
 static var _active := 0
+static var _slow := 0.0   ## while > 0, new bursts start in slow motion and speed up over this many seconds
 static var _soft_tex: Texture2D        ## a soft round blob (puffs, smoke, glows)
 static var _leaf_tex: Texture2D        ## a leaf shape
 static var _lit_mat: StandardMaterial3D       ## lit solid bits: chips, shards, splinters
@@ -139,11 +140,143 @@ static func _burst(parent: Node, pos: Vector3, mesh: Mesh, count: int, lifetime:
 	parent.add_child(p)
 	p.global_position = pos
 	_active += 1
-	parent.get_tree().create_timer(lifetime + 0.2, false).timeout.connect(func() -> void:
+	var extra := 0.0
+	if _slow > 0.0:
+		p.speed_scale = 0.2
+		p.create_tween().tween_property(p, "speed_scale", 1.0, _slow).set_trans(Tween.TRANS_QUAD).set_ease(Tween.EASE_IN)
+		extra = _slow * 0.8
+	parent.get_tree().create_timer(lifetime + 0.2 + extra, false).timeout.connect(func() -> void:
 		_active -= 1
 		if is_instance_valid(p):
 			p.queue_free())
 	return p
+
+
+## Bursts made inside `body` start in slow motion and catch up over `seconds` (a perfect strike, a finished piece).
+static func slow_motion(seconds: float, body: Callable) -> void:
+	_slow = seconds
+	body.call()
+	_slow = 0.0
+
+
+## A quick flash of light (a strike on hot metal, a finished piece), fading out by itself.
+static func flash(parent: Node, pos: Vector3, color := Color(1.0, 0.7, 0.35), energy := 2.0, radius := 3.0, time := 0.25) -> void:
+	if parent == null or not parent.is_inside_tree():
+		return
+	var l := OmniLight3D.new()
+	l.light_color = color
+	l.light_energy = energy
+	l.omni_range = radius
+	l.shadow_enabled = false
+	parent.add_child(l)
+	l.global_position = pos
+	var tw := l.create_tween()
+	tw.tween_property(l, "light_energy", 0.0, time).set_trans(Tween.TRANS_QUAD).set_ease(Tween.EASE_OUT)
+	tw.tween_callback(l.queue_free)
+
+
+## A ring of glowing motes bursting outwards (a finishing flourish).
+static func ring(parent: Node, pos: Vector3, color := Color(1.0, 0.9, 0.55), count := 18, size := 1.0) -> void:
+	_setup()
+	var p := _burst(parent, pos, _glow_quad, count, 0.8, true)
+	if p:
+		p.explosiveness = 1.0
+		p.emission_shape = CPUParticles3D.EMISSION_SHAPE_RING
+		p.emission_ring_axis = Vector3.UP
+		p.emission_ring_radius = 0.05 * size
+		p.emission_ring_inner_radius = 0.0
+		p.emission_ring_height = 0.0
+		p.direction = Vector3(1, 0.15, 0)
+		p.spread = 180.0
+		p.flatness = 0.85
+		p.initial_velocity_min = 0.8 * size
+		p.initial_velocity_max = 1.2 * size
+		p.damping_min = 1.5 * size
+		p.damping_max = 2.0 * size
+		p.gravity = Vector3(0, 0.3 * size, 0)
+		p.scale_amount_min = 0.035 * size
+		p.scale_amount_max = 0.06 * size
+		p.scale_amount_curve = _curve([Vector2(0, 1), Vector2(1, 0)])
+		p.color_ramp = _ramp(Color(color.r * 1.5, color.g * 1.5, color.b * 1.5), Color(color, 0.0))
+		_start(p)
+
+
+## Bubbles popping up at a liquid's surface (a pot on the boil): a continuous emitter, `radius` across.
+static func bubbles(radius := 0.1, color := Color(0.75, 0.55, 0.35)) -> CPUParticles3D:
+	_setup()
+	var p := CPUParticles3D.new()
+	p.mesh = _drop
+	p.amount = 14
+	p.lifetime = 0.6
+	p.randomness = 0.6
+	p.local_coords = false
+	p.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+	p.emission_shape = CPUParticles3D.EMISSION_SHAPE_RING
+	p.emission_ring_axis = Vector3.UP
+	p.emission_ring_radius = radius
+	p.emission_ring_inner_radius = 0.0
+	p.emission_ring_height = 0.0
+	p.direction = Vector3.UP
+	p.spread = 10.0
+	p.initial_velocity_min = 0.03
+	p.initial_velocity_max = 0.08
+	p.gravity = Vector3.ZERO
+	p.scale_amount_min = 0.008
+	p.scale_amount_max = 0.018
+	p.scale_amount_curve = _curve([Vector2(0, 0.3), Vector2(0.85, 1.0), Vector2(1, 1.4)])
+	p.color = color.lightened(0.25)
+	return p
+
+
+## Fine dust hanging and drifting in the air round a workplace (sawdust at the bench).
+static func motes(box: Vector3, color := Color(0.85, 0.72, 0.5), amount := 24) -> CPUParticles3D:
+	_setup()
+	var p := CPUParticles3D.new()
+	p.mesh = _glow_quad
+	p.amount = amount
+	p.lifetime = 5.0
+	p.randomness = 0.5
+	p.local_coords = false
+	p.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+	p.emission_shape = CPUParticles3D.EMISSION_SHAPE_BOX
+	p.emission_box_extents = box
+	p.direction = Vector3(1, 0.3, 0.2)
+	p.spread = 180.0
+	p.initial_velocity_min = 0.02
+	p.initial_velocity_max = 0.07
+	p.gravity = Vector3(0.0, -0.01, 0.0)
+	p.scale_amount_min = 0.006
+	p.scale_amount_max = 0.012
+	var g := Gradient.new()
+	g.set_color(0, Color(color, 0.0))
+	g.add_point(0.3, Color(color, 0.5))
+	g.add_point(0.7, Color(color, 0.5))
+	g.set_color(g.get_point_count() - 1, Color(color, 0.0))
+	p.color_ramp = g
+	return p
+
+
+## A card of heat haze to hang over something hot; set its strength with set_shimmer.
+static func shimmer(size := Vector2(0.3, 0.5)) -> MeshInstance3D:
+	var mi := MeshInstance3D.new()
+	var q := QuadMesh.new()
+	q.size = size
+	q.center_offset = Vector3(0, size.y * 0.5, 0)
+	mi.mesh = q
+	var m := ShaderMaterial.new()
+	m.shader = preload("res://shaders/heat_shimmer.gdshader")
+	mi.material_override = m
+	mi.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+	mi.visible = false
+	return mi
+
+
+static func set_shimmer(mi: MeshInstance3D, strength: float) -> void:
+	if mi == null:
+		return
+	mi.visible = strength > 0.02
+	if mi.visible:
+		(mi.material_override as ShaderMaterial).set_shader_parameter("strength", strength)
 
 
 static func _start(p: CPUParticles3D) -> void:
@@ -433,11 +566,11 @@ static func embers(size := 1.0, color := Color(1.0, 0.58, 0.2)) -> CPUParticles3
 	p.damping_max = 0.6
 	p.tangential_accel_min = -0.6
 	p.tangential_accel_max = 0.6
-	p.scale_amount_min = 0.035
-	p.scale_amount_max = 0.06
+	p.scale_amount_min = 0.025
+	p.scale_amount_max = 0.045
 	p.scale_amount_curve = _curve([Vector2(0, 1), Vector2(0.6, 0.8), Vector2(1, 0)])
 	var eg := Gradient.new()   # bright as it leaves the fire, flickering darker as it climbs
-	eg.set_color(0, Color(1.6, 1.25, 0.6))
+	eg.set_color(0, Color(1.5, 0.95, 0.4))
 	eg.add_point(0.4, Color(color.r * 1.4, color.g * 1.2, color.b, 1.0))
 	eg.set_color(eg.get_point_count() - 1, Color(color.darkened(0.5), 0.0))
 	p.color_ramp = eg
@@ -639,7 +772,8 @@ static func fall_tree(parent: Node, mesh: Mesh, xf: Transform3D, away: Vector3, 
 		splinters(parent, hit, color.lightened(0.3), color, 10)
 		dust(parent, hit, Color(0.62, 0.55, 0.42), 10, 0.9, 0.8)
 		leaves(parent, hit + Vector3(0, 0.8, 0), leaf, 14, 1.8)
-		Audio.play_3d(Audio.sfx.tree_fall, hit, 2.0))
+		Audio.play_3d(Audio.sfx.tree_fall, hit, 2.0)
+		Game.impact.emit(hit, clampf(height / 8.0, 0.4, 1.2)))
 	tw.tween_interval(1.6)
 	tw.tween_property(mi, "scale", Vector3(1, 0.001, 1), 0.7).set_trans(Tween.TRANS_SINE)
 	tw.tween_callback(pivot.queue_free)

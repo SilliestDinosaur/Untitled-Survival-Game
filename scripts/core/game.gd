@@ -52,6 +52,7 @@ var inventories := {}
 signal pickups_changed
 signal terrain_changed(cells: Array)   ## a placed piece changed the ground here (rebuild those chunks)
 signal structures_changed
+signal impact(at: Vector3, strength: float)   ## something heavy hit the ground here (cameras nearby shake)
 signal new_day(day: int)
 
 ## Day/night: 0 = midnight, 0.25 = sunrise, 0.5 = noon, 0.75 = sunset. One full cycle takes
@@ -61,6 +62,7 @@ const SUNRISE := 0.21
 const SUNSET := 0.79
 var time_of_day := 0.3
 var day := 1
+var menu_open := false     ## the satchel or the pause menu is up (the world behind blurs)
 var time_paused := false   ## title screen keeps a fixed afternoon
 const HARVEST_REGROW := 240.0   ## seconds before a hand-harvested plant can be harvested again
 
