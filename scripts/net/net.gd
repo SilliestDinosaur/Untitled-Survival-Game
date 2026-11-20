@@ -750,6 +750,8 @@ func run_action(pid: int, peer: int, action: String, a: Dictionary) -> Dictionar
 				"one": inv.split_one(int(a.a), int(a.b))
 				"sort": inv.sort_backpack()
 			return {"ok": true}
+		"repair_all":
+			return GameActions.repair_all(pid, a.get("pos", Vector3.ZERO))
 		"quick_stack":
 			return GameActions.quick_stack(pid, a.get("pos", Vector3.ZERO))
 		"chest":

@@ -137,6 +137,8 @@ func _process(_d: float) -> bool:
 				"the hammer repairs it and takes planks (%.0f hp, %d planks used)" % [float(_game.structures[_door_id].hp), planks - inv2.count("plank")])
 			inv2.select(_slot_of(inv2, "hatchet_t1"))
 			planks = inv2.count("plank")
+			_check(_GA.just_finished(_game.structures[_door_id]), "a piece just finished is in its full-refund window")
+			_game.structures[_door_id].finished_at = _game.play_time - _GA.FULL_REFUND - 1.0   # long since built
 			for i in 40:
 				if not _game.structures.has(_door_id):
 					break

@@ -865,8 +865,10 @@ static func _hit_piece(player_id: int, st: Dictionary) -> Dictionary:
 		Game.structures_changed.emit()
 		return {"ok": false, "reason": why, "broke": broke}
 	_remove_piece(st)
-	# Furniture and the like come back whole (you'll move them about); walls and floors give back half.
-	_refund(inv, PIECE_COSTS.get(st.kind, {}), 1.0 if is_decor(st.kind) else 0.5, pos)
+	# Furniture and the like come back whole (you'll move them about); walls and floors give back half, unless they
+	# were only just finished (a misplaced piece, put right straight away, costs nothing).
+	var whole := is_decor(st.kind) or just_finished(st)
+	_refund(inv, PIECE_COSTS.get(st.kind, {}), 1.0 if whole else 0.5, pos)
 	return {"ok": true, "destroyed": true, "kind": st.kind, "broke": broke}
 
 
@@ -892,6 +894,8 @@ static func _hammer(inv: Inventory, st: Dictionary) -> Dictionary:
 		st.spent = spent
 		st.built = float(step) / hits
 		st.hp = float(st.max_hp) * float(st.built)
+		if step >= hits:
+			st.finished_at = Game.play_time   # (a change of mind soon after gives everything back: see FULL_REFUND)
 		Game.structures_changed.emit()
 		return {"ok": true, "built": st.built, "finished": step >= hits, "took": take, "hammer": true}
 	if float(st.hp) >= float(st.max_hp) - 0.01:
@@ -916,6 +920,40 @@ static func _hammer(inv: Inventory, st: Dictionary) -> Dictionary:
 	st.hp = minf(float(st.max_hp), float(st.hp) + float(st.max_hp) * share)
 	Game.structures_changed.emit()
 	return {"ok": true, "repaired": true, "hp": st.hp, "max_hp": st.max_hp, "took": take, "hammer": true}
+
+
+## Seconds after a piece is finished in which knocking it down gives back everything it cost.
+const FULL_REFUND := 30.0
+
+
+static func just_finished(st: Dictionary) -> bool:
+	return st.has("finished_at") and Game.play_time - float(st.finished_at) < FULL_REFUND
+
+
+## The hammer, Shift-clicked: one share of repair on every damaged finished piece near `at`, as far as the pack's
+## materials go. Result: {ok, repaired: how many pieces, reason}.
+const REPAIR_REACH := 10.0
+static func repair_all(player_id: int, at: Vector3) -> Dictionary:
+	var inv := Game.inventory_of(player_id)
+	if ItemDB.tool_stats(inv.selected_item()).get("type", "") != "hammer":
+		return {"ok": false, "reason": "Needs a hammer"}
+	var fixed := 0
+	var short := ""
+	for sid: String in Game.structures.keys():
+		var st: Dictionary = Game.structures[sid]
+		if not is_building(st.kind) or is_blueprint(st) or _pos(st).distance_to(at) > REPAIR_REACH:
+			continue
+		var hp := piece_health(st)
+		if hp.x >= hp.y - 0.01:
+			continue
+		var r := _hammer(inv, st)
+		if r.get("repaired", false):
+			fixed += 1
+		elif short == "":
+			short = String(r.get("reason", ""))
+	if fixed == 0:
+		return {"ok": false, "repaired": 0, "reason": short if short != "" else "Nothing nearby needs repair"}
+	return {"ok": true, "repaired": fixed}
 
 
 ## "" if the pack holds everything in `need`, else what's missing ("2 Planks, 1 Rope").

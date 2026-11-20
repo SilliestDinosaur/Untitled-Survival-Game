@@ -73,6 +73,8 @@ var crafting: Node = null  ## the crafting minigame you're at (CraftSession), if
 var _ghost_kind := ""
 var _ghost_ok_mat: StandardMaterial3D
 var _ghost_bad_mat: StandardMaterial3D
+var _ghost_wait_mat: StandardMaterial3D
+var _turns_by_kind := {}   ## piece kind -> quarter turns last chosen for it
 
 
 func _ready() -> void:
@@ -409,10 +411,12 @@ func _piece_look(sid: String, st: Dictionary) -> Dictionary:
 		if tool_type == "hammer":
 			look.label = "Health %d / %d" % [ceili(hp.x), roundi(hp.y)]
 			if hp.x < hp.y - 0.01:
-				look.attack = "Repair"
+				look.attack = "Repair  ·  Shift: repair all nearby"
 		elif tool_type == GameActions.BREAK_TOOL[GameActions.piece_mat(st.kind)]:
 			look.label = "Health %d / %d" % [ceili(hp.x), roundi(hp.y)]
 			look.attack = "Take down" if GameActions.is_decor(st.kind) else "Knock down"
+			if GameActions.just_finished(st) and not GameActions.is_decor(st.kind):
+				look.label += " · full refund for %ds" % ceili(GameActions.FULL_REFUND - (Game.play_time - float(st.finished_at)))
 		if GameActions.DECOR.get(st.kind, {}).has("slots"):
 			look.chest = sid
 			look.interact = "Open"
@@ -612,6 +616,14 @@ func _on_strike() -> void:
 		_blow(0.6)
 		var hammer: bool = ItemDB.tool_stats(inventory.selected_item()).get("type", "") == "hammer"
 		Audio.play_3d("clink" if hammer else "chop", point, -2.0, 1.15 if hammer else 0.8)
+		if hammer and Input.is_key_pressed(KEY_SHIFT):
+			# Shift + hammer: a share of repair on everything damaged around you.
+			Net.request("repair_all", {"pos": global_position}, func(res: Dictionary) -> void:
+				if res.get("ok", false):
+					hint.emit("Repaired %d piece%s" % [int(res.repaired), "" if int(res.repaired) == 1 else "s"])
+				elif String(res.get("reason", "")) != "":
+					hint.emit(res.reason))
+			return
 		var smat := GameActions.piece_mat(String(Game.structures.get(look.structure, {}).get("kind", "")))
 		var scol: Color = Effects.MAT_DUST.get(smat, Game.palette.bark.lightened(0.2))
 		if smat == "wood":
@@ -813,8 +825,10 @@ func _update_placement() -> void:
 			if not under.is_empty():
 				pos = top
 				pos.y = float(under.pos[1]) + GameActions.FLOOR_TOP   # exactly on its top, not in it
+	_place_turns = int(_turns_by_kind.get(kind_now, 0))   # each kind of piece remembers which way you last turned it
 	if Input.is_action_just_pressed("rotate_piece"):
 		_place_turns = (_place_turns + 1) % 4
+		_turns_by_kind[kind_now] = _place_turns
 	var yaw := rotation.y + PI + _place_turns * PI * 0.5
 	var kind := kind_now
 	if GameActions.is_building(kind) and not GameActions.is_decor(kind):
@@ -852,7 +866,11 @@ func _update_placement() -> void:
 		_ghost_kind = kind
 		_ghost.mesh = StructureModels.get_model(kind, _ghost_ok_mat, _ghost_ok_mat).body
 	_ghost.visible = true
-	_ghost.material_override = _ghost_ok_mat if placement.ok else _ghost_bad_mat
+	# Green: fine. Amber: only where you're standing is in the way (step back). Red: it can't go there.
+	if not _ghost_wait_mat:
+		_ghost_wait_mat = _ghost_material(Color(1.0, 0.78, 0.3, 0.45))
+	var you := reason in ["Too close to you", "You're standing there"]
+	_ghost.material_override = _ghost_ok_mat if placement.ok else (_ghost_wait_mat if you else _ghost_bad_mat)
 	_ghost.global_position = pos
 	_ghost.rotation = Vector3(0, yaw, 0)
 
