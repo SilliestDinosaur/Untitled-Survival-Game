@@ -145,10 +145,15 @@ static func _burst(parent: Node, pos: Vector3, mesh: Mesh, count: int, lifetime:
 		p.speed_scale = 0.2
 		p.create_tween().tween_property(p, "speed_scale", 1.0, _slow).set_trans(Tween.TRANS_QUAD).set_ease(Tween.EASE_IN)
 		extra = _slow * 0.8
-	parent.get_tree().create_timer(lifetime + 0.2 + extra, false).timeout.connect(func() -> void:
-		_active -= 1
-		if is_instance_valid(p):
-			p.queue_free())
+	# Its own timer frees it, and the count drops when it leaves the tree whichever way it goes (freed with what
+	# it was on, like a crafting session closing): nothing is left holding a burst that's gone.
+	p.tree_exited.connect(func() -> void: _active -= 1, CONNECT_ONE_SHOT)
+	var t := Timer.new()
+	t.wait_time = lifetime + 0.2 + extra
+	t.one_shot = true
+	t.autostart = true
+	t.timeout.connect(p.queue_free)
+	p.add_child(t)
 	return p
 
 

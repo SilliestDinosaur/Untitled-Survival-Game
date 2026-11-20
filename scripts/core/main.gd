@@ -321,6 +321,7 @@ func _to_title() -> void:
 	for c in [_hud, _pause, _settings, _inventory, _loading, _new_world, _load, _debug_items]:
 		c.hide()
 	Game.save_id = ""
+	Game.menu_open = false   # (quitting from the pause menu: the menu's blur mustn't follow you out)
 	Game.time_of_day = 0.4   # the title screen sits in a warm afternoon
 	_title.show()
 	_title.refresh()
@@ -328,6 +329,7 @@ func _to_title() -> void:
 
 func _start_loading(at: Vector3, heading := "Generating") -> void:
 	state = State.LOADING
+	Game.menu_open = false   # nothing's open over a world that's loading (no blur carried in from a menu)
 	_models_ready = false   # each world has its own metals, so its own item models
 	Game.time_paused = not Net.is_online()   # with friends, the world keeps going
 	get_tree().paused = false
