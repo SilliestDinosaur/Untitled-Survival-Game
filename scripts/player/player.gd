@@ -782,9 +782,10 @@ func _update_placement() -> void:
 	var dir := -camera.global_transform.basis.z
 	var pos := Vector3.INF
 	# Building pieces snap to whatever the crosshair is on: the ground, a foundation's top, a wall face.
-	if GameActions.is_building(kind_now) and ray.is_colliding() and ray.get_collision_point().distance_to(from) <= REACH + 2.0:
+	var under := ray.get_collider() if ray.is_colliding() else null   # (can be gone already: a plant just gathered)
+	if GameActions.is_building(kind_now) and is_instance_valid(under) and ray.get_collision_point().distance_to(from) <= REACH + 2.0:
 		var hit := ray.get_collision_point()
-		if ray.get_collider().name != "TerrainBody" and not ray.get_collider().has_meta("structure") and ray.get_collider().get_parent() is TerrainChunk:
+		if under.name != "TerrainBody" and not under.has_meta("structure") and under.get_parent() is TerrainChunk:
 			hit = Vector3.INF   # plants and rocks don't count: aim at the ground behind them instead
 		if hit != Vector3.INF:
 			pos = hit
