@@ -101,6 +101,11 @@ func add_primitive(prim: PrimitiveMesh, xf: Transform3D, color: Color, lumpy := 
 
 # --- Sculpting helpers: shapes built vertex by vertex ---------------------------------
 
+## One flat triangle facing `normal` (it's turned round if its corners wind the other way). sRGB colour.
+func triangle(a: Vector3, b: Vector3, c: Vector3, normal: Vector3, color: Color) -> void:
+	_emit(a, b, c, normal, normal, normal, color, color, color, normal)
+
+
 ## Emit one triangle, flipping it if needed so it faces `outward`. Colors are sRGB.
 func _emit(a: Vector3, b: Vector3, c: Vector3, na: Vector3, nb: Vector3, nc: Vector3,
 		ca: Color, cb: Color, cc: Color, outward: Vector3) -> void:

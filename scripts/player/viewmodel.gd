@@ -73,6 +73,10 @@ func hold(item_id: String) -> void:
 		# Turned so you see the face of the head, not just its edge.
 		_item.position = Vector3(0, -0.07, 0)
 		_item.rotation = Vector3(-0.05, 0.9, 0.12)
+	elif _held_type == "rock":
+		# Gripped low in the right hand, the rough working end forward and up, ready to knock things with.
+		_item.position = Vector3(0.0, -0.06, 0.03)
+		_item.rotation = Vector3(0.45, -0.7, 0.35)
 	elif _held_type == "spear":
 		# Upright and leaning left, so the head stays in view.
 		_item.position = Vector3(0.05, -0.22, 0.05)

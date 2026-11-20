@@ -172,7 +172,7 @@ static func mesh_for(id: String, material: Material) -> ArrayMesh:
 	if info.kind == "tool":
 		var t: Dictionary = info.tool
 		if t.type == "rock":
-			_flint_rock(k, 0.045)
+			_knapped_rock(k)
 		elif t.type == "torch":
 			_torch(k)
 		elif t.type == "hammer":
@@ -596,6 +596,46 @@ static func torch_flame() -> ArrayMesh:
 # --- The starting rock ------------------------------------------------------------------
 
 ## A fist-sized chunk of flint: faceted, with lighter freshly-chipped faces.
+## The rock in your hand: a fist-sized lump of stone with big flat facets where it's been knocked about, a
+## heavier rounded end to hold and a rough edge to hit with. Made the way a stone is knapped: an egg-shaped block
+## cut by flat planes (a convex shape, so it's one clean closed surface with nothing overlapping).
+static func _knapped_rock(k: MeshKit) -> void:
+	var rng := RandomNumberGenerator.new()
+	rng.seed = 41
+	var ext := Vector3(0.088, 0.064, 0.07)   # half-sizes: about 18 x 13 x 14 cm
+	var centre := Vector3(0, 0.035, -0.02)
+	var planes: Array[Plane] = []
+	# Cuts all round, deeper on the working end (+x) so it comes to a rough edge there.
+	for i in 40:
+		var n := Vector3(rng.randf_range(-1, 1), rng.randf_range(-1, 1), rng.randf_range(-1, 1)).normalized()
+		var support := Vector3(n.x * ext.x, n.y * ext.y, n.z * ext.z).length()
+		var depth := rng.randf_range(0.86, 0.97) - (0.1 if n.x > 0.55 else 0.0)
+		planes.append(Plane(n, support * depth))
+	var pts := Geometry3D.compute_convex_mesh_points(planes)
+	var stone := Color(0.5, 0.49, 0.47)
+	for pl: Plane in planes:
+		var face: Array[Vector3] = []
+		for p: Vector3 in pts:
+			if absf(pl.distance_to(p)) < 0.0005:
+				face.append(p)
+		if face.size() < 3:
+			continue
+		var mid := Vector3.ZERO
+		for p in face:
+			mid += p
+		mid /= face.size()
+		var u := (face[0] - mid).normalized()
+		var v := pl.normal.cross(u)
+		face.sort_custom(func(a: Vector3, b: Vector3) -> bool:
+			return atan2((a - mid).dot(v), (a - mid).dot(u)) < atan2((b - mid).dot(v), (b - mid).dot(u)))
+		# Each facet a slightly different grey; the fresh chips on the working end paler.
+		var col := stone.darkened(rng.randf_range(-0.04, 0.16)).lerp(Color(0.52, 0.47, 0.4), rng.randf_range(0.0, 0.3))
+		if pl.normal.x > 0.45:
+			col = stone.lightened(rng.randf_range(0.12, 0.22))
+		for i in range(1, face.size() - 1):
+			k.triangle(face[0] + centre, face[i] + centre, face[i + 1] + centre, pl.normal, col)
+
+
 static func _flint_rock(k: MeshKit, r: float) -> void:
 	k.flat_shading = true
 	var stone := Color(0.4, 0.42, 0.47)
