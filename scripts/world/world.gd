@@ -366,6 +366,11 @@ func _remove_visual(chunk: TerrainChunk, r: Dictionary, from: Vector3) -> void:
 	chunk.remove_resource(r.index)
 	if mesh:
 		if FloraLibrary.category_of(r.kind) == "tree":
-			Effects.fall_tree(get_parent(), mesh, xf, xf.origin - from, Game.palette.bark)
+			Effects.fall_tree(get_parent(), mesh, xf, xf.origin - from, Effects.bark_color(r.kind), Effects.leaf_color(r.kind))
+		elif FloraLibrary.category_of(r.kind) == "rock":
+			var col := Game.palette.rock
+			if r.kind.begins_with("ore") or r.kind.begins_with("gem"):
+				col = ItemDB.tier_info(int(r.kind.right(1))).color
+			Effects.crumble(get_parent(), mesh, xf, col, true)
 		else:
-			Effects.crumble(get_parent(), mesh, xf)
+			Effects.crumble(get_parent(), mesh, xf, Effects.leaf_color(r.kind), false)

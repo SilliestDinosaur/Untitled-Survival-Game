@@ -860,7 +860,8 @@ func _pour(delta: float, holding: bool) -> void:
 		if fill > 1.0:
 			fill = 0.55
 			feedback = {"text": "Spilled!", "color": Color(1.0, 0.6, 0.5), "age": 0.0}
-			Effects.chips(self, work_point(), Color(1.0, 0.55, 0.15), 8, 0.02, 2.0)
+			Effects.sparks(self, work_point(), Color(1.0, 0.55, 0.15), 10, 1.8)
+			Effects.dust(self, work_point(), Color(0.4, 0.38, 0.36), 3, 0.15, 0.6)   # a puff of smoke
 	elif _was_holding:   # just let go
 		if fill >= POUR_BAND.x and fill <= POUR_BAND.y:
 			feedback = {"text": "Perfect!", "color": Color(0.75, 1.0, 0.6), "age": 0.0}
@@ -985,10 +986,10 @@ func _show_drop(good: bool) -> void:
 	match step_id():
 		"load":
 			Audio.play_3d("clink", at, -6.0, 0.8)
-			Effects.chips(self, at, Color(1.0, 0.6, 0.2), 4, 0.015, 1.2)
+			Effects.sparks(self, at, Color(1.0, 0.6, 0.2), 5, 1.2)
 		"add":
 			Audio.play_3d("rustle", at, -4.0, 0.6)
-			Effects.chips(self, at, Color(0.55, 0.65, 0.75), 6, 0.02, 1.5)   # a splash
+			Effects.splash(self, at, 0.35)
 		_:
 			Audio.play_3d("chop", at, -6.0, 1.4)
 
@@ -1000,7 +1001,8 @@ func _show_strike(good: bool) -> void:
 			create_tween().tween_method(func(a: float) -> void: _turn = a, _turn, _turn + PI, 0.25).set_trans(Tween.TRANS_SINE)
 			Audio.play_3d("rustle", at, -6.0, 0.7 if good else 0.5)
 			if good and step_id() == "cook":
-				Effects.chips(self, at, Color(1.0, 0.75, 0.4), 5, 0.025, 1.2)   # spitting fat
+				Effects.chips(self, at, Color(1.0, 0.75, 0.4), 5, 0.02, 1.2)   # spitting fat
+				Effects.steam(self, at, 3, 0.12)
 			return
 		"quench":
 			if good:
@@ -1013,7 +1015,8 @@ func _show_strike(good: bool) -> void:
 				tw.tween_property(_piece, "transform", dip, 0.25).set_trans(Tween.TRANS_SINE)
 				tw.tween_callback(func() -> void:
 					Audio.play_3d("swoosh", water, -2.0, 1.6)
-					Effects.chips(self, water + Vector3(0, 0.05, 0), Color(0.9, 0.92, 0.95), 16, 0.03, 2.5))   # steam
+					Effects.steam(self, water + Vector3(0, 0.05, 0), 12, 0.22)
+					Effects.splash(self, water, 0.3))
 				tw.tween_interval(0.35)
 				tw.tween_property(_piece, "transform", home, 0.25).set_trans(Tween.TRANS_SINE)
 				tw.tween_callback(func() -> void: _busy = false)
@@ -1037,16 +1040,18 @@ func _show_strike(good: bool) -> void:
 	match mode:
 		Mode.SMITH, Mode.SMELT:
 			Audio.play_3d("clink", at, -2.0, randf_range(0.95, 1.1) if good else 0.8)
-			Effects.chips(self, at, Color(1.0, 0.6, 0.2), 8 if good else 3, 0.02, 3.0)   # sparks
+			Effects.sparks(self, at, Color(1.0, 0.6, 0.2), 12 if good else 4, 3.0 if good else 1.8)
 		Mode.CARVE:
 			if step_id() == "shape":
 				Audio.play_3d("chop", at, -4.0, randf_range(1.1, 1.3) if good else 0.9)
-				Effects.chips(self, at, Color(0.72, 0.55, 0.36), 7 if good else 3, 0.03, 2.0)   # shavings
+				Effects.splinters(self, at, Color(0.82, 0.66, 0.46), Color(0.72, 0.55, 0.36), 6 if good else 2, 0.35)
 			else:
 				Audio.play_3d("thud", at, -4.0, 1.2)
 		Mode.KNAP:
 			Audio.play("clink", -6.0, randf_range(1.3, 1.5) if good else 1.0)
 			Effects.chips(_holder(), at, Color(0.55, 0.56, 0.6), 6 if good else 2, 0.015, 1.2)   # flakes
+			if good:
+				Effects.sparks(_holder(), at, Color(1.0, 0.85, 0.6), 3, 1.5)
 
 
 ## On to the next step (the view moves if it needs to), or the item's done.
@@ -1103,6 +1108,7 @@ func _show_done() -> void:
 	if _glow:
 		_glow.visible = false
 	_tint_mat.set_shader_parameter("tint_color", Color.WHITE)
+	Effects.twinkle(self, work_point() + Vector3(0, 0.08, 0), Color(1.0, 0.92, 0.6), 7, 0.35)
 	match mode:
 		Mode.SMELT:
 			_ingot.global_transform = Transform3D(_ingot.global_basis, _ingot.global_position + Vector3(0, 0.05, 0))

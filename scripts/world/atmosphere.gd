@@ -27,6 +27,7 @@ var _update_cd := 0.0
 
 
 func _ready() -> void:
+	add_child(AmbientFx.new())   # fireflies, falling leaves, snow, blowing dust
 	sun = DirectionalLight3D.new()
 	sun.name = "Sun"
 	sun.shadow_enabled = true

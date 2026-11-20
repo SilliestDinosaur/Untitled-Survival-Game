@@ -3,7 +3,15 @@ extends Node3D
 ## forges with glowing coals. Pure view of shared data, re-synced when it changes.
 
 var _nodes := {}   # structure id -> Node3D
-var _lit := {}     # structure id -> [node, light, flame] for the ones with a fire (animated each frame)
+var _lit := {}     # structure id -> [node, light, flame, fire fx] for the ones with a light (animated each frame)
+## Fires' embers and smoke: where (over the fuel), how big, and where the smoke comes out relative to that.
+const FIRE_FX := {
+	"campfire": [Vector3(0, 0.2, 0), 1.0, Vector3(0, 0.8, 0)],
+	"forge": [Vector3(0, 0.98, -0.05), 0.8, Vector3(0, 1.8, 0.15)],   # coals; smoke out of the chimney
+	"brazier": [Vector3(0, 0.78, 0), 0.7, Vector3(0, 0.35, 0)],
+	"standing_torch": [Vector3(0, 1.55, 0), 0.4, Vector3(0, 0.25, 0)],
+}
+const FIRE_FX_RANGE := 55.0
 var _corners := {}  # wall corners -> the wall pieces ending there (StructureModels.corner_index), for butt joints
 var _mat: ShaderMaterial
 var _glow_mat: StandardMaterial3D
@@ -14,7 +22,7 @@ var _build_mat: ShaderMaterial       ## the painted look below it (shaders/paint
 var _finishing := {}                 ## ids whose blueprint was just finished: they get a puff when rebuilt solid
 
 ## Dust from hammering, by material.
-const DUST := {"wood": Color(0.72, 0.56, 0.38), "stone": Color(0.62, 0.62, 0.64), "brick": Color(0.74, 0.46, 0.36)}
+const DUST := Effects.MAT_DUST
 
 
 func _ready() -> void:
@@ -95,7 +103,7 @@ func _sync() -> void:
 			_nodes[id] = _make(st)
 			var light := _nodes[id].get_node_or_null("Light") as OmniLight3D
 			if light:
-				_lit[id] = [_nodes[id], light, _nodes[id].get_node_or_null("Flame") as Node3D]
+				_lit[id] = [_nodes[id], light, _nodes[id].get_node_or_null("Flame") as Node3D, _nodes[id].get_node_or_null("FireFx")]
 			if _finishing.has(id):
 				_finishing.erase(id)
 				_finished_fx(_nodes[id], st)
@@ -139,7 +147,9 @@ func _apply_build(root: Node3D, st: Dictionary) -> void:
 	tw.tween_method(func(c: float) -> void: _set_cut(root, c), now, target, 0.35).set_trans(Tween.TRANS_CUBIC).set_ease(Tween.EASE_OUT)
 	var mat := GameActions.piece_mat(st.kind)
 	var at := root.to_global(Vector3(0, target, 0))
-	Effects.chips(self, at, DUST.get(mat, Color(0.7, 0.6, 0.5)), 12, 0.05, 2.2)
+	var col: Color = DUST.get(mat, Color(0.7, 0.6, 0.5))
+	Effects.chips(self, at, col, 8, 0.05, 2.2)
+	Effects.dust(self, at, col.lightened(0.15), 4, 0.4)
 
 
 ## A blueprint finished: a bigger puff all round, and the piece settles in with a little bounce.
@@ -147,7 +157,9 @@ func _finished_fx(root: Node3D, st: Dictionary) -> void:
 	var mat := GameActions.piece_mat(st.kind)
 	var body := root.get_node_or_null("Body") as MeshInstance3D
 	var h := body.mesh.get_aabb().size.y if body and body.mesh else 1.0
-	Effects.chips(self, root.to_global(Vector3(0, h * 0.5, 0)), DUST.get(mat, Color(0.7, 0.6, 0.5)), 22, 0.07, 3.0)
+	var col: Color = DUST.get(mat, Color(0.7, 0.6, 0.5))
+	Effects.chips(self, root.to_global(Vector3(0, h * 0.5, 0)), col, 14, 0.07, 3.0)
+	Effects.dust(self, root.to_global(Vector3(0, 0.2, 0)), col.lightened(0.15), 10, 0.8, 0.7)
 	Audio.play_3d("thud", root.global_position, -4.0, 0.8)
 	root.scale = Vector3(1.0, 0.94, 1.0)
 	var tw := root.create_tween()
@@ -249,6 +261,12 @@ func _make(st: Dictionary) -> Node3D:
 			flame.position = Vector3(0, 0.72, 0)
 			flame.set_meta("size", 0.85)
 		root.add_child(flame)
+	# Embers and smoke off the fires (switched off when far away: see _process).
+	if not blueprint and st.kind in FIRE_FX:
+		var fx: Array = FIRE_FX[st.kind]
+		var fire := Effects.fire(fx[1], fx[2])
+		fire.position = fx[0]
+		root.add_child(fire)
 	var body := StaticBody3D.new()
 	# A blueprint can be aimed at (to hammer it) but walked through.
 	body.collision_layer = TerrainChunk.LAYER_INTERACT if blueprint else TerrainChunk.LAYER_SOLID | TerrainChunk.LAYER_INTERACT
@@ -365,7 +383,9 @@ func _apply_door(root: Node3D, st: Dictionary) -> void:
 func _process(_delta: float) -> void:
 	var t := Time.get_ticks_msec() / 1000.0
 	var night := 1.0 - Game.daylight()
-	# Only the fires (campfires and forges), not every wall and floor of a base.
+	var cam := get_viewport().get_camera_3d()
+	var eye := cam.global_position if cam else Vector3.ZERO
+	# Only the lit things (fires and lamps), not every wall and floor of a base.
 	for id: String in _lit:
 		var e: Array = _lit[id]
 		var n: Node3D = e[0]
@@ -381,3 +401,6 @@ func _process(_delta: float) -> void:
 			var fs: float = flame.get_meta("size", 1.0)
 			flame.scale = Vector3(1.0 + 0.08 * sin(t * 9.0 + ph), flicker * 1.1, 1.0 + 0.08 * cos(t * 7.0 + ph)) * fs
 			flame.rotation.y = t * 0.8 + ph
+		var fire: Node = e[3]
+		if fire and is_instance_valid(fire):
+			Effects.set_fire_on(fire, n.global_position.distance_squared_to(eye) < FIRE_FX_RANGE * FIRE_FX_RANGE)

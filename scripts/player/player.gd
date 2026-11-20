@@ -232,7 +232,10 @@ func _climb(wanted: Vector3, start: Vector3) -> bool:
 
 func _physics_process(delta: float) -> void:
 	var on_floor := is_on_floor()
+	var was_swimming := swimming
 	swimming = not Game.in_cave and global_position.y + 1.0 < Game.SEA_LEVEL
+	if swimming and not was_swimming and velocity.y < -2.0:   # into the water
+		Effects.splash(get_parent(), Vector3(global_position.x, Game.SEA_LEVEL, global_position.z), clampf(-velocity.y / 8.0, 0.6, 1.6))
 	var input := Input.get_vector("move_left", "move_right", "move_forward", "move_back") if not crafting else Vector2.ZERO
 	var dir := (transform.basis * Vector3(input.x, 0.0, input.y)).normalized()
 
@@ -279,6 +282,8 @@ func _physics_process(delta: float) -> void:
 		_land_dip = clampf(fall_speed * 0.012, 0.0, 0.25)
 		if fall_speed > 3.0:
 			Audio.land(fall_speed / 12.0)
+		if fall_speed > 5.0:
+			_kick_dust(clampf(fall_speed / 10.0, 0.6, 1.6), 8)
 		if fall_speed > safe_fall_speed:
 			stats.take_damage((fall_speed - safe_fall_speed) * fall_damage_per_ms)
 		landed.emit(fall_speed)
@@ -302,6 +307,20 @@ func _physics_process(delta: float) -> void:
 	_update_actions(delta)
 
 
+## A puff of whatever's underfoot: sand, snow, dirt (landing hard, running on loose ground).
+func _kick_dust(size: float, count: int) -> void:
+	if Game.in_cave or swimming:
+		return
+	var p := global_position
+	var col: Color
+	match Game.world_gen.get_surface(p.x, p.z):
+		"sand": col = Game.palette.sand
+		"snow": col = Game.palette.snow
+		"rock": col = Game.palette.rock_light
+		_: col = Game.palette.sand.darkened(0.15)
+	Effects.dust(get_parent(), p + Vector3(0, 0.1, 0), col.lightened(0.1), count, 0.35 * size, 0.6 * size)
+
+
 func _update_camera(delta: float, sprinting: bool, input: Vector2) -> void:
 	var horizontal := Vector2(velocity.x, velocity.z).length()
 	var moving := (is_on_floor() or swimming) and horizontal > 0.5 and input != Vector2.ZERO
@@ -316,6 +335,8 @@ func _update_camera(delta: float, sprinting: bool, input: Vector2) -> void:
 		if moving:
 			var surface := "water" if swimming else Game.world_gen.get_surface(global_position.x, global_position.z)
 			Audio.footstep(surface, 1.25 if sprinting else 0.9)
+			if sprinting and surface in ["sand", "snow"] and not Game.in_cave:
+				_kick_dust(0.5, 3)
 
 	_land_dip = lerpf(_land_dip, 0.0, 1.0 - exp(-7.0 * delta))
 	var bob_scale := 0.6 if swimming else 1.0
@@ -497,7 +518,7 @@ func _update_actions(delta: float) -> void:
 			Net.request("place", {"slot": inventory.selected, "pos": at, "yaw": placement.yaw}, func(res: Dictionary) -> void:
 				if res.get("ok", false):
 					Audio.play_3d("thud", at, -2.0, 0.8)
-					Effects.chips(get_parent(), at + Vector3.UP * 0.2, Game.palette.sand.darkened(0.2), 10, 0.06, 2.0)
+					Effects.dust(get_parent(), at + Vector3.UP * 0.15, Game.palette.sand.darkened(0.1), 6, 0.45, 0.6)
 				elif res.get("reason", "") != "":
 					hint.emit(res.reason))
 		elif placement.get("reason", "") != "":
@@ -547,13 +568,18 @@ func _on_strike() -> void:
 			Music.hunt_ping(0.8)
 		Net.request("hit_animal", {"animal": animal.net_id, "slot": inventory.selected, "from": global_position})
 		Audio.play_3d("thud", point)
-		Effects.chips(get_parent(), point, Color(0.65, 0.12, 0.12), 6, 0.05)
+		Effects.blood(get_parent(), point, point - global_position + Vector3.UP * 0.3, 1.0)
 		return
 	if look.has("structure"):
 		hit_landed.emit()
 		var hammer: bool = ItemDB.tool_stats(inventory.selected_item()).get("type", "") == "hammer"
 		Audio.play_3d("clink" if hammer else "chop", point, -2.0, 1.15 if hammer else 0.8)
-		Effects.chips(get_parent(), point, Game.palette.bark.lightened(0.2), 6, 0.06)
+		var smat := GameActions.piece_mat(String(Game.structures.get(look.structure, {}).get("kind", "")))
+		var scol: Color = Effects.MAT_DUST.get(smat, Game.palette.bark.lightened(0.2))
+		if smat == "wood":
+			Effects.splinters(get_parent(), point, scol.lightened(0.1), scol.darkened(0.2), 5)
+		else:
+			Effects.shards(get_parent(), point, scol, 6)
 		Net.request("hit_structure", {"structure": look.structure, "slot": inventory.selected}, func(res: Dictionary) -> void:
 			if res.get("packed", false):
 				hint.emit("Packed up the %s" % ItemDB.display_name(res.kind))
@@ -598,16 +624,23 @@ func _on_hit_resource(res: Dictionary, r: Dictionary, point: Vector3) -> void:
 	match target:
 		"tree":
 			Audio.play_3d("chop", point)
-			Effects.chips(get_parent(), point, pal.bark.lightened(0.15), 8, 0.07)
+			var bark := Effects.bark_color(r.kind)
+			Effects.splinters(get_parent(), point, bark.lightened(0.45), bark, 8)
+			if Effects.has_leaves(r.kind) and FloraLibrary.category_of(r.kind) == "tree":
+				var top := Vector3(point.x, (r.transform as Transform3D).origin.y + 3.5, point.z)
+				Effects.leaves(get_parent(), top, Effects.leaf_color(r.kind), 4, 1.2)
 		"rock":
 			Audio.play_3d("clink", point, -2.0)
 			var col := pal.rock.lightened(0.1)
 			if r.kind.begins_with("ore") or r.kind.begins_with("gem"):
 				col = ItemDB.tier_info(int(r.kind.right(1))).color
-			Effects.chips(get_parent(), point, col, 9, 0.07, 4.0)
+			Effects.shards(get_parent(), point, col, 9)
+			if r.kind.begins_with("ore") or r.kind.begins_with("gem"):
+				Effects.sparks(get_parent(), point, col.lightened(0.3), 5, 3.0)
 		_:
 			Audio.play_3d("rustle", point)
-			Effects.chips(get_parent(), point, pal.bush_leaves, 10, 0.06, 2.5)
+			Effects.leaves(get_parent(), point, Effects.leaf_color(r.kind), 7, 0.3)
+			Effects.chips(get_parent(), point, Effects.leaf_color(r.kind), 5, 0.05, 2.0)
 
 
 ## Interact: the viewmodel's hand reached out.
@@ -626,9 +659,12 @@ func _on_grab() -> void:
 		open_crafting.emit(String(look.station))
 		return
 	if look.has("pickup"):
+		var ppos: Array = Game.pickups.get(look.pickup, {}).get("pos", [])
 		Net.request("pick_up", {"pickup": look.pickup}, func(res: Dictionary) -> void:
 			if int(res.get("got", 0)) > 0:
 				Audio.play(Audio.sfx.pickup, -6.0)
+				if ppos.size() == 3:
+					Effects.twinkle(get_parent(), Vector3(ppos[0], ppos[1], ppos[2]) + Vector3(0, 0.25, 0), Color(1.0, 0.92, 0.6), 5, 0.7)
 			else:
 				hint.emit("Your satchel is full"))
 		return

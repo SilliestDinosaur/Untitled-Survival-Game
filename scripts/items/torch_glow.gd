@@ -10,6 +10,7 @@ const CAVE_CHECK := 0.5   ## seconds between underground checks
 
 var _light: OmniLight3D
 var _flame: MeshInstance3D
+var _embers: CPUParticles3D
 var _t := 0.0
 var _check := 0.0
 var _underground := false
@@ -29,6 +30,12 @@ func _ready() -> void:
 	_flame.mesh = ItemModels.torch_flame()
 	_flame.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
 	add_child(_flame)
+	# A few sparks lifting off it (left behind in the air as it moves: they're in the world, not on the torch).
+	_embers = Effects.embers(0.35)
+	_embers.amount = 6
+	_embers.position = Vector3(0, 0.04, 0)
+	add_child(_embers)
+	visibility_changed.connect(func() -> void: _embers.emitting = is_visible_in_tree())
 
 
 func _process(delta: float) -> void:
