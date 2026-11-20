@@ -248,8 +248,8 @@ func load_save(id: String) -> Dictionary:
 	structures = data.get("structures", {})
 	# Saves from when walls were 3 m: roofs sat on those, so they go up to the new wall tops.
 	if int(data.get("build_v", 1)) < BUILD_V:
-		for id: String in structures:
-			var st: Dictionary = structures[id]
+		for sid: String in structures:
+			var st: Dictionary = structures[sid]
 			if st.kind in GameActions.COVER_KINDS:
 				st.pos = [float(st.pos[0]), float(st.pos[1]) + GameActions.WALL_H - 3.0, float(st.pos[2])]
 	if world_gen:

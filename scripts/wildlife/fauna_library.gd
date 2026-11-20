@@ -354,8 +354,15 @@ func _make_quadruped(rng: RandomNumberGenerator, arch: String, home := -1) -> Sp
 		var plates := func(p: Vector3) -> Color:
 			return shell.darkened(0.25) if sin(p.x * 18.0 / size) * sin(p.z * 18.0 / size) > 0.55 else shell
 		kit.add_primitive(MeshKit.sphere(0.5, 16, 9), Transform3D(Basis.from_scale(Vector3(W * 1.4, H * 1.15, L * 1.12)), Vector3(0, H * 0.3, 0)), shell, 0.0, 0.03, null, plates)
-		kit.loft([Vector3(0, H * 0.02, L * 0.56), Vector3(0, H * 0.02, -L * 0.56)], [W * 0.72, W * 0.72], 16, shell.darkened(0.15), Callable(),
-			func(t: float, a: float) -> Vector2: return Vector2(0.22, 1.0), true, true)
+		# The shell's rim: a rounded lip following its edge all the way round, at its widest (it was a flat plate
+		# below the shell, poking out under the body like a sheet).
+		var rim: Array = []
+		var rim_r: Array = []
+		for i in 24:
+			var ang := TAU * i / 24.0
+			rim.append(Vector3(cos(ang) * W * 0.69, H * 0.3, sin(ang) * L * 0.55))
+			rim_r.append(H * 0.07)
+		kit.loft(rim, rim_r, 8, shell.darkened(0.15), Callable(), func(_t: float, _a: float) -> Vector2: return Vector2(0.6, 1.0), false, false, 0.0, true)
 	# Tail: a lofted curve from the rump.
 	var tail_len := size * rng.randf_range(0.18, 0.45)
 	var tail_root: Vector3 = torso[0] + Vector3(0, H * 0.2, -L * 0.02)
