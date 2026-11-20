@@ -179,8 +179,204 @@ static func plan(gen: WorldGen) -> Dictionary:
 				if not buckets.has(key):
 					buckets[key] = []
 				buckets[key].append(si)
-	return {"entrances": spots, "roots": roots, "nodes": nodes, "rooms": rooms, "chests": chests,
+	var out := {"entrances": spots, "roots": roots, "nodes": nodes, "rooms": rooms, "chests": chests,
 		"glow": glow, "segs": segs, "buckets": buckets}
+	_dress(out, gen, walk)
+	return out
+
+
+# --- What's in the caves -------------------------------------------------------------------------
+# Worked out after the tunnels, with their own random numbers, so adding things never moves the tunnels, chests or
+# glowcaps of a world that already exists.
+
+const MAX_ORES := 110
+const MAX_STALAGMITES := 140
+
+## Fill in the plan's contents:
+##   ores:        [pos, kind] ore and crystal deposits on the floors, better the deeper (chunk resources: mineable)
+##   stalagmites: [pos, scale] (chunk resources: mineable for stone)
+##   stalactites: [pos (ceiling), length]
+##   pillars:     [floor pos, ceiling y, radius]
+##   rubble:      [pos, radius]
+##   pools:       [pos (water surface), radius]
+##   drips:       ceiling points water drips from (over pools, and here and there)
+##   moss:        [pos, normal, colour index] glowing moss patches on walls
+##   worms:       [ceiling pos, colour index] glow-worm threads
+##   camps:       [floor pos, facing] abandoned miners' camps (each has a loot crate, added to chests)
+##   lairs:       floor points in deep chambers where a cave beast lives
+##   roosts:      ceiling points where bats hang
+static func _dress(plan: Dictionary, gen: WorldGen, walk: PackedFloat32Array) -> void:
+	var rng := RandomNumberGenerator.new()
+	rng.seed = hash([Game.world_seed, "cave dressing"])
+	var nodes: Array = plan.nodes
+	var ores: Array = []
+	var stalagmites: Array = []
+	var stalactites: Array = []
+	var pillars: Array = []
+	var rubble: Array = []
+	var pools: Array = []
+	var drips: Array = []
+	var moss: Array = []
+	var worms: Array = []
+	var camps: Array = []
+	var lairs: Array = []
+	var roosts: Array = []
+	var is_room := {}
+	for r: int in plan.rooms:
+		is_room[r] = true
+	# Visited in a shuffled order, so the limits on how many there are don't fill up in the first caves.
+	var order: Array = range(nodes.size())
+	for k in range(order.size() - 1, 0, -1):
+		var j := rng.randi_range(0, k)
+		var tmp: int = order[k]
+		order[k] = order[j]
+		order[j] = tmp
+	for i: int in order:
+		var n: Dictionary = nodes[i]
+		var c: Vector3 = n.p
+		var r := float(n.r)
+		var w: float = walk[i]
+		if w < 6.0:
+			continue   # leave the mouths clear
+		var depth := gen.get_base_height(c.x, c.z) - c.y
+		var room: bool = is_room.has(i)
+		# Ore and crystals, hugging the walls on the floor. Deeper rock holds better: the second metal near the
+		# top, the third further down, crystals deepest.
+		var tries := 3 if room else 1
+		for t in tries:
+			var ang := rng.randf() * TAU
+			var roll := rng.randf()
+			var kind_roll := rng.randf()
+			if ores.size() >= MAX_ORES or roll > (0.55 if room else 0.16):
+				continue
+			var at: Variant = floor_at(plan, c + Vector3(cos(ang), 0, sin(ang)) * r * 0.62)
+			if at == null:
+				continue
+			var kind := "ore_t2"
+			if depth > 13.0 and kind_roll < 0.12 + clampf((w - 40.0) / 250.0, 0.0, 0.14):
+				kind = "gem_t4"
+			elif depth > 7.0 and kind_roll < 0.7:
+				kind = "ore_t3"
+			ores.append([at, kind])
+		# Stalagmites and stalactites: clusters in chambers, a few in the tunnels.
+		var spikes := rng.randi_range(3, 7) if room else (rng.randi_range(0, 2) if rng.randf() < 0.4 else 0)
+		for t in spikes:
+			var ang := rng.randf() * TAU
+			var off := Vector3(cos(ang), 0, sin(ang)) * r * rng.randf_range(0.25, 0.8)
+			var up := rng.randf() < 0.5
+			var len := rng.randf_range(0.5, 1.0) * minf(r * 0.45, 2.6)
+			if up:
+				var f: Variant = floor_at(plan, c + off)
+				if f != null and stalagmites.size() < MAX_STALAGMITES and rng.randf() < 0.75:
+					stalagmites.append([f, len / 1.6])
+			else:
+				var ce: Variant = ceiling_at(plan, c + off)
+				if ce != null:
+					stalactites.append([ce, len])
+					if rng.randf() < 0.35:
+						drips.append(ce - Vector3(0, len, 0))
+		# Pillars where a chamber is tall enough: floor to ceiling, thick in the middle.
+		if room and rng.randf() < 0.45:
+			var ang := rng.randf() * TAU
+			var at := c + Vector3(cos(ang), 0, sin(ang)) * r * 0.45
+			var f: Variant = floor_at(plan, at)
+			var ce: Variant = ceiling_at(plan, at)
+			if f != null and ce != null and (ce as Vector3).y - (f as Vector3).y > 2.5:
+				pillars.append([f, (ce as Vector3).y, rng.randf_range(0.45, 0.8)])
+		# Rubble along the tunnels.
+		if rng.randf() < 0.22:
+			var ang := rng.randf() * TAU
+			var f: Variant = floor_at(plan, c + Vector3(cos(ang), 0, sin(ang)) * r * 0.5)
+			if f != null:
+				rubble.append([f, rng.randf_range(0.5, 1.1)])
+		# A still pool in some chambers, with water dripping into it.
+		if room and rng.randf() < 0.3:
+			var f: Variant = floor_at(plan, c + Vector3(rng.randf_range(-0.3, 0.3), 0, rng.randf_range(-0.3, 0.3)) * r)
+			if f != null:
+				var pr := r * rng.randf_range(0.35, 0.5)
+				pools.append([(f as Vector3) + Vector3(0, 0.12, 0), pr])
+				var ce: Variant = ceiling_at(plan, f)
+				if ce != null:
+					for k in 3:
+						drips.append((ce as Vector3) + Vector3(rng.randf_range(-1, 1), 0, rng.randf_range(-1, 1)) * pr * 0.5)
+		# Glowing moss on the walls and glow-worms on the ceilings, more of them the further from daylight.
+		var dark := clampf((w - 15.0) / 40.0, 0.0, 1.0)
+		if rng.randf() < 0.25 * dark:
+			var ang := rng.randf() * TAU
+			var wall: Variant = wall_at(plan, c + Vector3(0, rng.randf_range(-0.3, 0.4) * r, 0), Vector3(cos(ang), 0, sin(ang)))
+			if wall != null:
+				moss.append([wall, -Vector3(cos(ang), 0, sin(ang)), rng.randi() % 3])
+		if rng.randf() < (0.4 if room else 0.12) * dark:
+			var ce: Variant = ceiling_at(plan, c + Vector3(rng.randf_range(-0.5, 0.5), 0, rng.randf_range(-0.5, 0.5)) * r)
+			if ce != null:
+				worms.append([ce, rng.randi() % 3])
+		# Bats roost in the high places of chambers not too far in.
+		if room and w < 70.0 and rng.randf() < 0.5:
+			var ce: Variant = ceiling_at(plan, c)
+			if ce != null:
+				roosts.append(ce)
+		# A cave beast's lair in deep chambers; an old miners' camp in others.
+		if room and w > 45.0 and lairs.size() < 4 and rng.randf() < 0.4:
+			var f: Variant = floor_at(plan, c)
+			if f != null:
+				lairs.append(f)
+		elif room and w > 20.0 and camps.size() < 4 and rng.randf() < 0.35:
+			var f: Variant = floor_at(plan, c + Vector3(r * 0.2, 0, -r * 0.15))
+			if f != null:
+				camps.append([f, rng.randf() * TAU])
+				plan.chests.append((f as Vector3) + Vector3(cos(0.6), 0, sin(0.6)) * 1.6)   # the camp's crate of supplies
+	plan.ores = ores
+	plan.stalagmites = stalagmites
+	plan.stalactites = stalactites
+	plan.pillars = pillars
+	plan.rubble = rubble
+	plan.pools = pools
+	plan.drips = drips
+	plan.moss = moss
+	plan.worms = worms
+	plan.camps = camps
+	plan.lairs = lairs
+	plan.roosts = roosts
+
+
+## The cave floor straight below p (p inside a tunnel), or null if p isn't in one.
+static func floor_at(plan: Dictionary, p: Vector3) -> Variant:
+	var hit: Variant = _march(plan, p, Vector3.DOWN, 12.0)
+	return null if hit == null else (hit as Vector3) + Vector3(0, 0.05, 0)
+
+
+## The cave ceiling straight above p, or null.
+static func ceiling_at(plan: Dictionary, p: Vector3) -> Variant:
+	var hit: Variant = _march(plan, p, Vector3.UP, 12.0)
+	return null if hit == null else (hit as Vector3) - Vector3(0, 0.05, 0)
+
+
+## Where a horizontal line from p along dir meets the cave wall, or null.
+static func wall_at(plan: Dictionary, p: Vector3, dir: Vector3) -> Variant:
+	var hit: Variant = _march(plan, p, dir, 10.0)
+	return null if hit == null else (hit as Vector3) - dir * 0.04
+
+
+## From p (inside a tunnel) along dir to the rock: coarse steps, then halving (a handful of distance lookups).
+static func _march(plan: Dictionary, p: Vector3, dir: Vector3, reach: float) -> Variant:
+	if void_distance(plan, p) > -0.3:
+		return null
+	var inside := 0.0
+	var t := 0.0
+	while t < reach:
+		t = minf(t + 0.45, reach)
+		if void_distance(plan, p + dir * t) >= 0.0:
+			var lo := inside
+			var hi := t
+			for k in 5:
+				var mid := (lo + hi) * 0.5
+				if void_distance(plan, p + dir * mid) >= 0.0:
+					hi = mid
+				else:
+					lo = mid
+			return p + dir * hi
+		inside = t
+	return null
 
 
 ## The shortest walk along the tunnels from any mouth to each node (Dijkstra; the network is small).

@@ -74,7 +74,7 @@ func add_primitive(prim: PrimitiveMesh, xf: Transform3D, color: Color, lumpy := 
 			c = c.lerp(Color(minf(c.r * 1.12 + 0.03, 1.0), minf(c.g * 1.1 + 0.03, 1.0), c.b * 0.95), up * up * 0.4)   # warm sunlit top
 		if shade_jitter > 0.0:
 			var j := _noise.get_noise_3dv(p * 1.7) * shade_jitter
-			c = Color(c.r + j, c.g + j, c.b + j)
+			c = Color(c.r + j, c.g + j, c.b + j, c.a)
 		col[i] = c.srgb_to_linear()
 	# A mirrored transform turns every triangle inside out; swapping two corners puts it back.
 	var mirrored := xf.basis.determinant() < 0.0

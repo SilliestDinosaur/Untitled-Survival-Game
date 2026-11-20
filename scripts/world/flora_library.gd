@@ -134,6 +134,8 @@ const KINDS := {
 	"jungle_plant": {"category": "bush", "label": "Broadleaf", "variants": 2, "solid": false, "hp": 30, "target": "bush", "yield": "bush", "shape": "bush"},
 	"glowcap": {"category": "bush", "label": "Glowcaps", "variants": 3, "solid": false, "hp": 20, "target": "bush", "yield": "mushroom", "shape": "bush"},
 	"ice_rock": {"category": "rock", "label": "Ice-crusted stone", "variants": 2, "solid": true, "hp": 170, "target": "rock", "yield": "rock", "shape": "rock"},
+	# Added with the cave dressing (last again).
+	"stalagmite": {"category": "rock", "label": "Stalagmite", "variants": 3, "solid": true, "hp": 120, "target": "rock", "yield": "rock", "shape": "rock"},
 }
 
 ## Fade-out distance per category (0 = always visible; trees are handled by chunk detail levels).
@@ -331,6 +333,7 @@ func _build_mesh(kind: String, index: int, variant_seed: int) -> ArrayMesh:
 		"jungle_plant": _jungle_plant(kit, rng)
 		"glowcap": _glowcap(kit, rng, index)
 		"ice_rock": _ice_rock(kit, rng)
+		"stalagmite": _stalagmite(kit, rng)
 	if kind == ItemDB.fruit_tree and not _bare:
 		_add_fruit(kit, rng)
 	var cat: String = KINDS[kind].category
@@ -524,6 +527,34 @@ func _rock(kit: MeshKit, rng: RandomNumberGenerator, ore: bool, ore_color := Col
 			var tilt := Basis(Quaternion(Vector3.UP, dir))
 			kit.add_primitive(MeshKit.sphere(size, 6, 4), Transform3D(tilt.scaled(Vector3(1.0, 0.7, 1.0)), pos),
 				_vary(ore_color, rng, 0.05).lightened(rng.randf_range(0.0, 0.12)), 0.0, 0.05)
+
+
+## A stalagmite: a lumpy cone of dripstone rising from a flared foot, banded where the mineral built up, wet and
+## pale at the tip. About 1.6 m tall at scale 1.
+func _stalagmite(kit: MeshKit, rng: RandomNumberGenerator) -> void:
+	var col := _vary(_pal.rock.lerp(Color(0.72, 0.66, 0.56), 0.35), rng, 0.05)
+	var h := rng.randf_range(1.4, 1.8)
+	var lean := Vector3(rng.randf_range(-0.12, 0.12), 0, rng.randf_range(-0.12, 0.12))
+	var path: Array = []
+	var radii: Array = []
+	for i in 7:
+		var t := i / 6.0
+		path.append(Vector3(0, t * h, 0) + lean * t * t)
+		radii.append(lerpf(0.42, 0.03, pow(t, 0.8)) * (1.0 + 0.08 * sin(t * 17.0)))
+	var bands := func(t: float, _a: float) -> Color:
+		return col.lightened(0.2 * t) if fmod(t * 9.0, 1.0) > 0.25 else col.darkened(0.08)
+	kit.loft(path, radii, 9, col, bands, Callable(), true, true, 0.03)
+	# A flared foot of flowstone round it, and sometimes a small twin.
+	kit.add_primitive(MeshKit.sphere(0.55, 9, 4), Transform3D(Basis().scaled(Vector3(1.0, 0.3, 1.0)), Vector3(0, 0.03, 0)), col.darkened(0.05), 0.15, 0.05)
+	if rng.randf() < 0.6:
+		var off := Vector3(rng.randf_range(0.35, 0.5), 0, rng.randf_range(-0.3, 0.3))
+		var small: Array = []
+		var sr: Array = []
+		for i in 4:
+			var t := i / 3.0
+			small.append(off + Vector3(0, t * h * 0.45, 0))
+			sr.append(lerpf(0.2, 0.02, t))
+		kit.loft(small, sr, 7, col.darkened(0.04), bands, Callable(), true, true, 0.02)
 
 
 ## Tier-4 gem: big crystal spikes bursting from a small rock.

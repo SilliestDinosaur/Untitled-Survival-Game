@@ -13,8 +13,9 @@ void fragment() {
 	float stroke;
 	ALBEDO = pool_edges(brush(COLOR.rgb * tint_color.rgb, wpos, wn, stroke), NORMAL, VIEW);
 	paint_stroke = stroke;
-	paint_sky = sky_seen;
-	AO = sky_seen;
+	// Things drawn many to a MultiMesh (cave ore, stalagmites) carry their sky in the instance colour's alpha.
+	paint_sky = min(sky_seen, COLOR.a);
+	AO = paint_sky;
 	AO_LIGHT_AFFECT = 0.0;
 	ROUGHNESS = 1.0;
 	RIM = rim_amount;

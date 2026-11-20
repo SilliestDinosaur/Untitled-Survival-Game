@@ -732,6 +732,30 @@ static func dust_drift() -> CPUParticles3D:
 	return p
 
 
+## Water dripping from a cave ceiling: one drop at a time, falling `fall` metres and gone as it lands.
+static func drip(fall: float) -> CPUParticles3D:
+	_setup()
+	var p := CPUParticles3D.new()
+	p.mesh = _drop
+	p.amount = 1
+	p.lifetime = sqrt(2.0 * fall / 9.8)   # it lands (and is gone) just as the next one falls
+	p.randomness = 0.0
+	p.local_coords = false
+	p.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+	p.direction = Vector3.DOWN
+	p.spread = 0.0
+	p.initial_velocity_min = 0.0
+	p.initial_velocity_max = 0.0
+	p.gravity = Vector3(0, -9.8, 0)
+	p.scale_amount_min = 0.02
+	p.scale_amount_max = 0.028
+	# Swelling off the tip, then falling; it vanishes as it reaches the floor.
+	p.scale_amount_curve = _curve([Vector2(0, 0.3), Vector2(0.12, 1.0), Vector2(0.96, 1.0), Vector2(1, 0)])
+	p.color = Color(0.7, 0.82, 0.88)
+	p.visibility_range_end = 30.0
+	return p
+
+
 ## Set the colour of an ambient emitter's bits (faded in and out at the ends of their lives).
 static func tint_ambient(p: CPUParticles3D, color: Color, alpha := 1.0) -> void:
 	var g := Gradient.new()

@@ -345,7 +345,45 @@ static func _place_resources(coord: Vector2i, origin: Vector3, gen: WorldGen, fl
 		if kind == "log" and out.size() > before:
 			var xf: Transform3D = out[-1].transform
 			out[-1].transform = Transform3D(Basis(Quaternion(Vector3.UP, nrm)) * xf.basis, xf.origin)
+	_place_cave_resources(coord, origin, gen, flora, removed, out)
 	return out
+
+
+## Ore, crystals and stalagmites the cave plan put in this chunk (ids "x_z_c<n>" / "x_z_s<n>", from their place in the
+## plan, so every machine agrees). They're in the dark, so they carry how much sky they see (drawn darker).
+static func _place_cave_resources(coord: Vector2i, origin: Vector3, gen: WorldGen, flora: FloraLibrary, removed: Dictionary, out: Array[Dictionary]) -> void:
+	var plan: Dictionary = gen.caves
+	if plan.is_empty() or not plan.has("ores"):
+		return
+	var size := float(Game.CHUNK_SIZE)
+	var inside := func(p: Vector3) -> bool:
+		return p.x >= origin.x and p.x < origin.x + size and p.z >= origin.z and p.z < origin.z + size
+	var lists := [["c", plan.ores], ["s", plan.stalagmites]]
+	for l: Array in lists:
+		var tag: String = l[0]
+		var items: Array = l[1]
+		for i in items.size():
+			var it: Array = items[i]
+			var p: Vector3 = it[0]
+			if not inside.call(p):
+				continue
+			var id := "%d_%d_%s%d" % [coord.x, coord.y, tag, i]
+			if removed.has(id):
+				continue
+			var kind: String = it[1] if tag == "c" else "stalagmite"
+			var vs: Array = flora.variants[kind]
+			var h := hash([id, "look"])
+			var yaw := float(h % 628) / 100.0
+			var scl := (0.55 + float(h % 23) / 100.0) if tag == "c" else float(it[1])
+			var sink := 0.12 if tag == "c" else 0.08
+			out.append({
+				"id": id,
+				"kind": kind,
+				"key": vs[h % vs.size()],
+				"transform": Transform3D(Basis(Vector3.UP, yaw).scaled(Vector3.ONE * scl), p - Vector3(0, sink, 0)),
+				"hp": FloraLibrary.KINDS[kind].hp,
+				"sky": Caves.sky_seen(plan, p + Vector3(0, 0.5, 0)),
+			})
 
 
 ## One placement attempt's random values (always the same count, for determinism).
@@ -383,7 +421,7 @@ static func _resource_buffers(resources: Array[Dictionary], origin: Vector3, tie
 		# Remember which instance this is, so it can be shaken / hidden when gathered.
 		r.mm_key = key
 		r.mm_index = buffers[key].size() / 16 if buffers.has(key) else 0
-		_append_instance(buffers, key, t, Color(shade, shade, shade))
+		_append_instance(buffers, key, t, Color(shade, shade, shade, float(r.get("sky", 1.0))))
 	return buffers
 
 
