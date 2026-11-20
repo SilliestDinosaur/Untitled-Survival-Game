@@ -7,7 +7,7 @@ extends Node3D
 
 signal removed(animal: Animal)
 
-enum State { IDLE, GRAZE, WANDER, ALERT, FLEE, WARN, ATTACK, DEAD }
+enum State { IDLE, GRAZE, WANDER, ALERT, FLEE, WARN, ATTACK, DEAD, HUNT, EAT, TREE }
 
 var species: FaunaLibrary.Species
 var hp := 10.0
@@ -52,6 +52,20 @@ var _startle := 0.0           ## a jump when something gives it a fright, easing
 var _flinch := Vector2.ZERO   ## a blow's knock (roll, pitch), easing away
 var _lunge := 0.0             ## an attack's lunge forward, easing away
 var home_pos := Vector3.ZERO   ## cave beasts: their lair (they never stray far from it)
+# Predators and prey.
+var _threat: Node3D = null      ## what it's running from (the player, or a predator)
+var _prey: Animal = null        ## what it's hunting
+var _hunger := 0.0              ## seconds until a predator feels like hunting
+# Serpents: their body follows the head's trail.
+var _segs: Array[Node3D] = []
+var _trail: Array[Vector3] = []
+# Climbers: up a tree.
+var in_tree := false
+var _tree_top := Vector3.ZERO   ## where it sits in the canopy
+var _tree_phase := ""           ## to_trunk | up | sit | hop | down
+var _hop_from := Vector3.ZERO
+var _hop_t := 0.0
+const TREE_TOPS := {"jungle_tree": 8.5, "oak": 5.0, "autumn_oak": 5.0, "birch": 6.0, "willow": 4.5, "acacia": 4.5, "palm": 6.5, "pine": 6.0, "fir": 7.0}
 var _cave := false
 const LAIR_LEASH := 14.0
 
@@ -69,8 +83,9 @@ func setup(sp: FaunaLibrary.Species, pos: Vector3, p: Node3D) -> void:
 	_breath = _rng.randf() * TAU
 	_call_cd = _rng.randf_range(4.0, 20.0)
 
+	_hunger = _rng.randf_range(40.0, 200.0)
 	_body = Node3D.new()
-	_body.position.y = sp.leg_len + sp.body_h * 0.25
+	_body.position.y = _base_y()
 	add_child(_body)
 	add_child(CaveShade.new())   # darker when it wanders into a cave
 	_body.add_child(_mesh(sp.body_mesh))
@@ -83,10 +98,22 @@ func setup(sp: FaunaLibrary.Species, pos: Vector3, p: Node3D) -> void:
 		leg.position = off
 		var hind: bool = off.z > 0.0 and sp.leg_offsets.size() == 4 and sp.hind_leg_mesh != null
 		leg.add_child(_mesh(sp.hind_leg_mesh if hind else sp.leg_mesh))
+		if sp.body == "sprawl":   # lizards: legs out to the sides
+			leg.rotation.z = 0.9 if off.x > 0.0 else -0.9
 		_body.add_child(leg)
 		_legs.append(leg)
 		_leg_base.append(off)
 
+	# A serpent's body: segments that follow along the head's trail (placed in the world, see _animate).
+	for i in sp.segs:
+		var seg := Node3D.new()
+		seg.top_level = true
+		seg.add_child(_mesh(sp.seg_mesh))
+		var k := 1.0 - float(i) / float(sp.segs) * 0.6   # tapering to the tail
+		seg.scale = Vector3(k, k, 1.0)
+		add_child(seg)
+		seg.global_position = pos
+		_segs.append(seg)
 	# Hit box on the "interact" layer: the crosshair and tools can hit it, the player walks through.
 	_collider = StaticBody3D.new()
 	_collider.collision_layer = TerrainChunk.LAYER_INTERACT
@@ -94,12 +121,26 @@ func setup(sp: FaunaLibrary.Species, pos: Vector3, p: Node3D) -> void:
 	_collider.set_meta("animal", self)
 	var shape := BoxShape3D.new()
 	shape.size = Vector3(maxf(sp.body_w * 1.2, 0.4), sp.body_h * 1.2 + sp.leg_len * 0.6, maxf(sp.body_len * 1.3, 0.5))
+	if sp.body == "serpent":
+		shape.size = Vector3(0.5, 0.3, 0.7)
+	elif sp.body == "upright":
+		shape.size = Vector3(sp.body_w * 1.3, sp.body_h * 1.1, sp.body_w * 1.3)
 	var cs := CollisionShape3D.new()
 	cs.shape = shape
 	cs.position = Vector3(0, sp.body_h * 0.6 - shape.size.y * 0.5, -sp.body_len * 0.1)
 	_collider.add_child(cs)
 	_body.add_child(_collider)
 	_enter(State.GRAZE if _rng.randf() < 0.6 else State.IDLE)
+
+
+## How high the body rides above the ground, by body type.
+func _base_y() -> float:
+	match species.body:
+		"serpent": return species.body_h * 0.45
+		"upright": return species.leg_len
+		"seal": return species.body_h * 0.3
+		"frog": return species.leg_len * 2.0 + species.body_h * 0.35
+	return species.leg_len + species.body_h * 0.25
 
 
 func _mesh(m: Mesh) -> MeshInstance3D:
@@ -134,6 +175,16 @@ func _enter(s: State) -> void:
 		State.ATTACK:
 			_timer = 12.0
 			_windup = -1.0
+		State.HUNT:
+			_timer = 16.0
+			_call(0.8)
+		State.EAT:
+			_timer = _rng.randf_range(12.0, 20.0)
+		State.TREE:
+			_timer = _rng.randf_range(20.0, 50.0)
+	# Climbers run for a tree when frightened.
+	if s == State.FLEE and species.climbs and not in_tree:
+		_try_climb.call_deferred()
 
 
 func _pick_wander_target() -> void:
@@ -159,11 +210,15 @@ func _pick_wander_target() -> void:
 		var t := position + Vector3(cos(a) * d, 0, sin(a) * d)
 		var h: float = Game.world_gen.get_height(t.x, t.z)
 		var max_h := 80.0 if species.habitat == "steep" else 55.0
-		if h <= 2.0 or h >= max_h or Game.world_gen.near_river(t.x, t.z, 0.0):
+		if h >= max_h:
+			continue
+		if not species.swims and (h <= 2.0 or Game.world_gen.near_river(t.x, t.z, 0.0)):
+			continue
+		if species.swims and h < -5.0:
 			continue
 		var score := _rng.randf()
 		match species.habitat:
-			"water": score += 2.0 - minf(h, 8.0) * 0.25
+			"water": score += 2.0 - minf(absf(h), 8.0) * 0.25 + (1.5 if Game.world_gen.near_river(t.x, t.z, 3.0) else 0.0)
 			"steep": score += (1.0 - Game.world_gen.get_normal(t.x, t.z).y) * 6.0 + h * 0.01
 		if score > best_score:
 			best_score = score
@@ -173,12 +228,18 @@ func _pick_wander_target() -> void:
 	_target = best
 
 
-## Something scared a herd member: everyone nearby runs.
-func alarm() -> void:
+## Something scared a herd member: everyone nearby runs (from `from`, if given: a predator; else the player).
+func alarm(from: Node3D = null) -> void:
 	if dead or species.flee_radius <= 0.0:
 		return
+	_threat = from
+	if in_tree:
+		return   # safe up there
 	if state != State.FLEE:
 		_enter(State.FLEE)
+	# Climbers make for a tree.
+	if species.climbs:
+		_try_climb()
 
 
 func _alarm_herd() -> void:
@@ -212,6 +273,10 @@ func _physics_process(delta: float) -> void:
 	var dist := to_player.length()
 	var sprinting: bool = player != null and bool(player.get("is_sprinting"))
 	_perceive(dist, sprinting)
+	_hunger -= delta
+	if state == State.TREE:
+		_tree_step(delta, dist)
+		return
 
 	var want_dir := Vector3.ZERO
 	var want_speed := 0.0
@@ -221,7 +286,47 @@ func _physics_process(delta: float) -> void:
 		State.IDLE, State.GRAZE:
 			graze = 1.0 if state == State.GRAZE else 0.0
 			if _timer <= 0.0:
-				_enter(State.WANDER if _rng.randf() < 0.65 else (State.GRAZE if state == State.IDLE else State.IDLE))
+				if not _maybe_hunt():
+					if species.climbs and _rng.randf() < 0.3:
+						_try_climb()
+					else:
+						_enter(State.WANDER if _rng.randf() < 0.65 else (State.GRAZE if state == State.IDLE else State.IDLE))
+		State.HUNT:
+			# Run the prey down; give up if it gets away.
+			if not is_instance_valid(_prey) or _prey.dead or _prey.in_tree or _timer <= 0.0:
+				_prey = null
+				_hunger = _rng.randf_range(30.0, 60.0)
+				_enter(State.IDLE)
+			else:
+				var to_prey := _prey.position - position
+				to_prey.y = 0.0
+				var pd := to_prey.length()
+				if pd > 45.0:
+					_prey = null
+					_enter(State.IDLE)
+				elif pd < 0.8 + species.size * 0.6:
+					_lunge = 1.0
+					_prey.take_hit(9999.0, position)
+					for other in _prey.herd:
+						if is_instance_valid(other) and other != _prey:
+							(other as Animal).alarm(self)
+					_call(0.9)
+					_enter(State.EAT)
+				else:
+					want_dir = to_prey.normalized()
+					# A stalk while it's far, a sprint at the end.
+					want_speed = species.run_speed * (0.95 if pd < 18.0 else 0.45)
+					if pd < _prey.species.flee_radius * 1.4 + 4.0:
+						_prey.alarm(self)
+		State.EAT:
+			graze = 1.0
+			if is_instance_valid(_prey):
+				var tp := _prey.position - position
+				_desired_yaw = atan2(-tp.x, -tp.z)
+			if _timer <= 0.0:
+				_prey = null
+				_hunger = _rng.randf_range(150.0, 320.0)
+				_enter(State.WANDER)
 		State.WANDER:
 			var d := _target - position
 			d.y = 0.0
@@ -245,9 +350,16 @@ func _physics_process(delta: float) -> void:
 				else:
 					_enter(State.GRAZE)
 		State.FLEE:
-			want_dir = -to_player.normalized() if dist > 0.01 else Vector3.FORWARD
+			var from := to_player
+			var from_dist := dist
+			if is_instance_valid(_threat) and _threat != player:
+				from = _threat.global_position - position
+				from.y = 0.0
+				from_dist = from.length()
+			want_dir = -from.normalized() if from_dist > 0.01 else Vector3.FORWARD
 			want_speed = species.run_speed
-			if _timer <= 0.0 and dist > species.flee_radius * 1.8:
+			if _timer <= 0.0 and from_dist > species.flee_radius * 1.8:
+				_threat = null
 				_enter(State.IDLE)
 		State.WARN:
 			# Territorial: face the intruder, head low, snorting.
@@ -256,9 +368,9 @@ func _physics_process(delta: float) -> void:
 			if _call_cd <= 0.0:
 				_call_cd = 1.6
 				_call(0.9)
-			if dist < 3.6:
+			if dist < (1.9 if species.body == "serpent" else 3.6):
 				_enter(State.ATTACK)
-			elif dist > 12.0 or _timer <= 0.0:
+			elif dist > (7.0 if species.body == "serpent" else 12.0) or _timer <= 0.0:
 				_enter(State.IDLE)
 		State.ATTACK:
 			if _timer <= 0.0 or dist > 30.0:
@@ -292,8 +404,15 @@ func _perceive(dist: float, sprinting: bool) -> void:
 	if state in [State.FLEE, State.ATTACK, State.DEAD]:
 		return
 	if species.role == "defensive":
-		if dist < 9.0 and state != State.WARN:
+		if state in [State.HUNT, State.EAT, State.TREE]:
+			if dist < 6.0:
+				_prey = null
+				_enter(State.WARN)   # disturbed at its kill
+			return
+		if dist < (4.5 if species.body == "serpent" else 9.0) and state != State.WARN:
 			_enter(State.WARN)
+		return
+	if state == State.TREE:
 		return
 	if species.flee_radius <= 0.0:
 		return
@@ -339,6 +458,8 @@ func _move(delta: float, want_dir: Vector3, want_speed: float) -> void:
 func _walkable(p: Vector3, h: float) -> bool:
 	if _cave:   # on the cave floor, no big step up or down, and near the lair
 		return not is_nan(h) and absf(h - position.y) < 0.7 and Vector2(p.x - home_pos.x, p.z - home_pos.z).length() < LAIR_LEASH
+	if species.swims:   # swimmers go into the water (not out to the deep sea)
+		return h > -5.0 and h < 62.0 and (h < 0.5 or Game.world_gen.get_normal(p.x, p.z).y > 0.7)
 	# Wading into a river's shallows is fine; its deep middle isn't.
 	return h > 1.3 and h < 62.0 and Game.world_gen.get_normal(p.x, p.z).y > 0.7 and h > Game.world_gen.water_level(p.x, p.z) - 0.6
 
@@ -346,7 +467,10 @@ func _walkable(p: Vector3, h: float) -> bool:
 ## The ground under p: the surface, or for a cave animal the cave floor (NAN where there's no floor to stand on).
 func _ground_at(p: Vector3) -> float:
 	if not _cave:
-		return Game.world_gen.get_height(p.x, p.z)
+		var h: float = Game.world_gen.get_height(p.x, p.z)
+		if species.swims:   # afloat: swimming at the surface
+			h = maxf(h, Game.world_gen.water_level(p.x, p.z) - _base_y() - species.body_h * 0.35)
+		return h
 	var f: Variant = Caves.floor_at(Game.world_gen.caves, Vector3(p.x, position.y + 0.9, p.z))
 	return NAN if f == null else (f as Vector3).y - 0.05
 
@@ -410,7 +534,7 @@ func _animate(delta: float, graze: float, alert: float) -> void:
 			_legs[i].position.y = lerpf(_legs[i].position.y, _leg_base[i].y + lift, 1.0 - exp(-20.0 * delta))
 	# Body: bob with the steps, breathe when still, lean into turns and slopes.
 	_breath += delta * 1.7
-	var base_y := species.leg_len + species.body_h * 0.25
+	var base_y := _base_y()
 	var bob := absf(sin(_gait)) * 0.05 * species.size * moving
 	_startle = move_toward(_startle, 0.0, delta * 3.0)
 	_lunge = move_toward(_lunge, 0.0, delta * 4.0)
@@ -451,6 +575,193 @@ func _animate(delta: float, graze: float, alert: float) -> void:
 	head_pitch += sin(_gait * 2.0) * 0.05 * moving   # nodding with the steps
 	_head.rotation.x = lerpf(_head.rotation.x, head_pitch, 1.0 - exp(-5.0 * delta))
 	_head.rotation.y = _look_yaw
+	# How each body type moves.
+	match species.body:
+		"serpent":
+			_slither(moving)
+		"upright":
+			if state == State.FLEE and species.swims:   # tobogganing along on its belly
+				_body.rotation.x = lerpf(_body.rotation.x, -1.35, 1.0 - exp(-8.0 * delta))
+				_body.position.y = species.body_w * 0.45
+				for leg in _legs:
+					leg.rotation.x = 1.2
+			else:   # a side-to-side waddle
+				_body.rotation.z += sin(_gait) * 0.18 * moving
+		"seal":   # humping along on its belly
+			_body.position.y += absf(sin(_gait * 0.7)) * species.body_h * 0.3 * moving
+			_body.rotation.x += sin(_gait * 0.7) * 0.14 * moving
+		"frog":   # hops
+			_body.position.y += absf(sin(_gait * 0.5)) * species.size * 1.8 * moving
+			_body.rotation.x += -absf(sin(_gait * 0.5)) * 0.4 * moving
+
+
+## A snake's body: the head weaves side to side, and the segments follow along the trail it leaves.
+func _slither(moving: float) -> void:
+	var sz := species.size
+	_body.position.x = sin(_gait * 0.6) * sz * 0.16 * moving
+	var head := _body.global_position
+	var step := sz * 0.09
+	if _trail.is_empty():
+		var back := global_transform.basis.z
+		for i in _segs.size() * 4 + 6:
+			_trail.append(head + back * step * i)
+	if _trail[0].distance_to(head) > step:
+		_trail.push_front(head)
+		if _trail.size() > _segs.size() * 4 + 6:
+			_trail.pop_back()
+	for i in _segs.size():
+		var k := mini((i + 1) * 2, _trail.size() - 1)
+		var at: Vector3 = _trail[k]
+		var ahead: Vector3 = _trail[maxi(k - 2, 0)]
+		var g: float = _ground_at(at)
+		if not is_nan(g):
+			at.y = g + _base_y() * (1.0 - float(i) / _segs.size() * 0.4)
+		var seg := _segs[i]
+		var dir := ahead - at
+		if dir.length_squared() > 0.000001:
+			seg.global_transform = Transform3D(Basis.looking_at(dir.normalized(), Vector3.UP) * Basis.from_scale(_seg_scale(i)), at)
+		else:
+			seg.global_position = at
+
+
+## A serpent segment's size: tapering toward the tail.
+func _seg_scale(i: int) -> Vector3:
+	var k := 1.0 - float(i) / float(maxi(_segs.size(), 1)) * 0.6
+	return Vector3(k, k, 1.0)
+
+
+## A predator that's hungry looks for something smaller than itself to hunt (now and then, not all the time).
+func _maybe_hunt() -> bool:
+	if species.diet == "herb" or _hunger > 0.0 or _cave or puppet:
+		return false
+	var mgr := get_parent()
+	if not mgr or not mgr.has_method("get_animals"):
+		return false
+	var best: Animal = null
+	var best_d := 35.0
+	for o in mgr.get_animals():
+		var a := o as Animal
+		if a == null or a == self or a.dead or a.in_tree or a.species == species or a.species.role == "defensive":
+			continue
+		if a.species.size > species.size * 0.75:
+			continue
+		var d := a.position.distance_to(position)
+		if d < best_d:
+			best_d = d
+			best = a
+	if best == null:
+		_hunger = _rng.randf_range(20.0, 50.0)   # nothing about: look again in a while
+		return false
+	_prey = best
+	_enter(State.HUNT)
+	return true
+
+
+## Climbers: make for the nearest tree and go up it.
+func _try_climb() -> void:
+	if not species.climbs or in_tree or _cave or state == State.TREE:
+		return
+	var top: Variant = _nearest_tree(position, 18.0, Vector3.INF)
+	if top == null:
+		return
+	_tree_top = top
+	_tree_phase = "to_trunk"
+	_enter(State.TREE)
+
+
+## The top of the nearest tree to p within reach (where an animal sits in its crown), other than `not_at`; null if none.
+func _nearest_tree(p: Vector3, reach: float, not_at: Vector3) -> Variant:
+	if not _world:
+		_world = get_node_or_null("/root/Main/World")
+		if not _world:
+			return null
+	var here: Vector2i = _world.world_to_chunk(p)
+	var best: Variant = null
+	var best_d := reach
+	for dz in range(-1, 2):
+		for dx in range(-1, 2):
+			var chunk = _world.get_chunk(here + Vector2i(dx, dz))
+			if not chunk:
+				continue
+			for r: Dictionary in chunk.resources:
+				if r.get("removed", false) or not TREE_TOPS.has(r.kind):
+					continue
+				var xf: Transform3D = r.transform
+				var d := Vector2(xf.origin.x - p.x, xf.origin.z - p.z).length()
+				if d < best_d and Vector2(xf.origin.x - not_at.x, xf.origin.z - not_at.z).length() > 1.0:
+					best_d = d
+					best = xf.origin + Vector3(0, float(TREE_TOPS[r.kind]) * xf.basis.y.length() * 0.92, 0)
+	return best
+
+
+## Up a tree: run to the trunk, climb, sit in the crown looking about, now and then leap to the next tree, and come
+## down again once things are quiet.
+func _tree_step(delta: float, dist_to_player: float) -> void:
+	_breath += delta * 1.7
+	match _tree_phase:
+		"to_trunk":
+			var d := Vector3(_tree_top.x - position.x, 0, _tree_top.z - position.z)
+			if d.length() < 0.7:
+				_tree_phase = "up"
+				in_tree = true
+			elif _timer <= 0.0:
+				_enter(State.IDLE)
+				return
+			else:
+				_move(delta, d.normalized(), species.run_speed)
+				_animate(delta, 0.0, 0.0)
+				return
+		"up":
+			position.x = move_toward(position.x, _tree_top.x, delta)
+			position.z = move_toward(position.z, _tree_top.z, delta)
+			position.y = move_toward(position.y, _tree_top.y, 3.2 * delta)
+			_gait += delta * 9.0
+			_body.rotation.x = lerpf(_body.rotation.x, 1.25, 1.0 - exp(-8.0 * delta))
+			if absf(position.y - _tree_top.y) < 0.05:
+				_tree_phase = "sit"
+		"sit":
+			_body.rotation.x = lerpf(_body.rotation.x, 0.0, 1.0 - exp(-6.0 * delta))
+			_look_cd -= delta
+			if _look_cd <= 0.0:
+				_look_cd = _rng.randf_range(0.8, 2.5)
+				_look_target = _rng.randf_range(-1.0, 1.0)
+			_look_yaw = lerpf(_look_yaw, _look_target, 1.0 - exp(-4.0 * delta))
+			_head.rotation.y = _look_yaw
+			# Leap across to the next tree now and then (more often when someone is close below).
+			if _rng.randf() < delta * (0.35 if dist_to_player < 12.0 else 0.06):
+				var next: Variant = _nearest_tree(position, 11.0, position)
+				if next != null and (next as Vector3).distance_to(position) > 2.0:
+					_hop_from = position
+					_tree_top = next
+					_hop_t = 0.0
+					_tree_phase = "hop"
+					_call(1.1)
+			if _timer <= 0.0 and dist_to_player > 18.0:
+				_tree_phase = "down"
+		"hop":
+			_hop_t = minf(_hop_t + delta / 0.85, 1.0)
+			var a := _hop_from.lerp(_tree_top, _hop_t)
+			position = a + Vector3.UP * sin(_hop_t * PI) * 2.2
+			var d2 := _tree_top - _hop_from
+			_yaw = atan2(-d2.x, -d2.z)
+			_body.rotation.x = lerpf(0.4, -0.4, _hop_t)
+			for leg in _legs:
+				leg.rotation.x = 0.9 if _hop_t < 0.5 else -0.9
+			if _hop_t >= 1.0:
+				_tree_phase = "sit"
+		"down":
+			var ground := Game.world_gen.get_height(position.x, position.z)
+			position.y = move_toward(position.y, ground, 3.0 * delta)
+			_gait += delta * 9.0
+			_body.rotation.x = lerpf(_body.rotation.x, -1.1, 1.0 - exp(-8.0 * delta))
+			if position.y - ground < 0.05:
+				in_tree = false
+				_body.rotation.x = 0.0
+				_enter(State.IDLE)
+	rotation = Vector3(0, _yaw, 0)
+	if _tree_phase in ["up", "down"]:
+		for i in _legs.size():
+			_legs[i].rotation.x = sin(_gait + (PI if i % 2 == 0 else 0.0)) * 0.7
 
 
 func _call(pitch := 1.0) -> void:
@@ -466,11 +777,13 @@ func _bite() -> void:
 	push.y = 0.0
 	var shove := push.normalized() * 6.0 + Vector3.UP * 2.5
 	if player.has_method("hurt"):   # another player (we're the host): tell their game
-		player.hurt(species.damage, shove)
+		player.hurt(species.damage * (1.6 if species.venom else 1.0), shove)
 		return
 	if not player.has_method("respawn"):
 		return
 	player.stats.take_damage(species.damage)
+	if species.venom:
+		player.stats.add_effect("poison", 12.0)   # the venom works on for a while
 	Music.combat_ping(1.0)
 	player.velocity += shove
 
@@ -491,6 +804,8 @@ func take_hit(damage: float, from: Vector3) -> void:
 	# Knocked away from the blow.
 	var local := global_transform.basis.inverse() * (global_position - from)
 	_flinch = Vector2(clampf(-local.x, -1.0, 1.0) * 0.28, clampf(local.z, -1.0, 1.0) * 0.12)
+	if in_tree:
+		return   # it stays up there, out of reach
 	if species.role == "defensive":
 		_enter(State.ATTACK)
 	else:
@@ -501,6 +816,10 @@ func take_hit(damage: float, from: Vector3) -> void:
 func _die(from: Vector3) -> void:
 	dead = true
 	state = State.DEAD
+	if in_tree:   # it falls out of the tree
+		in_tree = false
+		var tw0 := create_tween()
+		tw0.tween_property(self, "position:y", Game.world_gen.get_height(position.x, position.z), 0.6).set_trans(Tween.TRANS_QUAD).set_ease(Tween.EASE_IN)
 	carcass_hp = 60.0 * species.yield_scale
 	_call(0.7)
 	var side := 1.0 if (from - global_position).dot(global_transform.basis.x) < 0.0 else -1.0
@@ -559,7 +878,7 @@ func _puppet_step(delta: float) -> void:
 	var k := 1.0 - exp(-10.0 * delta)
 	position.x = lerpf(position.x, _net_pos.x, k)
 	position.z = lerpf(position.z, _net_pos.z, k)
-	var ground := _net_pos.y if _cave else Game.world_gen.get_height(position.x, position.z)
+	var ground := _net_pos.y if (_cave or species.climbs or species.swims) else Game.world_gen.get_height(position.x, position.z)
 	position.y = lerpf(position.y, ground, 1.0 - exp(-14.0 * delta))
 	_yaw = lerp_angle(_yaw, _net_yaw, k)
 	_desired_yaw = _net_yaw
@@ -567,7 +886,7 @@ func _puppet_step(delta: float) -> void:
 	var moved := Vector2(position.x - before.x, position.z - before.z).length()
 	_speed = lerpf(_speed, moved / maxf(delta, 0.001), 1.0 - exp(-6.0 * delta))
 	_gait += moved / maxf(species.leg_len * 1.6, 0.2) * PI
-	var graze := 1.0 if state == State.GRAZE and _speed < 0.3 else 0.0
+	var graze := 1.0 if (state == State.GRAZE or state == State.EAT) and _speed < 0.3 else 0.0
 	var alert := 1.0 if state in [State.ALERT, State.WARN] else 0.0
 	_call_cd -= delta
 	if _call_cd <= 0.0:

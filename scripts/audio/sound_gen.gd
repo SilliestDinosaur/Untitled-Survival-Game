@@ -212,6 +212,67 @@ static func creature_call(role: String, size: float, rng: RandomNumberGenerator)
 			for i in out.size():
 				var t := float(i) / RATE
 				out[i] = sin(TAU * f * (1.0 + t * 3.0) * t) * sin(PI * t / dur) * 0.25
+		"hiss":   # snakes: a breathy rasp
+			var dur := rng.randf_range(0.5, 0.9)
+			out = _buf(int(RATE * dur))
+			var hp := 0.0
+			var last := 0.0
+			for i in out.size():
+				var t := float(i) / RATE
+				var n := rng.randf_range(-1, 1)
+				hp = 0.6 * (hp + n - last)   # high-passed noise
+				last = n
+				out[i] = hp * minf(t / 0.05, 1.0) * (1.0 - t / dur) * 0.35
+		"croak":  # frogs: a low ratcheting croak, two or three pulses
+			var pulses := rng.randi_range(2, 3)
+			var pulse := rng.randf_range(0.07, 0.1)
+			var f := rng.randf_range(160.0, 260.0) / sqrt(maxf(size, 0.1) * 4.0)
+			out = _buf(int(RATE * pulse * pulses * 1.3))
+			for i in out.size():
+				var t := float(i) / RATE
+				var k := fmod(t, pulse * 1.3) / pulse
+				if k < 1.0:
+					var buzz := pow(maxf(sin(TAU * f * t), 0.0), 2.0) + 0.4 * sin(TAU * f * 3.0 * t)
+					out[i] = buzz * sin(PI * k) * 0.4
+		"squawk":   # parrots: a harsh rising-falling screech
+			var dur := rng.randf_range(0.18, 0.3)
+			var f := rng.randf_range(900.0, 1500.0)
+			out = _buf(int(RATE * dur))
+			var ph := 0.0
+			for i in out.size():
+				var t := float(i) / RATE
+				ph += TAU * f * (1.0 + 0.5 * sin(PI * t / dur)) / RATE
+				var harsh := sin(ph) + 0.6 * sin(ph * 2.0) + 0.4 * sin(ph * 3.01) + rng.randf_range(-0.2, 0.2)
+				out[i] = harsh * sin(PI * t / dur) * 0.22
+		"chatter":   # monkeys: quick high whoops
+			var calls := rng.randi_range(3, 5)
+			var each := 0.13
+			var f0 := rng.randf_range(500.0, 800.0)
+			out = _buf(int(RATE * each * calls))
+			for i in out.size():
+				var t := float(i) / RATE
+				var k := fmod(t, each) / each
+				var f := f0 * (1.0 + 0.8 * k)
+				out[i] = (sin(TAU * f * t) + 0.3 * sin(TAU * f * 2.0 * t)) * sin(PI * k) * 0.3
+		"bark":   # foxes and coyotes: a sharp yip
+			var dur := rng.randf_range(0.16, 0.26)
+			var f := rng.randf_range(500.0, 800.0) / sqrt(size)
+			out = _buf(int(RATE * dur))
+			var ph := 0.0
+			for i in out.size():
+				var t := float(i) / RATE
+				ph += TAU * f * (1.2 - 0.5 * t / dur) / RATE
+				out[i] = (sin(ph) * 0.6 + sin(ph * 2.0) * 0.3 + rng.randf_range(-0.15, 0.15)) * sin(PI * t / dur) * 0.45
+		"honk":   # penguins and seals: a brassy honk
+			var dur := rng.randf_range(0.35, 0.6)
+			var f := rng.randf_range(220.0, 380.0) / sqrt(size)
+			out = _buf(int(RATE * dur))
+			var ph := 0.0
+			for i in out.size():
+				var t := float(i) / RATE
+				ph += TAU * f * (1.0 + 0.08 * sin(TAU * 7.0 * t)) / RATE
+				var brass := sin(ph) + 0.7 * sin(ph * 2.0) + 0.5 * sin(ph * 3.0) + 0.3 * sin(ph * 4.0)
+				out[i] = brass * sin(PI * minf(t / dur, 1.0)) * minf(t / 0.02, 1.0) * 0.25
 		_:  # bird: a few quick chirps
 			var chirps := rng.randi_range(2, 4)
 			var gap := 0.11

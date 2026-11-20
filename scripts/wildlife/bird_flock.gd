@@ -9,6 +9,7 @@ var _altitude := 30.0
 var _t := 0.0
 var _chirp := 3.0
 var _rng := RandomNumberGenerator.new()
+var _soar := false
 
 
 func setup(sp: FaunaLibrary.Species, pos: Vector3) -> void:
@@ -17,7 +18,10 @@ func setup(sp: FaunaLibrary.Species, pos: Vector3) -> void:
 	position = pos
 	_heading = _rng.randf() * TAU
 	_altitude = _rng.randf_range(22.0, 40.0)
-	for i in _rng.randi_range(5, 10):
+	_soar = sp.bird_kind == "soar"
+	if _soar:   # vultures: a few, high, in wide slow circles
+		_altitude = _rng.randf_range(45.0, 70.0)
+	for i in (_rng.randi_range(2, 4) if _soar else _rng.randi_range(5, 10)):
 		var b := Node3D.new()
 		var body := MeshInstance3D.new()
 		body.mesh = sp.body_mesh
@@ -35,8 +39,8 @@ func setup(sp: FaunaLibrary.Species, pos: Vector3) -> void:
 		add_child(b)
 		_birds.append({
 			"node": b, "wings": wings,
-			"radius": _rng.randf_range(3.0, 9.0), "phase": _rng.randf() * TAU,
-			"speed": _rng.randf_range(0.6, 0.9), "height": _rng.randf_range(-2.5, 2.5),
+			"radius": _rng.randf_range(14.0, 30.0) if _soar else _rng.randf_range(3.0, 9.0), "phase": _rng.randf() * TAU,
+			"speed": _rng.randf_range(0.12, 0.2) if _soar else _rng.randf_range(0.6, 0.9), "height": _rng.randf_range(-2.5, 2.5),
 			"flap": _rng.randf() * TAU,
 		})
 
@@ -55,9 +59,9 @@ func _physics_process(delta: float) -> void:
 		var node: Node3D = b.node
 		var vel := Vector3(-sin(a), 0, cos(a))
 		node.position = p
-		node.rotation = Vector3(0, atan2(-vel.x, -vel.z), -0.35)
+		node.rotation = Vector3(0, atan2(-vel.x, -vel.z), -0.2 if _soar else -0.35)
 		# Flap in bursts, then glide.
-		var flapping := sin(_t * 0.8 + b.phase) > -0.2
+		var flapping := sin(_t * 0.8 + b.phase) > (0.97 if _soar else -0.2)   # soarers barely flap
 		b.flap += delta * (16.0 if flapping else 0.0)
 		var wing_angle := sin(b.flap) * 0.7 if flapping else 0.1
 		node.get_child(1).rotation.z = wing_angle
