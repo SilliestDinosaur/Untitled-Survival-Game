@@ -913,17 +913,22 @@ static func _ore(k: MeshKit, at: Vector3, col: Color) -> void:
 
 ## An uncut crystal cluster: a rock base with faceted crystals standing out of it.
 static func _crystals(k: MeshKit, at: Vector3, col: Color) -> void:
-	k.add_primitive(MeshKit.sphere(0.03, 8, 5), Transform3D(Basis.from_scale(Vector3(1.3, 0.7, 1.1)), at + Vector3(0, -0.004, 0)), Game.palette.rock, 0.003, 0.05)
+	# A shard of rock with a cluster of six-sided crystals on it, each with a faceted point, dark at the root.
 	k.flat_shading = true
+	k.add_primitive(MeshKit.sphere(0.03, 7, 5), Transform3D(Basis.from_scale(Vector3(1.3, 0.6, 1.1)), at + Vector3(0, -0.006, 0)), Game.palette.rock.darkened(0.15), 0.004, 0.05)
 	var rng := RandomNumberGenerator.new()
 	rng.seed = 13
-	for i in 7:
-		var a := TAU * i / 7.0 + rng.randf_range(-0.3, 0.3)
-		var lean := Vector3(cos(a) * rng.randf_range(0.2, 0.5), 1.0, sin(a) * rng.randf_range(0.2, 0.5)).normalized()
-		var base := at + Vector3(cos(a) * 0.018, 0.0, sin(a) * 0.018)
-		var length := rng.randf_range(0.05, 0.08) if i % 2 == 0 else rng.randf_range(0.065, 0.1)
-		var shade := col.lightened(rng.randf_range(-0.1, 0.12))
-		k.loft([base, base + lean * length * 0.6, base + lean * length], [0.0145, 0.0125, 0.0008], 6, shade, Callable(), Callable(), true, true)
+	for i in 6:
+		var a := TAU * i / 6.0 + rng.randf_range(-0.3, 0.3)
+		var lean := Vector3(cos(a) * rng.randf_range(0.25, 0.55), 1.0, sin(a) * rng.randf_range(0.25, 0.55)).normalized() if i > 0 else Vector3(0.08, 1, 0.05).normalized()
+		var base := at + (Vector3(cos(a) * 0.016, 0.0, sin(a) * 0.016) if i > 0 else Vector3.ZERO)
+		var length := (0.1 if i == 0 else rng.randf_range(0.045, 0.075))
+		var r := (0.016 if i == 0 else rng.randf_range(0.009, 0.013))
+		var b := Basis(Quaternion(Vector3.UP, lean)) * Basis(Vector3.UP, rng.randf() * TAU)
+		var shade := col.lightened(rng.randf_range(-0.08, 0.1))
+		var body := length * 0.75
+		k.add_primitive(MeshKit.cylinder(r, r, body, 6), Transform3D(b, base + lean * body * 0.5), shade.darkened(0.15), 0.0, 0.0)
+		k.add_primitive(MeshKit.cylinder(0.0, r, length - body, 6), Transform3D(b, base + lean * (body + (length - body) * 0.5)), shade.lightened(0.3), 0.0, 0.0)
 	k.flat_shading = false
 
 
@@ -1028,16 +1033,22 @@ static func _fiber(k: MeshKit, at: Vector3) -> void:
 
 ## Cactus flesh: a green pad, with spines pricking out of its face.
 static func _cactus_pad(k: MeshKit, at: Vector3) -> void:
+	# A prickly-pear pad: a thick oval, paler at the rim, with tufts of spines dotted over it and a red fruit on top.
 	var green := Color(0.36, 0.6, 0.34)
-	var outline := PackedVector2Array([Vector2(-0.04, 0.0), Vector2(-0.032, 0.03), Vector2(0.0, 0.04), Vector2(0.032, 0.03),
-		Vector2(0.04, 0.0), Vector2(0.032, -0.03), Vector2(0.0, -0.04), Vector2(-0.032, -0.03)])
-	k.extrude(outline, Transform3D(Basis(Vector3.RIGHT, -PI * 0.5), at), 0.028, 0.009, green, green.darkened(0.2), 0.5)
-	for i in 12:
-		var a := TAU * i / 12.0
-		var r := 0.012 if i % 2 == 0 else 0.022
-		var p := at + Vector3(cos(a) * r, 0.014, sin(a) * r)
-		var lean := Vector3(cos(a) * 0.5, 1.0, sin(a) * 0.5).normalized()
-		k.loft([p, p + lean * 0.016], [0.0021, 0.0005], 4, Color(0.95, 0.92, 0.75), Callable(), Callable(), true, true)
+	var outline := PackedVector2Array()
+	for i in 18:
+		var a := TAU * i / 18.0
+		outline.append(Vector2(cos(a) * 0.036, sin(a) * 0.052))
+	k.extrude(outline, Transform3D(Basis(Vector3.RIGHT, -PI * 0.5), at), 0.024, 0.01, green, green.lightened(0.15), 0.5)
+	var rng := RandomNumberGenerator.new()
+	rng.seed = 21
+	for i in 9:
+		var p := at + Vector3(rng.randf_range(-0.025, 0.025), 0.013, rng.randf_range(-0.04, 0.04))
+		k.add_primitive(MeshKit.sphere(0.0035, 4, 3), Transform3D(Basis(), p), Color(0.9, 0.82, 0.55), 0.0, 0.0)
+		for j in 3:
+			var d := Vector3(rng.randf_range(-0.6, 0.6), 1.0, rng.randf_range(-0.6, 0.6)).normalized()
+			k.loft([p, p + d * 0.012], [0.0012, 0.0003], 3, Color(0.96, 0.93, 0.8), Callable(), Callable(), true, true)
+	k.add_primitive(MeshKit.sphere(0.012, 8, 6), Transform3D(Basis.from_scale(Vector3(1, 1, 1.3)), at + Vector3(0, 0.004, -0.058)), Color(0.78, 0.18, 0.3), 0.0, 0.04)
 
 
 ## A dressed stone brick: a squared block with a chisel groove across the top.

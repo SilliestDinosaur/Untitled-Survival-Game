@@ -441,24 +441,93 @@ func _dead_tree(kit: MeshKit, rng: RandomNumberGenerator) -> void:
 	TreeModels.dead(kit, rng, _vary(_pal.dead_wood, rng), rng.randf_range(3.5, 6.0), rng.randf_range(0.2, 0.3))
 
 func _cactus(kit: MeshKit, rng: RandomNumberGenerator) -> void:
-	var h := rng.randf_range(2.0, 3.6)
-	var r := rng.randf_range(0.28, 0.38)
 	var col := _vary(_pal.cactus, rng)
-	var ribs := func(p: Vector3) -> Color:
-		return col.darkened(0.12) if sin(atan2(p.z, p.x) * 8.0) > 0.4 else col
-	kit.add_primitive(MeshKit.cylinder(r, r * 1.05, h, 12), Transform3D(Basis(), Vector3(0, h * 0.5, 0)), col, 0.0, 0.04, null, ribs)
-	kit.add_primitive(MeshKit.sphere(r, 12, 6), Transform3D(Basis(), Vector3(0, h, 0)), col, 0.0, 0.04, null, ribs)
-	for side in ([-1.0, 1.0] if rng.randf() < 0.7 else [1.0]):
-		var y := rng.randf_range(h * 0.35, h * 0.6)
-		var out := rng.randf_range(0.5, 0.75)
-		var up := rng.randf_range(0.6, 1.1)
-		var ar := r * 0.7
-		var dir := Vector3(side, 0, 0).rotated(Vector3.UP, rng.randf() * TAU)
-		kit.add_primitive(MeshKit.cylinder(ar, ar, out, 10), Transform3D(Basis(Quaternion(Vector3.UP, dir)), Vector3(0, y, 0) + dir * out * 0.5), col, 0.0, 0.04)
-		kit.add_primitive(MeshKit.cylinder(ar, ar, up, 10), Transform3D(Basis(), Vector3(0, y + up * 0.5, 0) + dir * out), col, 0.0, 0.04, null, ribs)
-		kit.add_primitive(MeshKit.sphere(ar, 10, 5), Transform3D(Basis(), Vector3(0, y + up, 0) + dir * out), col, 0.0, 0.04)
-	if rng.randf() < 0.5:
-		kit.add_primitive(MeshKit.sphere(r * 0.35, 8, 5), Transform3D(Basis().scaled(Vector3(1, 0.6, 1)), Vector3(0, h + r * 0.85, 0)), _pal.flowers[0], 0.0, 0.03)
+	if rng.randf() < 0.35:
+		_prickly_pear(kit, rng, col)
+		return
+	# A saguaro: a ribbed column with arms that elbow out and curve up, spines along the ribs, flowers on the tips.
+	var h := rng.randf_range(2.2, 3.8)
+	var r := rng.randf_range(0.26, 0.36)
+	var ribs := 12
+	var rib_col := func(_t: float, a: float) -> Color:
+		var c := sin(a * ribs)
+		if c > 0.82:
+			return col.lightened(0.18) if fposmod(_t * 26.0, 1.0) < 0.3 else col.lightened(0.06)   # spine dots on the ridge
+		return col.darkened(0.16) if c < -0.4 else col
+	var rib_shape := func(_t: float, a: float) -> Vector2:
+		return Vector2.ONE * (1.0 + sin(a * ribs) * 0.07)
+	var trunk: Array = []
+	var trunk_r: Array = []
+	for i in 9:
+		var t := i / 8.0
+		trunk.append(Vector3(sin(t * 2.0) * 0.04, t * h, 0))
+		trunk_r.append(r * (1.0 - pow(t, 6.0) * 0.6) * (1.04 if i == 0 else 1.0))
+	kit.loft(trunk, trunk_r, 24, col, rib_col, rib_shape, true, true)
+	var arms := 2 if rng.randf() < 0.65 else (1 if rng.randf() < 0.6 else 3)
+	var spin := rng.randf() * TAU
+	var tips: Array = [trunk[8]]
+	for k in arms:
+		var dir := Vector3(cos(spin + TAU * k / arms + rng.randf_range(-0.3, 0.3)), 0, sin(spin + TAU * k / arms))
+		var y := rng.randf_range(h * 0.3, h * 0.6)
+		var out := r + rng.randf_range(0.45, 0.75)
+		var up := rng.randf_range(0.8, 1.4)
+		var ar := r * rng.randf_range(0.6, 0.72)
+		var base := Vector3(0, y, 0)
+		var elbow := base + dir * out + Vector3(0, ar * 0.4, 0)
+		var path: Array = [base, base + dir * out * 0.55 + Vector3(0, ar * 0.05, 0), elbow, elbow + Vector3(0, up * 0.45, 0) + dir * 0.03, elbow + Vector3(0, up, 0) + dir * 0.05]
+		kit.loft(path, [ar * 0.95, ar, ar, ar * 0.97, ar * 0.65], 18, col, rib_col, rib_shape, false, true)
+		tips.append(path[4])
+	# Flowers crowning the tips.
+	var flower: Color = _pal.flowers[rng.randi() % _pal.flowers.size()].lerp(Color(0.98, 0.95, 0.85), 0.4)
+	for tip: Vector3 in tips:
+		if rng.randf() < 0.55:
+			for i in rng.randi_range(2, 4):
+				var a := rng.randf() * TAU
+				kit.add_primitive(MeshKit.sphere(0.07, 7, 4), Transform3D(Basis.from_scale(Vector3(1, 0.6, 1)), tip + Vector3(cos(a) * 0.08, 0.06, sin(a) * 0.08)), flower, 0.0, 0.04)
+
+
+## A prickly pear: flat oval pads growing from each other's edges, spine tufts dotted over them, red fruit on top.
+func _prickly_pear(kit: MeshKit, rng: RandomNumberGenerator, col: Color) -> void:
+	# Pads: [base, basis, size]. Each grows two or three more from its rim, tilting outward, so they fan into a clump.
+	var fruit := Color(0.75, 0.18, 0.3).lerp(Color(0.85, 0.35, 0.2), rng.randf())
+	var first := Basis(Vector3.UP, rng.randf() * TAU)
+	var pads: Array = [[Vector3.ZERO, first, 0.46]]
+	var want := rng.randi_range(8, 13)
+	var i := 0
+	while i < pads.size() and pads.size() < want:
+		var p: Array = pads[i]
+		var pb: Basis = p[1]
+		var psz: float = p[2]
+		for k in rng.randi_range(2, 3):
+			var sz := psz * rng.randf_range(0.72, 0.9)
+			if sz < 0.17 or pads.size() >= want:
+				continue
+			var u := rng.randf_range(-0.55, 0.55)
+			var at: Vector3 = (p[0] as Vector3) + pb * Vector3(u * psz * 0.6, psz * 1.72, 0)
+			var lean := u * 1.1 + rng.randf_range(-0.35, 0.35)
+			var b := pb * Basis(Vector3.FORWARD, -lean) * Basis(Vector3.UP, rng.randf_range(-0.7, 0.7))
+			pads.append([at, b, sz])
+		i += 1
+	for pd: Array in pads:
+		var base: Vector3 = pd[0]
+		var b: Basis = pd[1]
+		var sz: float = pd[2]
+		var outline := PackedVector2Array()
+		for j in 16:
+			var a := TAU * j / 16.0
+			outline.append(Vector2(cos(a) * sz * 0.62, (sin(a) + 1.0) * sz * 0.9))
+		var shade := col.lightened(rng.randf_range(-0.06, 0.08))
+		kit.extrude(outline, Transform3D(b, base), sz * 0.16, sz * 0.06, shade, shade.darkened(0.15), 0.5)
+		# Spine tufts: pale dots on both faces.
+		for j in 7:
+			var u := rng.randf_range(-0.45, 0.45) * sz
+			var v := rng.randf_range(0.25, 1.55) * sz
+			for side in [-1.0, 1.0]:
+				kit.add_primitive(MeshKit.sphere(sz * 0.035, 4, 3), Transform3D(Basis(), base + b * Vector3(u, v, side * sz * 0.085)), Color(0.92, 0.88, 0.7), 0.0, 0.0)
+		if rng.randf() < 0.5 and sz < 0.36:
+			for j in rng.randi_range(1, 3):
+				var u := rng.randf_range(-0.4, 0.4) * sz
+				kit.add_primitive(MeshKit.sphere(sz * 0.12, 7, 5), Transform3D(Basis.from_scale(Vector3(1, 1.3, 1)), base + b * Vector3(u, sz * 1.78, 0)), fruit, 0.0, 0.05)
 
 
 ## Hang fruit on the outside of a canopy: pick points from the upper part of the mesh built so far.
@@ -595,13 +664,29 @@ func _stalagmite(kit: MeshKit, rng: RandomNumberGenerator) -> void:
 
 ## Tier-4 gem: big crystal spikes bursting from a small rock.
 func _gem(kit: MeshKit, rng: RandomNumberGenerator, col: Color) -> void:
-	kit.add_primitive(MeshKit.sphere(0.8, 10, 6), Transform3D(Basis().scaled(Vector3(1.2, 0.6, 1.0)), Vector3(0, 0.15, 0)), _vary(_pal.rock, rng).darkened(0.1), 0.25, 0.08)
+	# A rough rock it grows from, then a cluster of six-sided crystals with faceted points, splaying outward, dark at
+	# the root and clear at the tip, and a scatter of small ones round them.
+	var rock := _vary(_pal.rock, rng).darkened(0.15)
+	kit.flat_shading = true
+	kit.add_primitive(MeshKit.sphere(0.8, 9, 6), Transform3D(Basis(Vector3.UP, rng.randf() * TAU).scaled(Vector3(1.25, 0.55, 1.0)), Vector3(0, 0.12, 0)), rock, 0.3, 0.08)
+	var crystal := func(base: Vector3, dir: Vector3, length: float, r: float) -> void:
+		var b := Basis(Quaternion(Vector3.UP, dir)) * Basis(Vector3.UP, rng.randf() * TAU)
+		var shade := _vary(col, rng, 0.04)
+		var body := length * 0.78
+		kit.add_primitive(MeshKit.cylinder(r, r * 1.04, body, 6), Transform3D(b, base + dir * body * 0.5), shade.darkened(0.12), 0.0, 0.0,
+			null, func(p: Vector3) -> Color: return shade.darkened(0.2).lerp(shade.lightened(0.1), clampf((p - base).dot(dir) / body, 0.0, 1.0)))
+		kit.add_primitive(MeshKit.cylinder(0.0, r, length - body, 6), Transform3D(b, base + dir * (body + (length - body) * 0.5)), shade.lightened(0.28), 0.0, 0.0)
 	for i in rng.randi_range(5, 8):
-		var dir := Vector3(rng.randf_range(-0.7, 0.7), rng.randf_range(0.6, 1.0), rng.randf_range(-0.7, 0.7)).normalized()
-		var length := rng.randf_range(0.8, 1.7)
-		var r := rng.randf_range(0.14, 0.26)
-		var b := Basis(Quaternion(Vector3.UP, dir))
-		kit.add_primitive(MeshKit.cylinder(0.0, r, length, 6), Transform3D(b, dir * (0.3 + length * 0.5)), _vary(col, rng, 0.05).lightened(rng.randf_range(0.0, 0.15)), 0.0, 0.06)
+		var dir := Vector3(rng.randf_range(-0.75, 0.75), rng.randf_range(0.55, 1.0), rng.randf_range(-0.75, 0.75)).normalized()
+		var length := rng.randf_range(0.8, 1.8) * (1.25 if i == 0 else 1.0)
+		var r := rng.randf_range(0.13, 0.24) * (1.25 if i == 0 else 1.0)
+		crystal.call(Vector3(dir.x * 0.2, 0.15, dir.z * 0.2), dir if i > 0 else Vector3(0.1, 1, 0.05).normalized(), length, r)
+	for i in rng.randi_range(5, 9):   # little ones round the foot
+		var a := rng.randf() * TAU
+		var d := rng.randf_range(0.55, 1.0)
+		var dir := Vector3(cos(a) * 0.6, 1.0, sin(a) * 0.6).normalized()
+		crystal.call(Vector3(cos(a) * d, 0.05, sin(a) * d * 0.85), dir, rng.randf_range(0.2, 0.45), rng.randf_range(0.05, 0.09))
+	kit.flat_shading = false
 
 
 ## Low leafy herb with a few flowering tips.
@@ -648,37 +733,61 @@ func _log(kit: MeshKit, rng: RandomNumberGenerator) -> void:
 	var length := rng.randf_range(2.6, 3.6)
 	var r := rng.randf_range(0.26, 0.36)
 	var bark := _vary(_pal.bark, rng)
+	var wood := Color(0.72, 0.58, 0.42).lerp(bark, 0.25)
 	var path: Array = []
 	var radii: Array = []
-	var steps := 9
+	var steps := 10
 	for i in steps + 1:
 		var t := float(i) / steps
 		path.append(Vector3(lerpf(-length * 0.5, length * 0.5, t), r * 0.85 + sin(t * 3.0) * 0.03, sin(t * 2.3 + 1.0) * 0.08))
-		radii.append(r * lerpf(1.05, 0.85, t))
+		radii.append(r * lerpf(1.05, 0.88, t) * (1.0 + 0.04 * sin(t * 13.0)))
+	# Bark with deep ridges, and here and there peeled away to the pale weathered wood beneath.
+	var peel_at := rng.randf_range(0.3, 0.7)
 	var ridges := func(t: float, a: float) -> Color:
-		return bark.darkened(0.15) if fposmod(a * 2.2 + t * 1.5, 1.0) < 0.28 else bark
-	kit.loft(path, radii, 12, bark, ridges, Callable(), true, true)
-	# Clean cut at one end (pale rings), jagged break at the other.
-	var rings := func(t: float, a: float) -> Color:
-		return Color(0.8, 0.66, 0.46).darkened(0.1 * (int(t * 4.0) % 2))
-	kit.loft([path[0] - Vector3(0.02, 0, 0), path[0]], [r * 0.9, r * 1.05], 10, Color(0.8, 0.66, 0.46), rings, Callable(), true, false)
+		if absf(t - peel_at) < 0.12 and fposmod(a / TAU + 0.15, 1.0) < 0.35:
+			return wood.lightened(0.08) if fposmod(t * 40.0, 1.0) < 0.5 else wood   # bare wood, its grain showing
+		return bark.darkened(0.18) if fposmod(a * 2.2 + t * 1.5, 1.0) < 0.28 else bark
+	kit.loft(path, radii, 14, bark, ridges, Callable(), false, false, 0.012)
+	# The sawn-off end: rings. The broken end: hollow, a dark rotted heart inside a ragged rim.
+	var rings := func(t: float, _a: float) -> Color:
+		return Color(0.8, 0.66, 0.46).darkened(0.1 * (int(t * 5.0) % 2))
+	kit.loft([path[0] - Vector3(0.015, 0, 0), path[0]], [r * 0.92, r * 1.05], 12, Color(0.8, 0.66, 0.46), rings, Callable(), true, false)
 	var tip: Vector3 = path[steps]
-	for i in 5:
-		var a := TAU * i / 5.0 + rng.randf()
-		var off: Vector3 = Vector3(0, cos(a), sin(a)) * float(radii[steps]) * 0.6
-		kit.loft([tip + off, tip + off + Vector3(rng.randf_range(0.08, 0.2), 0, 0)], [radii[steps] * 0.35, 0.01], 5, Color(0.72, 0.58, 0.4))
-	# Moss on top.
+	var tr: float = radii[steps]
+	kit.loft([tip - Vector3(r * 0.9, 0, 0), tip + Vector3(0.01, 0, 0)], [tr * 0.55, tr * 0.72], 10, Color(0.2, 0.14, 0.1), Callable(), Callable(), true, false)   # the hollow
+	for i in 7:   # splinters round the rim
+		var a := TAU * i / 7.0 + rng.randf_range(-0.2, 0.2)
+		var off: Vector3 = Vector3(0, cos(a), sin(a)) * tr * 0.85
+		kit.loft([tip + off - Vector3(0.02, 0, 0), tip + off + Vector3(rng.randf_range(0.06, 0.2), 0, 0) + off * 0.1], [tr * 0.22, 0.008], 4, wood)
+	# A broken branch or two.
+	for i in rng.randi_range(1, 2):
+		var at: Vector3 = path[rng.randi_range(2, steps - 2)]
+		var dir := Vector3(rng.randf_range(-0.3, 0.3), rng.randf_range(0.3, 0.9), (1.0 if rng.randf() < 0.5 else -1.0)).normalized()
+		var bl := rng.randf_range(0.2, 0.45)
+		kit.loft([at + dir * r * 0.7, at + dir * (r + bl)], [r * 0.3, r * 0.18], 7, bark, Callable(), Callable(), false, true)
+		kit.add_primitive(MeshKit.sphere(r * 0.18, 6, 4), Transform3D(Basis(), at + dir * (r + bl)), wood, 0.0, 0.03)
+	# Moss in soft clumps along the top, and a creeping strip down one side.
 	var moss := _vary(_pal.moss, rng)
-	kit.loft([path[2] + Vector3(0, r * 0.8, 0), path[5] + Vector3(0, r * 0.82, 0)], [r * 0.45, r * 0.5], 8, moss, Callable(),
-		func(t: float, a: float) -> Vector2: return Vector2(1.0, 0.35), true, true, 0.02)
-	# Shelf fungi on the side.
+	for i in rng.randi_range(5, 9):
+		var t := rng.randf_range(0.1, 0.85)
+		var k := int(t * steps)
+		var at: Vector3 = (path[k] as Vector3).lerp(path[k + 1], t * steps - k)
+		var a := rng.randf_range(-0.7, 0.7)
+		var on: Vector3 = Vector3(0, cos(a), sin(a)) * float(radii[k]) * 0.92
+		kit.add_primitive(MeshKit.sphere(rng.randf_range(0.08, 0.16), 7, 4), Transform3D(Basis(Quaternion(Vector3.UP, on.normalized())).scaled(Vector3(1.4, 0.35, 1.1)), at + on), moss.lightened(rng.randf_range(-0.08, 0.1)), 0.02, 0.06)
+	# Shelf fungi stepping up the side, and a few small mushrooms by the hollow end.
 	for i in rng.randi_range(2, 4):
 		var at: Vector3 = path[rng.randi_range(2, steps - 2)]
 		var shelf := PackedVector2Array()
 		for j in 9:
 			var a := PI * j / 8.0
 			shelf.append(Vector2(cos(a) * 0.11, sin(a) * 0.08))
-		kit.extrude(shelf, Transform3D(Basis(Vector3.RIGHT, -PI * 0.5) * Basis(Vector3.UP, 0.0), at + Vector3(0, -r * 0.1 + i * 0.05, r * 0.95)), 0.03, 0.012, Color(0.85, 0.72, 0.5), Color(0.95, 0.88, 0.7), 0.4)
+		kit.extrude(shelf, Transform3D(Basis(Vector3.RIGHT, -PI * 0.5), at + Vector3(0, -r * 0.1 + i * 0.05, r * 0.95)), 0.03, 0.012, Color(0.85, 0.72, 0.5), Color(0.95, 0.88, 0.7), 0.4)
+	for i in rng.randi_range(2, 4):
+		var p := tip + Vector3(rng.randf_range(-0.4, -0.05), -r * 0.85, rng.randf_range(-0.3, 0.3))
+		var mh := rng.randf_range(0.05, 0.1)
+		kit.loft([p, p + Vector3(0, mh, 0)], [0.012, 0.01], 5, Color(0.9, 0.86, 0.78))
+		kit.add_primitive(MeshKit.sphere(0.035, 7, 4), Transform3D(Basis.from_scale(Vector3(1, 0.55, 1)), p + Vector3(0, mh, 0)), Color(0.75, 0.5, 0.3), 0.0, 0.04)
 
 
 ## Stump: flaring base, pale cut top with rings, roots curving into the ground.
@@ -880,18 +989,23 @@ func _barrel_cactus(kit: MeshKit, rng: RandomNumberGenerator) -> void:
 	var col := _vary(_pal.cactus, rng)
 	var h := rng.randf_range(0.35, 0.6)
 	var r := rng.randf_range(0.2, 0.3)
+	var ribs := 14
 	var path: Array = []
 	var radii: Array = []
 	for i in 8:
 		var t := i / 7.0
 		path.append(Vector3(0, t * h, 0))
 		radii.append(r * (0.75 + sin(t * PI * 0.85) * 0.3) * (1.0 if t < 0.95 else 0.4))
-	kit.loft(path, radii, 16, col, func(t: float, a: float) -> Color:
-		return col.darkened(0.18) if sin(a * 10.0) < -0.3 else col,
-		func(t: float, a: float) -> Vector2: return Vector2.ONE * (1.0 + sin(a * 10.0) * 0.08), false, true)
-	for i in 5:
-		var a := TAU * i / 5.0
-		kit.add_primitive(MeshKit.sphere(0.04, 6, 4), Transform3D(Basis(), Vector3(cos(a) * r * 0.25, h * 0.98, sin(a) * r * 0.25)), _pal.flowers[1], 0.0, 0.04)
+	kit.loft(path, radii, 28, col, func(t: float, a: float) -> Color:
+		var c := sin(a * ribs)
+		if c > 0.85:
+			return Color(0.95, 0.85, 0.55) if fposmod(t * 14.0, 1.0) < 0.35 else col.lightened(0.08)   # golden spines on the ridges
+		return col.darkened(0.2) if c < -0.3 else col,
+		func(t: float, a: float) -> Vector2: return Vector2.ONE * (1.0 + sin(a * ribs) * 0.1), false, true)
+	var flower: Color = _pal.flowers[1].lerp(Color(1.0, 0.8, 0.3), 0.3)
+	for i in 6:
+		var a := TAU * i / 6.0
+		kit.add_primitive(MeshKit.sphere(0.045, 6, 4), Transform3D(Basis.from_scale(Vector3(1, 0.6, 1)), Vector3(cos(a) * r * 0.28, h * 0.98, sin(a) * r * 0.28)), flower, 0.0, 0.04)
 
 
 ## Tumbleweed: a loose ball of dry, curling twigs.
