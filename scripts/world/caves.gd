@@ -140,7 +140,9 @@ static func _base_slope_y(gen: WorldGen, x: float, z: float) -> float:
 
 
 ## Plan every cave for this world. Call once per world, on the main thread.
+static var timing := {}   ## how long the last plan's stages took (ms), for profiling
 static func plan(gen: WorldGen) -> Dictionary:
+	var _t := Time.get_ticks_usec()
 	var spots := entrances(gen)
 	var rng := RandomNumberGenerator.new()
 	rng.seed = hash([Game.world_seed, "network"])
@@ -225,6 +227,8 @@ static func plan(gen: WorldGen) -> Dictionary:
 				if rng.randf() < 0.16 and steps > 3:
 					var bd := dir.rotated(Vector3.UP, (1.0 if rng.randf() < 0.5 else -1.0) * rng.randf_range(0.6, 1.3))
 					frontier.append([cur, bd.normalized(), maxf(rad * 0.7, 1.1), rng.randi_range(3, 8), tree])
+	timing['tunnels'] = (Time.get_ticks_usec() - _t) / 1000.0
+	_t = Time.get_ticks_usec()
 	# Corridors between entrances that are close: they make the caves connect.
 	for a in roots.size():
 		var best := -1
@@ -250,6 +254,8 @@ static func plan(gen: WorldGen) -> Dictionary:
 				edges.append([i, j])
 				loops += 1
 				break
+	timing['links'] = (Time.get_ticks_usec() - _t) / 1000.0
+	_t = Time.get_ticks_usec()
 	# Chests in some chambers, glowing fungus on the floors.
 	var chests: Array = []
 	var glow: Array = []
@@ -264,6 +270,8 @@ static func plan(gen: WorldGen) -> Dictionary:
 			var n: Dictionary = nodes[i]
 			var ang := rng.randf() * TAU
 			glow.append(Vector3(n.p.x + cos(ang) * float(n.r) * 0.5, _floor_of(n), n.p.z + sin(ang) * float(n.r) * 0.5))
+	timing['chests'] = (Time.get_ticks_usec() - _t) / 1000.0
+	_t = Time.get_ticks_usec()
 	# How far each node is from daylight: the walk along the tunnels from the nearest mouth.
 	var walk := _walk_from(nodes, edges, roots)
 	# The rock takes after the land above: icy under the cold, mossy and rooty under the woods, sandstone under the
@@ -339,6 +347,8 @@ static func plan(gen: WorldGen) -> Dictionary:
 		segs.append([a.p, mid, float(a.r), mid_r, wa, wm, fa, fm, NO_CEILING, a.theme, b.theme])
 		segs.append([mid, b.p, mid_r, float(b.r), wm, wb, fm, fb, NO_CEILING, a.theme, b.theme])
 	segs.append_array(extra)
+	timing['themes_lakes_segs'] = (Time.get_ticks_usec() - _t) / 1000.0
+	_t = Time.get_ticks_usec()
 	var buckets := {}
 	for si in segs.size():
 		var s: Array = segs[si]
@@ -353,7 +363,17 @@ static func plan(gen: WorldGen) -> Dictionary:
 				buckets[key].append(si)
 	var out := {"entrances": spots, "roots": roots, "nodes": nodes, "rooms": rooms, "chests": chests,
 		"glow": glow, "segs": segs, "buckets": buckets, "lakes": lakes, "crystal_rooms": crystal_rooms}
+	# Each piece's bounding ball (centre, radius), for skipping far pieces in the distance lookups.
+	var bounds := PackedVector4Array()
+	for sg: Array in segs:
+		var c: Vector3 = ((sg[0] as Vector3) + (sg[1] as Vector3)) * 0.5
+		var rad: float = (sg[0] as Vector3).distance_to(sg[1]) * 0.5 + maxf(float(sg[2]), float(sg[3]))
+		bounds.append(Vector4(c.x, c.y, c.z, rad))
+	out.bounds = bounds
+	timing["buckets"] = (Time.get_ticks_usec() - _t) / 1000.0
+	_t = Time.get_ticks_usec()
 	_dress(out, gen, walk)
+	timing["dress"] = (Time.get_ticks_usec() - _t) / 1000.0
 	return out
 
 
@@ -717,23 +737,35 @@ static func wall_at(plan: Dictionary, p: Vector3, dir: Vector3) -> Variant:
 	return null if hit == null else (hit as Vector3) - dir * 0.04
 
 
-## From p (inside a tunnel) along dir to the rock: coarse steps, then halving (a handful of distance lookups).
+## From p (inside a tunnel) along dir to the rock. Sphere tracing: the distance to the nearest wall is never more than
+## the true distance inside the caves, so each step can safely jump that far; then halving to pin the wall down.
+const SLIVER := 1.05   ## rock thinner than this (the ground mesh's grid) is smoothed away in the built caves
+
 static func _march(plan: Dictionary, p: Vector3, dir: Vector3, reach: float) -> Variant:
-	if void_distance(plan, p) > -0.3:
+	var d := void_distance(plan, p)
+	if d > -0.3:
 		return null
 	var inside := 0.0
 	var t := 0.0
 	while t < reach:
-		t = minf(t + 0.45, reach)
-		if void_distance(plan, p + dir * t) >= 0.0:
+		t = minf(t + clampf(-d * 0.6, 0.08, 1.5), reach)   # cautious: a tapering piece's distance is only near-exact
+		d = void_distance(plan, p + dir * t)
+		if d >= 0.0:
 			var lo := inside
 			var hi := t
-			for k in 5:
+			while hi - lo > 0.012:
 				var mid := (lo + hi) * 0.5
 				if void_distance(plan, p + dir * mid) >= 0.0:
 					hi = mid
 				else:
 					lo = mid
+			# A sliver of rock thinner than the ground mesh can show (it's smoothed away there) isn't a wall: go on.
+			var beyond := void_distance(plan, p + dir * (hi + SLIVER))
+			if beyond < 0.0 and hi + SLIVER < reach:
+				t = hi + SLIVER
+				d = beyond
+				inside = t
+				continue
 			return p + dir * hi
 		inside = t
 	return null
@@ -921,7 +953,13 @@ static func void_distance(plan: Dictionary, p: Vector3) -> float:
 	if not plan.buckets.has(key):
 		return 99.0
 	var best := 99.0
+	var bounds: PackedVector4Array = plan.bounds
 	for si: int in plan.buckets[key]:
+		# A piece whose bounding ball is further than the nearest wall found so far can't be nearer (most pieces in a
+		# cell are some way off: this skips their sums).
+		var bb := bounds[si]
+		if Vector3(bb.x - p.x, bb.y - p.y, bb.z - p.z).length() - bb.w >= best:
+			continue
 		best = minf(best, _piece_distance(plan.segs[si], p))
 	return best
 
@@ -942,7 +980,11 @@ static func sky_seen(plan: Dictionary, p: Vector3) -> float:
 		return 1.0
 	var best := 99.0
 	var best_walk := 0.0
+	var bounds: PackedVector4Array = plan.bounds
 	for si: int in plan.buckets[key]:
+		var bb := bounds[si]
+		if Vector3(bb.x - p.x, bb.y - p.y, bb.z - p.z).length() - bb.w >= best:
+			continue
 		var s: Array = plan.segs[si]
 		var a: Vector3 = s[0]
 		var ab: Vector3 = s[1] - a
