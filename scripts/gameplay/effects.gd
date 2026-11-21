@@ -7,7 +7,7 @@ extends RefCounted
 ## themselves when done, and there's a cap on how many may be alive at once (the least important are skipped
 ## when it's reached), so a busy moment can't pile up.
 
-const MAX_BURSTS := 48
+const MAX_BURSTS := 64
 ## The colour of the dust and bits knocked off each building material.
 const MAT_DUST := {"wood": Color(0.72, 0.56, 0.38), "stone": Color(0.62, 0.62, 0.64), "brick": Color(0.74, 0.46, 0.36)}
 
@@ -15,26 +15,32 @@ static var _active := 0
 static var _slow := 0.0   ## while > 0, new bursts start in slow motion and speed up over this many seconds
 static var _soft_tex: Texture2D        ## a soft round blob (puffs, smoke, glows)
 static var _leaf_tex: Texture2D        ## a leaf shape
+static var _puff_tex: Texture2D        ## a soft, lumpy cloud (smoke, dust)
 static var _lit_mat: StandardMaterial3D       ## lit solid bits: chips, shards, splinters
 static var _puff_mat: StandardMaterial3D      ## soft lit puffs: dust, smoke, steam
 static var _glow_mat: StandardMaterial3D      ## additive glows: embers, sparks, fireflies, twinkles
 static var _leaf_mat: StandardMaterial3D      ## two-sided leaves
 static var _box: BoxMesh
-static var _shard: BoxMesh
+static var _shard: Mesh
 static var _splinter: BoxMesh
 static var _quad: QuadMesh
 static var _glow_quad: QuadMesh
 static var _streak: QuadMesh
 static var _leaf: QuadMesh
 static var _drop: SphereMesh
+static var _puff: QuadMesh             ## lumpy cloud puffs (smoke, dust)
+static var _pop_mat: StandardMaterial3D       ## the flash at a hit point (always faces you, drawn on top of nearby bits)
+static var _pop: QuadMesh
 
 
 static func _setup() -> void:
 	if _box:
 		return
-	var g := Gradient.new()
+	var g := Gradient.new()   # an eased falloff (not a straight cone), so glows and puffs have no hard rim
 	g.set_color(0, Color(1, 1, 1, 1))
 	g.set_color(1, Color(1, 1, 1, 0))
+	g.add_point(0.35, Color(1, 1, 1, 0.72))
+	g.add_point(0.7, Color(1, 1, 1, 0.2))
 	var soft := GradientTexture2D.new()
 	soft.gradient = g
 	soft.fill = GradientTexture2D.FILL_RADIAL
@@ -51,6 +57,22 @@ static func _setup() -> void:
 			var w := 0.55 * (1.0 - v * v)   # a leaf: wide in the middle, pointed at both ends
 			img.set_pixel(x, y, Color(1, 1, 1, 1.0 if absf(u) < w else 0.0))
 	_leaf_tex = ImageTexture.create_from_image(img)
+	# A cloud: a round falloff broken up by a few octaves of noise, so a puff reads as billowing smoke or dust
+	# rather than a perfect disc (and turned at random, no two look alike).
+	var noise := FastNoiseLite.new()
+	noise.seed = 11
+	noise.frequency = 0.09
+	noise.fractal_octaves = 3
+	var cloud := Image.create(64, 64, false, Image.FORMAT_RGBA8)
+	for y in 64:
+		for x in 64:
+			var d := Vector2(x - 31.5, y - 31.5).length() / 31.5
+			var n := noise.get_noise_2d(x, y) * 0.5 + 0.5
+			var a := clampf((1.0 - d * (0.85 + 0.5 * (1.0 - n))) * 1.6, 0.0, 1.0)
+			a = a * a * (3.0 - 2.0 * a)
+			cloud.set_pixel(x, y, Color(1, 1, 1, a * lerpf(0.65, 1.0, n)))
+	cloud.generate_mipmaps()
+	_puff_tex = ImageTexture.create_from_image(cloud)
 
 	_lit_mat = StandardMaterial3D.new()
 	_lit_mat.vertex_color_use_as_albedo = true
@@ -72,6 +94,10 @@ static func _setup() -> void:
 	_glow_mat.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
 	_glow_mat.blend_mode = BaseMaterial3D.BLEND_MODE_ADD
 	_glow_mat.proximity_fade_enabled = false
+	_pop_mat = _glow_mat.duplicate()
+	_pop_mat.no_depth_test = true   # a hit's flash shows even where the chips already cover the spot
+	var puff_mat: StandardMaterial3D = _puff_mat.duplicate()
+	puff_mat.albedo_texture = _puff_tex
 	_leaf_mat = StandardMaterial3D.new()
 	_leaf_mat.vertex_color_use_as_albedo = true
 	_leaf_mat.albedo_texture = _leaf_tex
@@ -83,9 +109,11 @@ static func _setup() -> void:
 	_box = BoxMesh.new()
 	_box.size = Vector3.ONE
 	_box.material = _lit_mat
-	_shard = BoxMesh.new()
-	_shard.size = Vector3(1.0, 0.35, 0.65)
-	_shard.material = _lit_mat
+	var shard := PrismMesh.new()   # a wedge: reads as a broken flake of stone, where a box reads as a brick
+	shard.size = Vector3(1.0, 0.55, 0.7)
+	shard.left_to_right = 0.3
+	shard.material = _lit_mat
+	_shard = shard
 	_splinter = BoxMesh.new()
 	_splinter.size = Vector3(0.22, 0.22, 1.0)
 	_splinter.material = _lit_mat
@@ -105,6 +133,10 @@ static func _setup() -> void:
 	_drop.radial_segments = 6
 	_drop.rings = 3
 	_drop.material = _lit_mat
+	_puff = QuadMesh.new()
+	_puff.material = puff_mat
+	_pop = QuadMesh.new()
+	_pop.material = _pop_mat
 
 
 static func _curve(points: Array) -> Curve:
@@ -137,6 +169,8 @@ static func _burst(parent: Node, pos: Vector3, mesh: Mesh, count: int, lifetime:
 	p.lifetime = lifetime
 	p.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
 	p.local_coords = false
+	p.fixed_fps = 60   # stepped evenly (a long frame doesn't throw a burst away), drawn smoothly between steps
+	p.fract_delta = true
 	parent.add_child(p)
 	p.global_position = pos
 	_active += 1
@@ -286,6 +320,9 @@ static func set_shimmer(mi: MeshInstance3D, strength: float) -> void:
 
 static func _start(p: CPUParticles3D) -> void:
 	if p:
+		# One-shot CPU particles with explosiveness much above this can fail to show at all (seen with low frame
+		# rates); 0.85 still throws them out together.
+		p.explosiveness = minf(p.explosiveness, 0.85)
 		p.emitting = true
 
 
@@ -323,8 +360,70 @@ static func has_leaves(kind: String) -> bool:
 
 # --- Bursts ---------------------------------------------------------------------------------
 
+## The flash at the point of a hit: a bright spot that swells and is gone in a blink (sells the moment of contact).
+static func pop(parent: Node, pos: Vector3, color := Color(1.0, 0.95, 0.85), size := 1.0) -> void:
+	_setup()
+	var p := _burst(parent, pos, _pop, 2, 0.13)
+	if p:
+		p.explosiveness = 1.0
+		p.initial_velocity_min = 0.0
+		p.initial_velocity_max = 0.0
+		p.gravity = Vector3.ZERO
+		p.angle_min = 0.0
+		p.angle_max = 360.0
+		p.scale_amount_min = 0.3 * size
+		p.scale_amount_max = 0.45 * size
+		p.scale_amount_curve = _curve([Vector2(0, 0.35), Vector2(0.3, 1.0), Vector2(1, 1.25)])
+		p.color_ramp = _ramp(Color(color.r * 1.3, color.g * 1.3, color.b * 1.3, 0.8), Color(color, 0.0))
+		_start(p)
+
+
+## Bits coming to rest: as the flying ones come down, a few lie on the ground below `pos` (skidding to a stop
+## toward you), stay a moment and shrink away. (Particles here can't collide, so this is how they "land".)
+static func _settle(parent: Node, pos: Vector3, mesh: Mesh, color: Color, count: int, size: float, delay := 0.4) -> void:
+	_setup()
+	if count <= 0 or parent == null or not parent.is_inside_tree() or _active >= MAX_BURSTS - 8:
+		return
+	var cam := parent.get_viewport().get_camera_3d()
+	var toward := Vector3.ZERO
+	if cam:
+		toward = cam.global_position - pos
+		toward.y = 0.0
+		toward = toward.normalized() * minf(toward.length(), 0.5)
+	var w := parent.get_viewport().get_world_3d()
+	var from := pos + toward + Vector3.UP * 0.15
+	var hit := w.direct_space_state.intersect_ray(PhysicsRayQueryParameters3D.create(from, from + Vector3.DOWN * 4.0, TerrainChunk.LAYER_SOLID))
+	if hit.is_empty() or (hit.normal as Vector3).y < 0.5:
+		return
+	var ground: Vector3 = hit.position
+	parent.get_tree().create_timer(delay).timeout.connect(func() -> void:
+		if not is_instance_valid(parent):
+			return
+		var p := _burst(parent, ground + Vector3.UP * size * 0.25, mesh, count, 2.2)
+		if p:
+			p.explosiveness = 0.6   # landing one after another
+			p.emission_shape = CPUParticles3D.EMISSION_SHAPE_BOX
+			p.emission_box_extents = Vector3(0.4, 0.0, 0.4)
+			p.direction = Vector3(toward.x, 0.0, toward.z) if toward != Vector3.ZERO else Vector3.FORWARD
+			p.spread = 70.0
+			p.flatness = 1.0
+			p.initial_velocity_min = 0.3
+			p.initial_velocity_max = 1.0
+			p.damping_min = 3.0
+			p.damping_max = 5.0
+			p.gravity = Vector3.ZERO
+			p.particle_flag_rotate_y = true
+			p.angle_min = 0.0
+			p.angle_max = 360.0
+			p.scale_amount_min = size * 0.6
+			p.scale_amount_max = size * 1.1
+			p.scale_amount_curve = _curve([Vector2(0, 0), Vector2(0.05, 1), Vector2(0.7, 1), Vector2(1, 0)])
+			p.color_initial_ramp = _ramp(color, color.darkened(0.2))
+			_start(p))
+
 ## Small coloured chips flying off whatever you hit (and a little dust where they came from).
 static func chips(parent: Node, pos: Vector3, color: Color, count := 10, size := 0.08, spread := 3.5) -> void:
+	_setup()
 	var p := _burst(parent, pos, _box, count, 0.9, true)
 	if p:
 		p.direction = Vector3.UP
@@ -339,10 +438,12 @@ static func chips(parent: Node, pos: Vector3, color: Color, count := 10, size :=
 		p.scale_amount_curve = _curve([Vector2(0, 1), Vector2(0.7, 1), Vector2(1, 0)])
 		p.color_initial_ramp = _ramp(color.lightened(0.15), color.darkened(0.2))
 		_start(p)
+	_settle(parent, pos, _box, color.darkened(0.1), count / 3, size)
 
 
 ## Splinters of wood spinning off a chopped tree or a hammered plank, with bark flakes.
 static func splinters(parent: Node, pos: Vector3, wood: Color, bark: Color, count := 8, size := 1.0) -> void:
+	_setup()
 	var p := _burst(parent, pos, _splinter, count, 1.0, true)
 	if p:
 		p.direction = Vector3.UP
@@ -353,16 +454,20 @@ static func splinters(parent: Node, pos: Vector3, wood: Color, bark: Color, coun
 		p.angular_velocity_min = -600
 		p.angular_velocity_max = 600
 		p.particle_flag_rotate_y = true
-		p.scale_amount_min = 0.05 * size
-		p.scale_amount_max = 0.12 * size
+		p.scale_amount_min = 0.06 * size
+		p.scale_amount_max = 0.15 * size
 		p.scale_amount_curve = _curve([Vector2(0, 1), Vector2(0.75, 1), Vector2(1, 0)])
 		p.color_initial_ramp = _ramp(wood.lightened(0.2), wood)
 		_start(p)
 	chips(parent, pos, bark, maxi(count / 2, 2), 0.05 * size, 2.5 * sqrt(size))
+	pop(parent, pos, Color(1.0, 0.86, 0.62), 0.8 * sqrt(size))
+	dust(parent, pos, wood.lightened(0.3), maxi(count / 3, 2), 0.28 * size, 0.6)
+	_settle(parent, pos, _splinter, wood, count / 3, 0.08 * size)
 
 
 ## Shards of stone (or ore, or crystal) and a puff of grit.
 static func shards(parent: Node, pos: Vector3, color: Color, count := 9) -> void:
+	_setup()
 	var p := _burst(parent, pos, _shard, count, 0.9, true)
 	if p:
 		p.direction = Vector3.UP
@@ -372,17 +477,34 @@ static func shards(parent: Node, pos: Vector3, color: Color, count := 9) -> void
 		p.gravity = Vector3(0, -13, 0)
 		p.angular_velocity_min = -500
 		p.angular_velocity_max = 500
-		p.scale_amount_min = 0.04
-		p.scale_amount_max = 0.1
+		p.scale_amount_min = 0.05
+		p.scale_amount_max = 0.13
 		p.scale_amount_curve = _curve([Vector2(0, 1), Vector2(0.75, 1), Vector2(1, 0)])
 		p.color_initial_ramp = _ramp(color.lightened(0.2), color.darkened(0.15))
+		p.angle_min = 0.0
+		p.angle_max = 360.0
 		_start(p)
-	dust(parent, pos, color.lightened(0.25), 4, 0.35)
+	# Grit: a spray of fine specks, faster and further than the shards.
+	var g := _burst(parent, pos, _box, count, 0.5)
+	if g:
+		g.direction = Vector3.UP
+		g.spread = 85.0
+		g.initial_velocity_min = 3.0
+		g.initial_velocity_max = 6.5
+		g.gravity = Vector3(0, -14, 0)
+		g.scale_amount_min = 0.015
+		g.scale_amount_max = 0.03
+		g.color = color.lightened(0.3)
+		_start(g)
+	pop(parent, pos, Color(1.0, 0.97, 0.9), 0.9)
+	dust(parent, pos, color.lightened(0.25), 5, 0.4)
+	_settle(parent, pos, _shard, color.darkened(0.05), count / 3, 0.07)
 
 
 ## Soft dust: puffs that swell, drift up a little and fade.
 static func dust(parent: Node, pos: Vector3, color: Color, count := 6, size := 0.4, rise := 0.5) -> void:
-	var p := _burst(parent, pos, _quad, count, 1.2)
+	_setup()
+	var p := _burst(parent, pos, _puff, count, 1.4)
 	if p:
 		p.explosiveness = 0.85
 		p.emission_shape = CPUParticles3D.EMISSION_SHAPE_SPHERE
@@ -398,13 +520,21 @@ static func dust(parent: Node, pos: Vector3, color: Color, count := 6, size := 0
 		p.angle_max = 360.0
 		p.scale_amount_min = size * 0.7
 		p.scale_amount_max = size * 1.3
-		p.scale_amount_curve = _curve([Vector2(0, 0.4), Vector2(0.4, 1.0), Vector2(1, 1.3)])
-		p.color_ramp = _ramp(Color(color, 0.55), Color(color, 0.0))
+		p.angular_velocity_min = -40.0
+		p.angular_velocity_max = 40.0
+		p.scale_amount_curve = _curve([Vector2(0, 0.35), Vector2(0.25, 0.95), Vector2(1, 1.5)])
+		var dg := Gradient.new()   # quick to show, slow to clear
+		dg.set_color(0, Color(color, 0.0))
+		dg.set_color(1, Color(color, 0.0))
+		dg.add_point(0.08, Color(color, 0.6))
+		dg.add_point(0.45, Color(color, 0.3))
+		p.color_ramp = dg
 		_start(p)
 
 
 ## Leaves shaken loose: they flutter and spin down slowly, drifting with the air.
 static func leaves(parent: Node, pos: Vector3, color: Color, count := 6, spread := 1.2) -> void:
+	_setup()
 	var p := _burst(parent, pos, _leaf, count, 2.6)
 	if p:
 		p.explosiveness = 0.7
@@ -429,6 +559,7 @@ static func leaves(parent: Node, pos: Vector3, color: Color, count := 6, spread 
 
 ## Sparks: bright streaks flung out, falling as they cool.
 static func sparks(parent: Node, pos: Vector3, color := Color(1.0, 0.62, 0.22), count := 10, speed := 3.5) -> void:
+	_setup()
 	var p := _burst(parent, pos, _streak, count, 0.6, true)
 	if p:
 		p.direction = Vector3.UP
@@ -446,7 +577,8 @@ static func sparks(parent: Node, pos: Vector3, color := Color(1.0, 0.62, 0.22), 
 
 ## Steam: white puffs rising and swelling (a quench, a boiling pot).
 static func steam(parent: Node, pos: Vector3, count := 8, size := 0.25) -> void:
-	var p := _burst(parent, pos, _quad, count, 1.6)
+	_setup()
+	var p := _burst(parent, pos, _puff, count, 1.6)
 	if p:
 		p.explosiveness = 0.6
 		p.emission_shape = CPUParticles3D.EMISSION_SHAPE_SPHERE
@@ -469,6 +601,7 @@ static func steam(parent: Node, pos: Vector3, count := 8, size := 0.25) -> void:
 
 ## A splash: droplets thrown up and a ring of spray (going into water, a stone thrown in).
 static func splash(parent: Node, pos: Vector3, strength := 1.0) -> void:
+	_setup()
 	var p := _burst(parent, pos, _drop, roundi(14 * strength), 0.8, true)
 	if p:
 		p.direction = Vector3.UP
@@ -481,10 +614,47 @@ static func splash(parent: Node, pos: Vector3, strength := 1.0) -> void:
 		p.color_initial_ramp = _ramp(Color(0.82, 0.9, 0.96), Color(0.55, 0.72, 0.85))
 		_start(p)
 	dust(parent, pos + Vector3(0, 0.05, 0), Color(0.9, 0.95, 1.0), roundi(5 * strength), 0.45 * strength, 0.4)
+	# Spray thrown out flat across the surface, and a few fat drops falling back in after.
+	var r := _burst(parent, pos + Vector3(0, 0.05, 0), _puff, roundi(10 * strength), 0.7)
+	if r:
+		r.explosiveness = 1.0
+		r.emission_shape = CPUParticles3D.EMISSION_SHAPE_RING
+		r.emission_ring_axis = Vector3.UP
+		r.emission_ring_radius = 0.25 * strength
+		r.emission_ring_inner_radius = 0.2 * strength
+		r.emission_ring_height = 0.0
+		r.direction = Vector3(1, 0.4, 0)
+		r.spread = 180.0
+		r.flatness = 0.8
+		r.initial_velocity_min = 1.5 * strength
+		r.initial_velocity_max = 2.6 * strength
+		r.damping_min = 3.0
+		r.damping_max = 4.0
+		r.gravity = Vector3(0, -2.0, 0)
+		r.angle_min = 0.0
+		r.angle_max = 360.0
+		r.scale_amount_min = 0.18 * strength
+		r.scale_amount_max = 0.3 * strength
+		r.scale_amount_curve = _curve([Vector2(0, 0.4), Vector2(1, 1.2)])
+		r.color_ramp = _ramp(Color(0.96, 0.98, 1.0, 0.7), Color(0.9, 0.95, 1.0, 0.0))
+		_start(r)
+	var f := _burst(parent, pos, _drop, roundi(5 * strength), 1.1)
+	if f:
+		f.direction = Vector3.UP
+		f.spread = 12.0
+		f.initial_velocity_min = 3.0 * strength
+		f.initial_velocity_max = 5.0 * strength
+		f.gravity = Vector3(0, -11, 0)
+		f.scale_amount_min = 0.05
+		f.scale_amount_max = 0.08
+		f.scale_amount_curve = _curve([Vector2(0, 1), Vector2(0.75, 1), Vector2(0.8, 0)])
+		f.color = Color(0.85, 0.92, 0.98)
+		_start(f)
 
 
 ## Blood from a hit: a spray of drops thrown away from the blow, a red mist, and drops falling after.
 static func blood(parent: Node, pos: Vector3, away: Vector3, amount := 1.0) -> void:
+	_setup()
 	away.y = maxf(away.y, 0.2)
 	var dir := away.normalized() if away.length() > 0.01 else Vector3.UP
 	var p := _burst(parent, pos, _drop, roundi(16 * amount), 1.0, true)
@@ -527,6 +697,7 @@ static func blood(parent: Node, pos: Vector3, away: Vector3, amount := 1.0) -> v
 		d.scale_amount_max = 0.035
 		d.color = Color(0.45, 0.03, 0.04)
 		_start(d)
+	_settle(parent, pos, _drop, Color(0.32, 0.02, 0.03), roundi(4 * amount), 0.05, 0.3)
 
 
 ## A little twinkle: a few soft stars that pop and fade (picking something up, finishing a craft).
@@ -555,8 +726,8 @@ static func embers(size := 1.0, color := Color(1.0, 0.58, 0.2)) -> CPUParticles3
 	_setup()
 	var p := CPUParticles3D.new()
 	p.mesh = _glow_quad
-	p.amount = maxi(4, roundi(10 * size))
-	p.lifetime = 1.6
+	p.amount = maxi(5, roundi(13 * size))
+	p.lifetime = 1.8
 	p.randomness = 0.6
 	p.local_coords = false
 	p.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
@@ -587,9 +758,9 @@ static func embers(size := 1.0, color := Color(1.0, 0.58, 0.2)) -> CPUParticles3
 static func smoke(size := 1.0, color := Color(0.36, 0.35, 0.35)) -> CPUParticles3D:
 	_setup()
 	var p := CPUParticles3D.new()
-	p.mesh = _quad
-	p.amount = maxi(4, roundi(8 * size))
-	p.lifetime = 3.2
+	p.mesh = _puff
+	p.amount = maxi(5, roundi(11 * size))
+	p.lifetime = 4.0
 	p.randomness = 0.5
 	p.local_coords = false
 	p.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
@@ -607,12 +778,13 @@ static func smoke(size := 1.0, color := Color(0.36, 0.35, 0.35)) -> CPUParticles
 	p.angular_velocity_min = -25
 	p.angular_velocity_max = 25
 	p.scale_amount_min = 0.3 * size
-	p.scale_amount_max = 0.45 * size
-	p.scale_amount_curve = _curve([Vector2(0, 0.4), Vector2(1, 2.4)])
-	var g := Gradient.new()
-	g.set_color(0, Color(color, 0.0))
-	g.add_point(0.2, Color(color, 0.3))
-	g.set_color(g.get_point_count() - 1, Color(color.lightened(0.2), 0.0))
+	p.scale_amount_max = 0.5 * size
+	p.scale_amount_curve = _curve([Vector2(0, 0.35), Vector2(0.5, 1.8), Vector2(1, 3.0)])
+	var g := Gradient.new()   # dark and dense off the fire, thinning to a pale haze as it spreads
+	g.set_color(0, Color(color.darkened(0.2), 0.0))
+	g.add_point(0.12, Color(color.darkened(0.1), 0.32))
+	g.add_point(0.5, Color(color.lightened(0.1), 0.16))
+	g.set_color(g.get_point_count() - 1, Color(color.lightened(0.25), 0.0))
 	p.color_ramp = g
 	p.visibility_range_end = 90.0
 	return p
@@ -775,6 +947,7 @@ static func tint_ambient(p: CPUParticles3D, color: Color, alpha := 1.0) -> void:
 
 ## Topple a chopped tree away from the player, then fade it out.
 static func fall_tree(parent: Node, mesh: Mesh, xf: Transform3D, away: Vector3, color: Color, leaf := Color(0.35, 0.55, 0.3)) -> void:
+	_setup()
 	var pivot := Node3D.new()
 	parent.add_child(pivot)
 	pivot.global_transform = Transform3D(Basis(), xf.origin)
@@ -793,6 +966,9 @@ static func fall_tree(parent: Node, mesh: Mesh, xf: Transform3D, away: Vector3, 
 	var rise := Game.world_gen.get_height(land.x, land.z) - Game.world_gen.get_height(xf.origin.x, xf.origin.z)
 	var rest := clampf(deg_to_rad(84.0) - atan2(rise, reach), deg_to_rad(40.0), deg_to_rad(130.0))
 	leaves(parent, xf.origin + Vector3(0, height * 0.75, 0), leaf, 10, 1.4)   # shaken loose as it goes
+	# The fall's sound creaks first and crashes 0.85 s in: started so the crash meets the ground.
+	var crash := Vector3(land.x, Game.world_gen.get_height(land.x, land.z) + 0.3, land.z)
+	parent.get_tree().create_timer(0.65).timeout.connect(func() -> void: Audio.play_3d("tree_fall", crash, 2.0))
 	var tw := pivot.create_tween()
 	tw.tween_method(func(a: float) -> void: pivot.basis = Basis(axis, a), 0.0, rest, 1.5) \
 		.set_trans(Tween.TRANS_QUAD).set_ease(Tween.EASE_IN)
@@ -800,8 +976,11 @@ static func fall_tree(parent: Node, mesh: Mesh, xf: Transform3D, away: Vector3, 
 		var hit := Vector3(land.x, Game.world_gen.get_height(land.x, land.z) + 0.3, land.z)
 		splinters(parent, hit, color.lightened(0.3), color, 10)
 		dust(parent, hit, Color(0.62, 0.55, 0.42), 10, 0.9, 0.8)
+		for k in 3:   # and all along the trunk where it slammed down
+			var along := xf.origin.lerp(land, 0.25 + k * 0.3)
+			along.y = Game.world_gen.get_height(along.x, along.z) + 0.25
+			dust(parent, along, Color(0.62, 0.55, 0.42), 5, 0.7, 0.6)
 		leaves(parent, hit + Vector3(0, 0.8, 0), leaf, 14, 1.8)
-		Audio.play_3d(Audio.sfx.tree_fall, hit, 2.0)
 		Game.impact.emit(hit, clampf(height / 8.0, 0.4, 1.2)))
 	tw.tween_interval(1.6)
 	tw.tween_property(mi, "scale", Vector3(1, 0.001, 1), 0.7).set_trans(Tween.TRANS_SINE)
@@ -810,6 +989,7 @@ static func fall_tree(parent: Node, mesh: Mesh, xf: Transform3D, away: Vector3, 
 
 ## Rocks and bushes: shrink away with a burst.
 static func crumble(parent: Node, mesh: Mesh, xf: Transform3D, color := Color(0.55, 0.56, 0.6), is_rock := true) -> void:
+	_setup()
 	var mi := MeshInstance3D.new()
 	mi.mesh = mesh
 	parent.add_child(mi)
@@ -817,7 +997,7 @@ static func crumble(parent: Node, mesh: Mesh, xf: Transform3D, color := Color(0.
 	var at := xf.origin + Vector3(0, 0.3, 0)
 	if is_rock:
 		shards(parent, at, color, 12)
-		dust(parent, at, color.lightened(0.2), 8, 0.6)
+		dust(parent, at, color.lightened(0.2), 10, 0.75, 0.7)
 	else:
 		leaves(parent, at + Vector3(0, 0.3, 0), color, 8, 0.5)
 	var tw := mi.create_tween()

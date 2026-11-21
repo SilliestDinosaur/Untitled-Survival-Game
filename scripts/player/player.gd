@@ -779,7 +779,7 @@ func _on_hit_resource(res: Dictionary, r: Dictionary, point: Vector3) -> void:
 		"tree":
 			Audio.play_3d("chop", point)
 			var bark := Effects.bark_color(r.kind)
-			Effects.splinters(get_parent(), point, bark.lightened(0.45), bark, 5)
+			Effects.splinters(get_parent(), point, bark.lightened(0.45), bark, 7)
 			if Effects.has_leaves(r.kind) and FloraLibrary.category_of(r.kind) == "tree":
 				var top := Vector3(point.x, (r.transform as Transform3D).origin.y + 3.5, point.z)
 				if randf() < 0.5:   # now and then a leaf or two comes down, not a shower every blow
@@ -789,7 +789,7 @@ func _on_hit_resource(res: Dictionary, r: Dictionary, point: Vector3) -> void:
 			var col := pal.rock.lightened(0.1)
 			if r.kind.begins_with("ore") or r.kind.begins_with("gem"):
 				col = ItemDB.tier_info(int(r.kind.right(1))).color
-			Effects.shards(get_parent(), point, col, 9)
+			Effects.shards(get_parent(), point, col, 11)
 			if r.kind.begins_with("ore") or r.kind.begins_with("gem"):
 				Effects.sparks(get_parent(), point, col.lightened(0.3), 5, 3.0)
 		_:
