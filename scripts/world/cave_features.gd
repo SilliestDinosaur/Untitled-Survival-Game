@@ -274,7 +274,7 @@ var _crystals: Array = []    ## [OmniLight3D, resource id]
 var _check := 0.0
 var k_lights := 0
 static var _glow_mat: ShaderMaterial
-static var _water_mat: StandardMaterial3D
+static var _water_mat: ShaderMaterial
 
 
 func _area(p: Vector3) -> Dictionary:
@@ -591,15 +591,8 @@ func _commit_areas() -> void:
 		if not _glow_mat:
 			_glow_mat = ShaderMaterial.new()
 			_glow_mat.shader = preload("res://shaders/glow_vertex.gdshader")
-		_water_mat = StandardMaterial3D.new()
-		_water_mat.vertex_color_use_as_albedo = true
-		_water_mat.roughness = 0.06
-		_water_mat.metallic = 0.0
-		_water_mat.disable_ambient_light = true   # no sky to reflect down here: only lamps and torches glint on it
-		_water_mat.emission_enabled = true          # but a faint depth of its own, so it reads as water, not a hole
-		_water_mat.emission = Color(0.03, 0.08, 0.1)
-		_water_mat.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
-		_water_mat.albedo_color = Color(1, 1, 1, 0.88)
+		_water_mat = ShaderMaterial.new()   # an inky mirror: see cave_water.gdshader
+		_water_mat.shader = preload("res://shaders/cave_water.gdshader")
 	var rock_mat := ArtStyle.painted({"brush_strength": 0.2, "rim_amount": 0.2})
 	for key: Vector2i in _areas:
 		var a: Dictionary = _areas[key]

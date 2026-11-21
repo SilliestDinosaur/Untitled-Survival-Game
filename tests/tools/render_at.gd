@@ -20,6 +20,8 @@ var _setup_cam := {}
 
 func _initialize() -> void:
 	root.get_node("Settings").view_distance = OS.get_environment("VD") if OS.get_environment("VD") != "" else "Low"
+	if OS.get_environment("AA") != "":
+		root.get_node("Settings").anti_aliasing = OS.get_environment("AA")
 	_main = load("res://scenes/main.tscn").instantiate()
 	root.add_child(_main)
 
