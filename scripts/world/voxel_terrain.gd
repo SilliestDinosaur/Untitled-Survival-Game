@@ -64,6 +64,7 @@ static func build(gen: WorldGen, origin: Vector3, size: float, step: float, segs
 	var cell_vert := PackedInt32Array()
 	cell_vert.resize(ncx * ncy * ncz)
 	cell_vert.fill(-1)
+	var col_weights := {}   ## biome mix per grid column (the colours' dear part), worked out the first time it's needed
 	var verts := PackedVector3Array()
 	var normals := PackedVector3Array()
 	var colors := PackedColorArray()
@@ -186,17 +187,31 @@ static func build(gen: WorldGen, origin: Vector3, size: float, step: float, segs
 				vert = vert.clamp(corner[0], corner[7])
 				# Ground surface (not cave walls): sit exactly on the ground height at this spot, so steep
 				# cliffs can't leave the surface hanging above the ground. Shared vertices agree across chunks.
-				var gh: float = gen.get_height(vert.x, vert.z)
-				if absf(vert.y - gh) < 6.0 and Caves.void_distance(plan, vert) > 2.5:
+				# The ground height here, from the heights already sampled on the grid (between its four corners: the
+				# same sums in every chunk that shares the spot, so the shared vertices still agree).
+				var fx := clampf((vert.x - ox) / step + PAD, 0.0, nx - 1.001)
+				var fz := clampf((vert.z - oz) / step + PAD, 0.0, nz - 1.001)
+				var hi0 := int(fx)
+				var hk0 := int(fz)
+				var tx := fx - hi0
+				var tz := fz - hk0
+				var gh := lerpf(lerpf(hs[hk0 * nx + hi0], hs[hk0 * nx + hi0 + 1], tx), lerpf(hs[(hk0 + 1) * nx + hi0], hs[(hk0 + 1) * nx + hi0 + 1], tx), tz)
+				var sd := Caves.sky_and_distance(plan, vert)   # how much sky it sees (the shader's ambient occlusion), and the void's distance
+				if absf(vert.y - gh) < 6.0 and sd.y > 2.5:
 					vert.y = gh
 				var nrm := nsum.normalized() if nsum.length_squared() > 0.000001 else Vector3.UP
 				var col: Color
 				if vert.y < gh - ROCK_BAND:
 					col = Caves.rock_color(plan, vert, nrm.y)
 				else:
-					col = gen.get_terrain_color(vert.y, nrm.y, vert.x, vert.z)
+					var ckey := ck * ncx + ci
+					if not col_weights.has(ckey):
+						var cx := ox + (ci - PAD + 0.5) * step
+						var cz := oz + (ck - PAD + 0.5) * step
+						col_weights[ckey] = gen.biome_weights_at(cx, cz, gh)
+					col = gen.get_terrain_color(vert.y, nrm.y, vert.x, vert.z, col_weights[ckey])
 				col = col.srgb_to_linear()
-				col.a = Caves.sky_seen(plan, vert)   # how much sky this spot sees: the terrain shader's ambient occlusion
+				col.a = sd.x
 				cell_vert[(ck * ncy + cj) * ncx + ci] = verts.size()
 				verts.append(vert - origin)
 				normals.append(nrm)

@@ -90,7 +90,11 @@ static func _nearest_piece(plan: Dictionary, p: Vector3) -> Dictionary:
 		return {}
 	var best := 99.0
 	var out := {}
+	var bounds: PackedVector4Array = plan.bounds
 	for si: int in plan.buckets[key]:
+		var bb := bounds[si]
+		if Vector3(bb.x - p.x, bb.y - p.y, bb.z - p.z).length() - bb.w >= best:
+			continue
 		var sg: Array = plan.segs[si]
 		var a: Vector3 = sg[0]
 		var ab: Vector3 = sg[1] - a
@@ -997,6 +1001,33 @@ static func sky_seen(plan: Dictionary, p: Vector3) -> float:
 	var inside := 1.0 - smoothstep(0.6, 1.4, best)
 	var lit := lerpf(DEEP_SKY, 1.0, 1.0 - smoothstep(DAYLIGHT_REACH.x, DAYLIGHT_REACH.y, best_walk))
 	return lerpf(1.0, lit, inside)
+
+
+## sky_seen and void_distance together, from one pass over the pieces: Vector2(sky seen, distance to the wall).
+static func sky_and_distance(plan: Dictionary, p: Vector3) -> Vector2:
+	if plan.is_empty():
+		return Vector2(1.0, 99.0)
+	var key := Vector2i(floori(p.x / BUCKET), floori(p.z / BUCKET))
+	if not plan.buckets.has(key):
+		return Vector2(1.0, 99.0)
+	var best := 99.0
+	var best_walk := 0.0
+	var bounds: PackedVector4Array = plan.bounds
+	for si: int in plan.buckets[key]:
+		var bb := bounds[si]
+		if Vector3(bb.x - p.x, bb.y - p.y, bb.z - p.z).length() - bb.w >= best:
+			continue
+		var s: Array = plan.segs[si]
+		var a: Vector3 = s[0]
+		var ab: Vector3 = s[1] - a
+		var t := clampf((p - a).dot(ab) / maxf(ab.length_squared(), 0.0001), 0.0, 1.0)
+		var d := _piece_distance(s, p)
+		if d < best:
+			best = d
+			best_walk = lerpf(float(s[4]), float(s[5]), t)
+	var inside := 1.0 - smoothstep(0.6, 1.4, best)
+	var lit := lerpf(DEEP_SKY, 1.0, 1.0 - smoothstep(DAYLIGHT_REACH.x, DAYLIGHT_REACH.y, best_walk))
+	return Vector2(lerpf(1.0, lit, inside), best)
 
 
 static func _piece_distance(s: Array, p: Vector3) -> float:

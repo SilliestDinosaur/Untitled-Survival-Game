@@ -419,10 +419,11 @@ func get_forest_clump(x: float, z: float) -> float:
 
 
 ## Stylized ground colors (sRGB) from height, steepness and biome.
-func get_terrain_color(height: float, normal_y: float, x: float, z: float) -> Color:
+func get_terrain_color(height: float, normal_y: float, x: float, z: float, weights: Dictionary = {}) -> Color:
 	var jitter := (fposmod(sin(x * 12.9898 + z * 78.233) * 43758.5453, 1.0) - 0.5) * 0.02
 	var pal := palette
-	var w := biome_weights_at(x, z, height)
+	# The biome mix can be handed in (the cave ground works it out once per column of its grid: it's the dear part).
+	var w := weights if not weights.is_empty() else biome_weights_at(x, z, height)
 	var ground := Color(0, 0, 0)
 	for b: int in w:
 		ground += pal.ground[b] * w[b]
