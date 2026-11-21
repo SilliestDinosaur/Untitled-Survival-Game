@@ -59,6 +59,8 @@ var _hunger := 0.0              ## seconds until a predator feels like hunting
 # Serpents: their body follows the head's trail.
 var _segs: Array[Node3D] = []
 var _gait_rot := Vector2.ZERO   ## the body-type sway (pitch, roll) added this frame, taken off again before the next
+var _reach: PackedFloat32Array = []   ## each leg's stretch to meet the ground under its foot (1 = its own length)
+var _reach_cd := 0.0
 var _trail: Array[Vector3] = []
 # Climbers: up a tree.
 var in_tree := false
@@ -562,7 +564,8 @@ func _animate(delta: float, graze: float, alert: float) -> void:
 	var sway := sin(_gait) * 0.035 * moving * (1.0 - run)
 	var rock := sin(_gait * 2.0) * 0.07 * moving * run
 	_body.rotation.x = lerpf(_body.rotation.x, pitch * 0.8 + rock - _lunge * 0.15, 1.0 - exp(-8.0 * delta)) + _flinch.y
-	_body.rotation.z = lerpf(_body.rotation.z, roll * 0.6 + turn_lean + sway, 1.0 - exp(-6.0 * delta)) + _flinch.x
+	_body.rotation.z = lerpf(_body.rotation.z, roll * 0.25 + turn_lean + sway, 1.0 - exp(-6.0 * delta)) + _flinch.x
+	_leg_reach(delta)
 
 	# Head: down to graze (with nibbles), up and still when alert, occasional glances.
 	_look_cd -= delta
@@ -604,6 +607,34 @@ func _animate(delta: float, graze: float, alert: float) -> void:
 			_gait_rot.x = -absf(sin(_gait * 0.5)) * 0.4 * moving
 	_body.rotation.x += _gait_rot.x
 	_body.rotation.z += _gait_rot.y
+
+
+## Legs reach the ground under their own feet: on a slope the body stays near level across it and each leg
+## stretches or shortens to the ground below it, instead of the downhill feet hanging in the air and the uphill ones
+## sinking in. Worked out a few times a second (the ground doesn't change fast), eased in between.
+func _leg_reach(delta: float) -> void:
+	if _legs.is_empty() or _cave or species.leg_len < 0.05 or not species.body in ["quad", "upright"]:
+		return
+	if _reach.size() != _legs.size():
+		_reach.resize(_legs.size())
+		_reach.fill(1.0)
+	_reach_cd -= delta
+	if _reach_cd <= 0.0:
+		_reach_cd = _rng.randf_range(0.18, 0.28)
+		var g: WorldGen = Game.world_gen
+		var ll := species.leg_len
+		# Up a tree or afloat, the legs just hang as they are.
+		var off_ground := in_tree or (species.swims and g.water_level(position.x, position.z) > g.get_height(position.x, position.z) + 0.15)
+		for i in _legs.size():
+			if off_ground:
+				_reach[i] = 1.0
+				continue
+			var foot := _body.global_transform * (_leg_base[i] + Vector3(0, -ll, 0))
+			var gap := foot.y - g.get_height(foot.x, foot.z)   # + in the air, - under the ground
+			_reach[i] = clampf(1.0 + gap / ll, 0.7, 1.45)
+	var k := 1.0 - exp(-10.0 * delta)
+	for i in _legs.size():
+		_legs[i].scale.y = lerpf(_legs[i].scale.y, _reach[i], k)
 
 
 ## A snake's body: the head weaves side to side, and the segments follow along the trail it leaves.
@@ -847,19 +878,32 @@ func _die(from: Vector3) -> void:
 	carcass_hp = 60.0 * species.yield_scale
 	_call(0.7)
 	var side := 1.0 if (from - global_position).dot(global_transform.basis.x) < 0.0 else -1.0
+	# It comes to rest along the ground it fell on (on a slope: not level, half in the hill and half in the air).
+	var rest_pitch := 0.0
+	var rest_roll := 0.0
+	if not _cave and not in_tree:
+		var g: WorldGen = Game.world_gen
+		var fwd := Vector3(-sin(_yaw), 0, -cos(_yaw))
+		var rt := Vector3(-fwd.z, 0, fwd.x)
+		var half := maxf(species.body_len * 0.5, 0.2)
+		var p := global_position
+		rest_pitch = atan2(g.get_height(p.x + fwd.x * half, p.z + fwd.z * half) - g.get_height(p.x - fwd.x * half, p.z - fwd.z * half), half * 2.0)
+		rest_roll = atan2(g.get_height(p.x + rt.x * half, p.z + rt.z * half) - g.get_height(p.x - rt.x * half, p.z - rt.z * half), half * 2.0)
+	for leg in _legs:
+		leg.scale.y = 1.0
 	var tw := create_tween()
 	# It staggers away from the blow, its legs buckle, then it goes over with its weight and settles.
 	tw.tween_property(_body, "rotation:z", -side * 0.18, 0.16).set_trans(Tween.TRANS_SINE).set_ease(Tween.EASE_OUT)
 	tw.parallel().tween_property(_body, "position:y", species.leg_len * 0.75 + species.body_h * 0.25, 0.16)
 	tw.parallel().tween_property(_head, "rotation:x", deg_to_rad(30), 0.16)
-	tw.tween_property(_body, "rotation:z", side * PI * 0.5, 0.42).set_trans(Tween.TRANS_QUAD).set_ease(Tween.EASE_IN)
-	tw.parallel().tween_property(_body, "rotation:x", 0.0, 0.3)
+	tw.tween_property(_body, "rotation:z", side * PI * 0.5 + rest_roll, 0.42).set_trans(Tween.TRANS_QUAD).set_ease(Tween.EASE_IN)
+	tw.parallel().tween_property(_body, "rotation:x", rest_pitch, 0.3)
 	tw.parallel().tween_property(_body, "position:y", species.body_w * 0.55, 0.42).set_trans(Tween.TRANS_QUAD).set_ease(Tween.EASE_IN)
 	tw.parallel().tween_property(_body, "position:z", 0.0, 0.3)
 	tw.parallel().tween_property(_head, "rotation:x", deg_to_rad(10), 0.42)
 	# A thump and a small rebound as it lands.
-	tw.tween_property(_body, "rotation:z", side * PI * 0.46, 0.08).set_trans(Tween.TRANS_SINE).set_ease(Tween.EASE_OUT)
-	tw.tween_property(_body, "rotation:z", side * PI * 0.5, 0.14).set_trans(Tween.TRANS_SINE).set_ease(Tween.EASE_IN)
+	tw.tween_property(_body, "rotation:z", side * PI * 0.46 + rest_roll, 0.08).set_trans(Tween.TRANS_SINE).set_ease(Tween.EASE_OUT)
+	tw.tween_property(_body, "rotation:z", side * PI * 0.5 + rest_roll, 0.14).set_trans(Tween.TRANS_SINE).set_ease(Tween.EASE_IN)
 	# A last kick of the legs, then still.
 	for i in _legs.size():
 		tw.parallel().tween_property(_legs[i], "rotation:x", 0.35 * (1 if i % 2 == 0 else -1), 0.12)

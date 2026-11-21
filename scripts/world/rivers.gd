@@ -298,9 +298,11 @@ static func carve(plan: Dictionary, x: float, z: float, land: float) -> float:
 			w = lerpf(s[4], s[5], t)
 			sf = lerpf(s[2], s[3], t)
 			dep = lerpf(s[6], s[7], t)
-			# Past either end of a stretch its cut rises quickly: its banks run beside it, not up the slope above it
-			# (on a steep river the stretch below would otherwise dig under the water of the stretch above).
-			beyond = maxf(-raw_t, raw_t - 1.0) * sqrt(len2)
+			# Past its upstream end a stretch's cut rises quickly: its banks run beside it, not up the slope above it
+			# (on a steep river the stretch below would otherwise dig under the water of the stretch above). Not past
+			# its downstream end: the next stretch (as low or lower) carries on from there, and raising it would heap
+			# up the outside of every bend, a crease up the bank and a spit of land poking out of the water.
+			beyond = maxf(-raw_t, 0.0) * sqrt(len2)
 		else:
 			var pd: Array = plan.ponds[-1 - si]
 			d = p.distance_to(pd[0])
@@ -441,9 +443,9 @@ static func build_meshes(plan: Dictionary, parent: Node3D, sea_material: ShaderM
 	pond_material.set_shader_parameter("depth_scale", 3.0)
 	material.set_shader_parameter("flow", 1.0)
 	material.set_shader_parameter("depth_scale", 3.0)
-	# The banks rise quickly from a river, so its waterline needs a wider band of foam than the sea's beaches, and
-	# murkier shallows, to show where the water ends.
-	material.set_shader_parameter("foam_width", 2.6)
+	# The ribbon draws its own foam line where its edges meet the banks, so the depth-based band is kept narrow: a
+	# wide one turns a whole stream white (they're well under a metre deep). Murkier shallows show where it ends.
+	material.set_shader_parameter("foam_width", 0.55)
 	material.set_shader_parameter("clarity", 1.2)
 	var gen: WorldGen = Game.world_gen
 	var rng := RandomNumberGenerator.new()
@@ -478,10 +480,19 @@ static func build_meshes(plan: Dictionary, parent: Node3D, sea_material: ShaderM
 		disc.cap_bottom = false
 		mi.mesh = disc
 		mi.material_override = pond_material
-		mi.position = Vector3(c.x, float(pd[2]) - 0.01, c.y)
+		mi.position = Vector3(c.x, float(pd[2]) - 0.04, c.y)   # just under the stream running into it (no flicker where they overlap)
 		mi.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
 		mi.visibility_range_end = 420.0
+		mi.set_meta("water", true)
 		parent.add_child(mi)
+
+
+## How far the river water is drawn: never past the terrain that's loaded (with a low view distance it would
+## otherwise run on out over the empty sea beyond the land's edge).
+static func set_view_range(parent: Node, metres: float) -> void:
+	for c in parent.get_children():
+		if c is MeshInstance3D and c.has_meta("water"):
+			(c as MeshInstance3D).visibility_range_end = minf(420.0, metres)
 
 
 static func _ribbon(plan: Dictionary, line: Dictionary, i0: int, i1: int) -> MeshInstance3D:
@@ -498,13 +509,22 @@ static func _ribbon(plan: Dictionary, line: Dictionary, i0: int, i1: int) -> Mes
 	var rows: Array = []
 	var joins: bool = line.end == "join"
 	var own := (plan.lines as Array).find(line)
+	var mouth := false
 	for i in range(i0, i1 + 1):
-		if surf[i] < 0.12:
-			break   # the sea takes over at the mouth
-		var p: Vector2 = pts[i]
-		# Another river's water takes over where this one runs into it (two sheets of water at one height flicker).
-		if joins and i >= n - 4 and not _nearest(plan, p.x, p.y, -0.2, (plan.lines as Array).find(line)).is_empty():
+		if mouth:
 			break
+		var p: Vector2 = pts[i]
+		var y := surf[i]
+		if y < 0.12:   # the sea takes over at the mouth: one last row sunk just under it, so there's no edge or step
+			y = Game.SEA_LEVEL - 0.08
+			mouth = true
+		# Another river's water takes over where this one runs into it (two sheets of water at one height flicker): one
+		# last row, just under that river's surface, so this one runs right in rather than stopping short on the bank.
+		if joins and i >= n - 4:
+			var other := _nearest(plan, p.x, p.y, -0.2, own)
+			if not other.is_empty():
+				y = minf(y, float(other.surface) - 0.05)
+				mouth = true
 		var tan: Vector2 = ((pts[mini(i + 1, n - 1)] as Vector2) - (pts[maxi(i - 1, 0)] as Vector2)).normalized()
 		var side := Vector2(-tan.y, tan.x)
 		var half := wid[i] + 0.7   # a little under the banks, so the water's edge is hidden in them
@@ -512,12 +532,15 @@ static func _ribbon(plan: Dictionary, line: Dictionary, i0: int, i1: int) -> Mes
 		for k in 5:
 			var u := (k / 4.0) * 2.0 - 1.0
 			var q := p + side * half * u
-			# No waterline foam where a stream runs out into the river it joins (its edges are over that river's water).
-			var inset := 99.0 if joins and i >= n - 4 else 0.7
+			# No waterline foam where a stream runs out into the river it joins (where its edges are over that river's
+			# water); up to there its banks foam like any other.
+			var inset := 0.7
+			if joins and i >= n - 4 and not _nearest(plan, q.x, q.y, 0.0, own).is_empty():
+				inset = -99.0
 			# An edge that opens into another river (where a stream comes in): no waterline across that opening.
 			if (k == 0 or k == 4) and not _nearest(plan, q.x + side.x * u, q.y + side.y * u, 0.6, own).is_empty():
-				inset = 99.0
-			row.append([Vector3(q.x, surf[i], q.y) - centre, Vector2((u + 1.0) * half, along), half, inset])
+				inset = -99.0
+			row.append([Vector3(q.x, y, q.y) - centre, Vector2((u + 1.0) * half, along), half, inset])
 		rows.append(row)
 		if i < n - 1:
 			along += p.distance_to(pts[i + 1])
@@ -531,7 +554,7 @@ static func _ribbon(plan: Dictionary, line: Dictionary, i0: int, i1: int) -> Mes
 			var d: Array = rows[r + 1][k + 1]
 			for v: Array in [a, c, b, b, c, d]:
 				st.set_uv(v[1])
-				st.set_uv2(Vector2(v[2], v[3]))   # the ribbon's half width, and how far in from its edge the waterline is
+				st.set_uv2(Vector2(v[2], v[3]))   # the ribbon's half width, and how far in from its edge the waterline is (far out: none)
 				st.set_normal(Vector3.UP)
 				st.add_vertex(v[0])
 	st.generate_tangents()
@@ -541,6 +564,7 @@ static func _ribbon(plan: Dictionary, line: Dictionary, i0: int, i1: int) -> Mes
 	mi.position = centre
 	mi.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
 	mi.visibility_range_end = 420.0
+	mi.set_meta("water", true)
 	return mi
 
 

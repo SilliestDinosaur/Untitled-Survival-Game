@@ -28,7 +28,9 @@ func _ready() -> void:
 	Game.assets_rebuilt.connect(func() -> void:
 		for c: Vector2i in _chunks:
 			_chunks[c].swap_meshes(Game.flora))
-	Settings.changed.connect(func() -> void: view_radius = Settings.view_radius())
+	Settings.changed.connect(func() -> void:
+		view_radius = Settings.view_radius()
+		_river_range())
 
 
 func _exit_tree() -> void:
@@ -299,6 +301,13 @@ func _build_water() -> void:
 		add_child(_rivers)
 	if Game.world_gen:
 		Rivers.build_meshes(Game.world_gen.rivers, _rivers, m)
+		_river_range()
+
+
+## River water is drawn as far as the terrain is loaded (half a chunk short of the view radius), and no further.
+func _river_range() -> void:
+	if is_instance_valid(_rivers):
+		Rivers.set_view_range(_rivers, (Settings.view_radius() - 0.5) * Game.CHUNK_SIZE)
 
 
 func _ripple_texture(seed_offset: int) -> NoiseTexture2D:
