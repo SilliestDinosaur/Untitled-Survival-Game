@@ -185,7 +185,7 @@ func _finished_fx(root: Node3D, st: Dictionary) -> void:
 	var col: Color = DUST.get(mat, Color(0.7, 0.6, 0.5))
 	Effects.chips(self, root.to_global(Vector3(0, h * 0.5, 0)), col, 14, 0.07, 3.0)
 	Effects.dust(self, root.to_global(Vector3(0, 0.2, 0)), col.lightened(0.15), 10, 0.8, 0.7)
-	Audio.play_3d("thud", root.global_position, -4.0, 0.8)
+	Audio.play_3d("place_stone" if mat in ["stone", "brick"] else "place_wood", root.global_position, -2.0, 0.85)
 	Game.impact.emit(root.global_position, 0.35)
 	root.scale = Vector3(1.0, 0.94, 1.0)
 	var tw := root.create_tween()
@@ -293,6 +293,9 @@ func _make(st: Dictionary) -> Node3D:
 		var fire := Effects.fire(fx[1], fx[2])
 		fire.position = fx[0]
 		root.add_child(fire)
+		var crackle := Audio.fire_loop(fire)
+		if crackle:
+			crackle.volume_db = -4.0 if st.kind == "campfire" else -10.0
 	var body := StaticBody3D.new()
 	# A blueprint can be aimed at (to hammer it) but walked through.
 	body.collision_layer = TerrainChunk.LAYER_INTERACT if blueprint else TerrainChunk.LAYER_SOLID | TerrainChunk.LAYER_INTERACT
@@ -407,6 +410,7 @@ func _apply_door(root: Node3D, st: Dictionary) -> void:
 		var old: Variant = pivot.get_meta("swing") if pivot.has_meta("swing") else null   # shut again mid-swing: this takes over
 		if old is Tween and (old as Tween).is_valid():
 			(old as Tween).kill()
+		Audio.play_3d("creak", root.global_position + Vector3.UP, -4.0, randf_range(0.92, 1.08) * (1.0 if ang != 0.0 else 1.1))
 		var tw := pivot.create_tween()
 		tw.tween_property(pivot, "rotation:y", ang, 0.5).set_trans(Tween.TRANS_BACK).set_ease(Tween.EASE_OUT)
 		pivot.set_meta("swing", tw)

@@ -11,7 +11,9 @@ var _pool_3d: Array[AudioStreamPlayer3D] = []
 var _wind: AudioStreamPlayer
 var _cave: AudioStreamPlayer
 var _ocean: AudioStreamPlayer
+var _river: AudioStreamPlayer
 var _rng := RandomNumberGenerator.new()
+var _build_task := -1
 
 
 func _ready() -> void:
@@ -21,26 +23,24 @@ func _ready() -> void:
 		AudioServer.add_bus()
 		AudioServer.set_bus_name(AudioServer.bus_count - 1, "SFX")
 		AudioServer.set_bus_send(AudioServer.bus_count - 1, "Master")
-	for surface in ["grass", "sand", "rock", "snow", "water"]:
+	for surface in ["grass", "sand", "rock", "snow", "water", "wood"]:
 		_steps[surface] = []
 		for i in 4:
 			_steps[surface].append(SoundGen.footstep(surface, _rng))
-	for name in ["chop", "clink", "rustle", "thud", "swoosh"]:
-		_variants[name] = []
-		for i in 3:
-			_variants[name].append(_make(name))
+	# Sounds with a few takes each, picked at random so repeats don't sound copied. They take most of a second to
+	# make, so they're made on a worker thread; until then those names just play nothing.
+	for name: String in VARIANTS:
 		sfx[name] = name
+	_build_task = WorkerThreadPool.add_task(_build_variants)
 	sfx.land = SoundGen.land()
-	sfx.click = SoundGen.blip(660.0, 0.07, 0.22)
-	sfx.hover = SoundGen.blip(990.0, 0.035, 0.08)
-	sfx.pickup = SoundGen.blip(1320.0, 0.05, 0.1)
-	sfx.tree_fall = SoundGen.tree_fall(_rng)
-	sfx.munch = SoundGen.munch(_rng)
-	for name in ["drip", "rumble", "squeak"]:
-		_variants[name] = []
-		for i in 3:
-			_variants[name].append(SoundGen.drip(_rng) if name == "drip" else (SoundGen.rumble(_rng) if name == "rumble" else SoundGen.squeak(_rng)))
-		sfx[name] = name
+	sfx.click = SoundGen.tick(1.0, 0.22)
+	sfx.hover = SoundGen.tick(1.35, 0.08)
+	sfx.slot = SoundGen.tick(0.75, 0.2)
+	sfx.pickup = SoundGen.pop()
+	sfx.chime = SoundGen.chime()
+	sfx.open = SoundGen.panel(true)
+	sfx.close = SoundGen.panel(false)
+	sfx.error = SoundGen.error()
 	for i in 10:
 		var p := AudioStreamPlayer.new()
 		p.bus = "SFX"
@@ -57,15 +57,72 @@ func _ready() -> void:
 	_wind = _loop_player(SoundGen.wind())
 	_ocean = _loop_player(SoundGen.ocean())
 	_cave = _loop_player(SoundGen.cave_tone())
+	_river = _loop_player(null)
 	Settings.apply()
 
 
-func _make(name: String) -> AudioStreamWAV:
+## name -> how many takes to make.
+const VARIANTS := {"chop": 4, "clink": 4, "ore": 3, "rustle": 4, "thud": 3, "swoosh": 4, "tool_break": 2, "hurt": 3,
+	"tree_fall": 2, "munch": 3, "gulp": 2, "place_wood": 3, "place_stone": 3, "hammer": 3, "creak": 2, "chest": 2,
+	"splash": 3, "stroke": 4, "drip": 3, "rumble": 3, "squeak": 3}
+
+
+func _build_variants() -> void:
+	var rng := RandomNumberGenerator.new()
+	rng.seed = 7
+	var made := {}
+	for name: String in VARIANTS:
+		made[name] = []
+		for i in int(VARIANTS[name]):
+			made[name].append(_make(name, rng))
+	var fire := SoundGen.fire_loop()
+	var river := SoundGen.river_loop()
+	_finish_build.call_deferred(made, fire, river)
+
+
+func _finish_build(made: Dictionary, fire: AudioStreamWAV, river: AudioStreamWAV) -> void:
+	_variants.merge(made, true)
+	sfx.fire = fire
+	_river.stream = river
+	_river.play()
+	WorkerThreadPool.wait_for_task_completion(_build_task)
+	_build_task = -1
+
+
+## Waits for the sounds being made in the background (for tests and quitting).
+func wait_ready() -> void:
+	if _build_task >= 0:
+		WorkerThreadPool.wait_for_task_completion(_build_task)
+		_build_task = -1
+
+
+func _exit_tree() -> void:
+	wait_ready()
+
+
+func _make(name: String, rng: RandomNumberGenerator) -> AudioStreamWAV:
+	var _rng := rng
 	match name:
 		"chop": return SoundGen.chop(_rng)
 		"clink": return SoundGen.clink(_rng)
+		"ore": return SoundGen.ore_hit(_rng)
 		"rustle": return SoundGen.rustle(_rng)
 		"thud": return SoundGen.thud(_rng)
+		"tool_break": return SoundGen.tool_break(_rng)
+		"hurt": return SoundGen.hurt(_rng)
+		"tree_fall": return SoundGen.tree_fall(_rng)
+		"munch": return SoundGen.munch(_rng)
+		"gulp": return SoundGen.gulp(_rng)
+		"place_wood": return SoundGen.place_wood(_rng)
+		"place_stone": return SoundGen.place_stone(_rng)
+		"hammer": return SoundGen.hammer(_rng)
+		"creak": return SoundGen.creak(_rng)
+		"chest": return SoundGen.chest(_rng)
+		"splash": return SoundGen.splash(_rng)
+		"stroke": return SoundGen.stroke(_rng)
+		"drip": return SoundGen.drip(_rng)
+		"rumble": return SoundGen.rumble(_rng)
+		"squeak": return SoundGen.squeak(_rng)
 		_: return SoundGen.swoosh(_rng)
 
 
@@ -75,7 +132,8 @@ func _loop_player(stream: AudioStream) -> AudioStreamPlayer:
 	p.bus = "SFX"
 	p.volume_db = -80.0
 	add_child(p)
-	p.play()
+	if stream:
+		p.play()
 	return p
 
 
@@ -134,10 +192,45 @@ func hover() -> void:
 
 ## Wind gets louder up high; the ocean gets louder near the shore; underground the open air fades and the cave's own
 ## hollow tone takes over (`cave_level` 0 outside .. 1 deep in).
-func set_ambience(wind_level: float, ocean_level: float, delta: float, cave_level := 0.0) -> void:
+func set_ambience(wind_level: float, ocean_level: float, delta: float, cave_level := 0.0, river_level := 0.0) -> void:
 	var k := 1.0 - exp(-delta * 1.5)
+	_river.volume_db = lerpf(_river.volume_db, linear_to_db(maxf(river_level * (1.0 - cave_level), 0.0005) * 0.45), k)
 	wind_level *= 1.0 - cave_level * 0.85
 	ocean_level *= 1.0 - cave_level
 	_cave.volume_db = lerpf(_cave.volume_db, linear_to_db(maxf(cave_level, 0.0005) * 0.5), k)
 	_wind.volume_db = lerpf(_wind.volume_db, linear_to_db(maxf(wind_level, 0.0005) * 0.35), k)
 	_ocean.volume_db = lerpf(_ocean.volume_db, linear_to_db(maxf(ocean_level, 0.0005) * 0.5), k)
+
+
+## A looping crackle for a fire, as a positional player under `parent` (the caller frees it with the fire).
+func fire_loop(parent: Node3D) -> AudioStreamPlayer3D:
+	if not sfx.has("fire"):
+		return null
+	var p := AudioStreamPlayer3D.new()
+	p.stream = sfx.fire
+	p.unit_size = 3.0
+	p.max_distance = 30.0
+	p.volume_db = -4.0
+	p.bus = "SFX"
+	p.autoplay = true
+	parent.add_child(p)
+	if p.is_inside_tree():
+		p.play(_rng.randf() * 5.0)
+	return p
+
+
+func error_buzz() -> void:
+	play(sfx.error, -6.0)
+
+
+func slot() -> void:
+	play(sfx.slot, -6.0, _rng.randf_range(0.95, 1.08))
+
+
+## The sound of eating a food: soft and wet things are gulped, bandages rustle, the rest is crunched.
+func eat_sound(id: String) -> String:
+	if id == "bandage":
+		return "rustle"
+	if id in ["stew", "cactus_flesh"] or id.contains("soup") or id.contains("tea") or id.contains("water"):
+		return "gulp"
+	return "munch"

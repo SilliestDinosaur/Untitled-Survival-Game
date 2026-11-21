@@ -349,7 +349,9 @@ func apply_resource_change(id: String, st: Dictionary) -> void:
 		var p: Vector3 = st.pos
 		match String(st.get("fx", "")):
 			"tree": Audio.play_3d("chop", p)
-			"rock": Audio.play_3d("clink", p, -2.0)
+			"rock":
+				var ore := not found.is_empty() and String((found[0] as TerrainChunk).resources[int(found[1])].kind).begins_with("ore")
+				Audio.play_3d("ore" if ore else "clink", p, -2.0)
 			"bush": Audio.play_3d("rustle", p)
 	if found.is_empty():
 		return

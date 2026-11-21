@@ -1198,7 +1198,7 @@ func _finish_item() -> void:
 ## The finished thing, where the work was.
 func _show_done() -> void:
 	feedback = {"text": "Made %s" % ItemDB.display_name(recipe.out), "color": Color(1.0, 0.95, 0.8), "age": 0.0}
-	Audio.play(Audio.sfx.pickup, -4.0)
+	Audio.play(Audio.sfx.chime, -4.0)
 	_done = true
 	if _part:
 		_part.visible = false

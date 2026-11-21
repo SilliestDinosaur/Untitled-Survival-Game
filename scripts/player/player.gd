@@ -93,9 +93,11 @@ func _ready() -> void:
 	inventory.changed.connect(func() -> void: viewmodel.hold(inventory.selected_item()))
 	inventory.tool_broke.connect(func(id: String) -> void:
 		hint.emit("Your %s broke!" % ItemDB.display_name(id))
-		Audio.play("clink", -2.0, 0.6))
+		Audio.play("tool_break", -1.0))
 	reset_inventory()
 	stats.damaged.connect(func(amount: float) -> void:
+		if amount >= 3.0:
+			Audio.play("hurt", linear_to_db(clampf(amount / 25.0, 0.45, 1.0)), randf_range(0.92, 1.05))
 		_shake = minf(_shake + amount / 20.0, 1.0)
 		kick(Vector3(randf_range(0.02, 0.04), randf_range(-0.03, 0.03), randf_range(-0.04, 0.04)) * clampf(amount / 15.0, 0.4, 1.5)))
 	Game.impact.connect(_on_impact)
@@ -258,6 +260,7 @@ func _physics_process(delta: float) -> void:
 	swimming = not Game.in_cave and global_position.y + 1.0 < water_y
 	if swimming and not was_swimming and velocity.y < -2.0:   # into the water
 		Effects.splash(get_parent(), Vector3(global_position.x, water_y, global_position.z), clampf(-velocity.y / 8.0, 0.6, 1.6))
+		Audio.play("splash", linear_to_db(clampf(-velocity.y / 10.0, 0.45, 1.0)), randf_range(0.9, 1.05))
 	var input := Input.get_vector("move_left", "move_right", "move_forward", "move_back") if not crafting else Vector2.ZERO
 	var dir := (transform.basis * Vector3(input.x, 0.0, input.y)).normalized()
 
@@ -447,10 +450,13 @@ func _update_camera(delta: float, sprinting: bool, input: Vector2) -> void:
 	if step != _last_step:
 		_last_step = step
 		if moving:
-			var surface := "water" if swimming else Game.world_gen.get_surface(global_position.x, global_position.z)
-			Audio.footstep(surface, 1.25 if sprinting else 0.9)
-			if sprinting and surface in ["sand", "snow"] and not Game.in_cave:
-				_kick_dust(0.5, 3)
+			if swimming:
+				Audio.play("stroke", -6.0, randf_range(0.9, 1.1))
+			else:
+				var surface := _step_surface()
+				Audio.footstep(surface, 1.25 if sprinting else 0.9)
+				if sprinting and surface in ["sand", "snow"] and not Game.in_cave:
+					_kick_dust(0.5, 3)
 
 	_land_dip = lerpf(_land_dip, 0.0, 1.0 - exp(-7.0 * delta))
 	var bob_scale := 0.6 if swimming else 1.0
@@ -638,12 +644,13 @@ func _update_actions(delta: float) -> void:
 			var at: Vector3 = placement.pos
 			Net.request("place_blueprint", {"kind": placement.kind, "pos": at, "yaw": placement.yaw}, func(res: Dictionary) -> void:
 				if res.get("ok", false):
-					Audio.play_3d("click", at, -4.0, 1.1)
+					Audio.play_3d(Audio.sfx.click, at, -4.0, 1.1)
 					viewmodel.place()
 				elif res.get("reason", "") != "":
 					hint.emit(res.reason))
 		elif placement.get("reason", "") != "":
 			hint.emit(placement.reason)
+			Audio.error_buzz()
 		return
 	if item != "" and ItemDB.info(item).kind == "placeable" and looking_at.is_empty():
 		_swing_cooldown = 0.4
@@ -651,13 +658,14 @@ func _update_actions(delta: float) -> void:
 			var at: Vector3 = placement.pos
 			Net.request("place", {"slot": inventory.selected, "pos": at, "yaw": placement.yaw}, func(res: Dictionary) -> void:
 				if res.get("ok", false):
-					Audio.play_3d("thud", at, -2.0, 0.8)
+					Audio.play_3d("place_stone" if _is_stony(item) else "place_wood", at, -2.0)
 					viewmodel.place()
 					Effects.dust(get_parent(), at + Vector3.UP * 0.15, Game.palette.sand.darkened(0.1), 6, 0.45, 0.6)
 				elif res.get("reason", "") != "":
 					hint.emit(res.reason))
 		elif placement.get("reason", "") != "":
 			hint.emit(placement.reason)
+			Audio.error_buzz()
 		return
 	if item != "" and ItemDB.info(item).kind == "food":
 		_swing_cooldown = 0.6
@@ -666,7 +674,7 @@ func _update_actions(delta: float) -> void:
 				if not taken.get("ok", false):
 					return
 				var res := GameActions.apply_food(stats, String(taken.id))
-				Audio.play(Audio.sfx.munch, -4.0)
+				Audio.play(Audio.eat_sound(String(taken.id)), -4.0)
 				if res.first_time:
 					var e: Dictionary = ItemDB.EFFECTS[res.effect]
 					hint.emit("%s: %s" % [e.name, e.desc])
@@ -703,14 +711,14 @@ func _on_strike() -> void:
 		else:
 			Music.hunt_ping(0.8)
 		Net.request("hit_animal", {"animal": animal.net_id, "slot": inventory.selected, "from": global_position})
-		Audio.play_3d("thud", point)
+		Audio.play_3d("thud", point, 0.0, randf_range(0.9, 1.1) / clampf(float(animal.species.size), 0.6, 1.6))
 		Effects.blood(get_parent(), point, point - global_position + Vector3.UP * 0.3, 1.0)
 		return
 	if look.has("structure"):
 		hit_landed.emit()
 		_blow(0.6)
 		var hammer: bool = ItemDB.tool_stats(inventory.selected_item()).get("type", "") == "hammer"
-		Audio.play_3d("clink" if hammer else "chop", point, -2.0, 1.15 if hammer else 0.8)
+		Audio.play_3d("hammer" if hammer else "chop", point, -2.0, 1.0 if hammer else 0.8)
 		if hammer and Input.is_key_pressed(KEY_SHIFT):
 			# Shift + hammer: a share of repair on everything damaged around you.
 			Net.request("repair_all", {"pos": global_position}, func(res: Dictionary) -> void:
@@ -777,7 +785,7 @@ func _on_hit_resource(res: Dictionary, r: Dictionary, point: Vector3) -> void:
 				if randf() < 0.5:   # now and then a leaf or two comes down, not a shower every blow
 					Effects.leaves(get_parent(), top, Effects.leaf_color(r.kind), 2, 1.0)
 		"rock":
-			Audio.play_3d("clink", point, -2.0)
+			Audio.play_3d("ore" if r.kind.begins_with("ore") or r.kind.begins_with("gem") or r.kind.contains("crystal") else "clink", point, -2.0)
 			var col := pal.rock.lightened(0.1)
 			if r.kind.begins_with("ore") or r.kind.begins_with("gem"):
 				col = ItemDB.tier_info(int(r.kind.right(1))).color
@@ -813,6 +821,7 @@ func _on_grab() -> void:
 				if ppos.size() == 3:
 					Effects.twinkle(get_parent(), Vector3(ppos[0], ppos[1], ppos[2]) + Vector3(0, 0.25, 0), Color(1.0, 0.92, 0.6), 5, 0.7)
 			else:
+				Audio.error_buzz()
 				hint.emit("Your satchel is full"))
 		return
 	if look.has("animal"):
@@ -858,7 +867,30 @@ func drop_slot(slot: int, whole_stack := true) -> void:
 	var ground: float = Game.world_gen.get_height(pos.x, pos.z)
 	pos.y = maxf(ground, Game.world_gen.water_level(pos.x, pos.z)) + 0.15
 	Net.request("drop", {"slot": slot, "amount": int(s.count) if whole_stack else 1, "pos": pos})
-	Audio.play(Audio.sfx.click, -8.0, 0.8)
+	Audio.slot()
+
+
+## What's underfoot, for footsteps: boards or stone of a building, else the ground's own surface.
+func _step_surface() -> String:
+	for i in get_slide_collision_count():
+		var c := get_slide_collision(i)
+		if c.get_normal().y < 0.6:
+			continue
+		var body := c.get_collider() as Node
+		if body and body.has_meta("structure"):
+			var st: Dictionary = Game.structures.get(String(body.get_meta("structure")), {})
+			if not st.is_empty():
+				return "rock" if GameActions.piece_mat(st.kind) in ["stone", "brick"] else "wood"
+	if Game.in_cave:
+		return "rock"
+	if Game.world_gen.water_level(global_position.x, global_position.z) > global_position.y + 0.1:
+		return "water"   # wading
+	return Game.world_gen.get_surface(global_position.x, global_position.z)
+
+
+## Is this item (a placeable) made of stone? (Sets down with a stony thud rather than a wooden knock.)
+func _is_stony(item: String) -> bool:
+	return item.contains("stone") or item.contains("forge") or item.contains("furnace") or item.contains("brick") or item.contains("anvil")
 
 
 # --- Placing stations -----------------------------------------------------------------

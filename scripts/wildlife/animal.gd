@@ -834,6 +834,12 @@ func take_hit(damage: float, from: Vector3) -> void:
 func _die(from: Vector3) -> void:
 	dead = true
 	state = State.DEAD
+	# A last, lower cry, and the body coming down.
+	var sz := clampf(float(species.size), 0.5, 2.0)
+	Audio.play_3d(species.call_sound, global_position + Vector3.UP, -3.0, 0.7 * _rng.randf_range(0.95, 1.05))
+	get_tree().create_timer(0.35).timeout.connect(func() -> void:
+		if is_instance_valid(self):
+			Audio.play_3d("place_stone" if sz > 1.2 else "thud", global_position, linear_to_db(clampf(sz * 0.6, 0.35, 1.0)), 0.75 / sqrt(sz)))
 	if in_tree:   # it falls out of the tree
 		in_tree = false
 		var tw0 := create_tween()

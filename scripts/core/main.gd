@@ -30,6 +30,7 @@ var _models_ready := false   ## every item's model is built (during loading; see
 var _orbit := 0.0
 var _ambience_timer := 0.0
 var _cave_sound_cd := 3.0
+var _river_level := 0.0
 var _ocean_level := 0.0
 var _autosave := AUTOSAVE_SECONDS
 var _cave_features: CaveFeatures
@@ -155,7 +156,7 @@ func _ready() -> void:
 		if state == State.PLAYING and not _inventory.visible:
 			_inventory.show_chest(sid)
 			Input.mouse_mode = Input.MOUSE_MODE_VISIBLE
-			Audio.play("thud", -8.0, 1.3))
+			Audio.play("chest", -6.0))
 	_inventory.left_station.connect(func() -> void:
 		if _inventory.visible:
 			_toggle_inventory(false))
@@ -296,7 +297,7 @@ func _open_cave_chest(index: int) -> void:
 	var out := {}
 	GameActions._loot_cache(inv, key, RandomNumberGenerator.new(), out)
 	Game.looted[key] = true
-	Audio.play(Audio.sfx.pickup, -4.0)
+	Audio.play("chest", -4.0)
 	_hud.show_hint("Found %d things in the chest" % out.size() if not out.is_empty() else "Nothing useful inside")
 
 
@@ -376,6 +377,8 @@ func _toggle_map(open: bool) -> void:
 
 ## Open or close the satchel; opened at a station (`station`), its crafting side is that station's own panel.
 func _toggle_inventory(open: bool, station := "") -> void:
+	if open != _inventory.visible:
+		Audio.play(Audio.sfx.open if open else Audio.sfx.close, -6.0)
 	if open:
 		_inventory.show_for(station)
 	else:
@@ -501,6 +504,10 @@ func _update_ambience(delta: float) -> void:
 			if Game.world_gen.get_height(p.x + cos(a) * 45.0, p.z + sin(a) * 45.0) < 0.0:
 				water += 1
 		_ocean_level = clampf(water / 4.0, 0.0, 1.0) * clampf(1.0 - p.y / 50.0, 0.1, 1.0)
+		# A river or stream babbling nearby: louder the closer you are.
+		var hit := Rivers.nearest_water(Game.world_gen.rivers, p.x, p.z, 16.0)
+		_river_level = 0.0 if hit.is_empty() else (1.0 - smoothstep(0.0, 16.0, maxf(float(hit.past), 0.0))) * (1.0 if hit.big else 0.6) \
+			* clampf(1.0 - (p.y - float(hit.surface)) / 25.0, 0.0, 1.0)
 	var wind := 0.25 + clampf((p.y - 10.0) / 60.0, 0.0, 0.75)
 	# Underground: the cave's hollow tone, deeper the further from daylight; now and then a drip or a far rumble.
 	var cave := 0.0
@@ -514,4 +521,4 @@ func _update_ambience(delta: float) -> void:
 				Audio.play_3d("rumble", where, -6.0, randf_range(0.7, 1.0))
 			else:
 				Audio.play_3d("drip", where, -12.0, randf_range(0.85, 1.2))
-	Audio.set_ambience(wind, _ocean_level, delta, cave)
+	Audio.set_ambience(wind, _ocean_level, delta, cave, _river_level)

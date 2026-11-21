@@ -342,6 +342,11 @@ static func near(plan: Dictionary, x: float, z: float, margin: float) -> bool:
 	return not _nearest(plan, x, z, margin).is_empty()
 
 
+## The nearest river piece or pond within `margin` metres of its edge ({surface, past, edge, big}; {} if none).
+static func nearest_water(plan: Dictionary, x: float, z: float, margin: float) -> Dictionary:
+	return _nearest(plan, x, z, margin)
+
+
 ## 1 in the water, falling to 0 a couple of metres up the bank: for the wet bed and bank colour.
 static func wet(plan: Dictionary, x: float, z: float) -> float:
 	var hit := _nearest(plan, x, z, 2.5)

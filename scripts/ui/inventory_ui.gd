@@ -124,7 +124,7 @@ class SlotView extends PanelContainer:
 			ChestPanel.request({"structure": data.chest, "op": "move", "from": "chest", "a": data.slot, "to": "bag", "b": index})
 		else:
 			inv.move(int(data.slot), index)
-		Audio.play(Audio.sfx.click, -10.0, 1.2)
+		Audio.slot()
 
 	func _gui_input(event: InputEvent) -> void:
 		if not interactive or not (event is InputEventMouseButton and event.pressed):
@@ -336,7 +336,7 @@ class InventoryPanel extends Control:
 			Net.request("quick_stack", {"pos": player.global_position}, func(res: Dictionary) -> void:
 				var n := int(res.get("moved", 0))
 				if n > 0:
-					Audio.play("thud", -8.0, 1.2)
+					Audio.play("chest", -8.0, 1.1)
 					_flash("Stashed %d item%s in %d chest%s" % [n, "" if n == 1 else "s", int(res.chests), "" if int(res.chests) == 1 else "s"])
 				else:
 					_flash("Nothing here goes in a nearby chest")))
@@ -693,7 +693,8 @@ void fragment() {
 			times = 5
 		player.craft(r, times, func(res: Dictionary) -> void:
 			if res.get("ok", false):
-				Audio.play("chop" if r.at in ["workbench", ""] else "clink", -6.0, 1.2)
+				Audio.play(Audio.sfx.chime, -10.0)
+				Audio.play("chop" if r.at in ["workbench", ""] else "clink", -8.0, 1.2)
 				_status.text = "Made %s%s" % [ItemDB.display_name(res.out), (" x%d" % res.made) if res.made > 1 else ""]
 			else:
 				_status.text = String(res.get("reason", "")))
@@ -724,7 +725,7 @@ class ChestPanel extends PanelContainer:
 			args["pos"] = _player.global_position
 		Net.request("chest", args, func(res: Dictionary) -> void:
 			if not res.get("ok", false) and String(res.get("reason", "")) != "":
-				Audio.play(Audio.sfx.click, -6.0, 0.7))
+				Audio.error_buzz())
 
 	func _ready() -> void:
 		add_theme_stylebox_override("panel", UITheme.paper_box(Color(0.95, 0.88, 0.76), 14, 30))
@@ -881,7 +882,7 @@ class ChestSlotView extends PanelContainer:
 	func _drop_data(_at: Vector2, data: Variant) -> void:
 		var from := "chest" if data.has("chest") else "bag"
 		ChestPanel.request({"structure": _sid, "op": "move", "from": from, "a": data.slot, "to": "chest", "b": index})
-		Audio.play(Audio.sfx.click, -10.0, 1.2)
+		Audio.slot()
 
 	func _gui_input(event: InputEvent) -> void:
 		if event is InputEventMouseButton and event.pressed and event.button_index == MOUSE_BUTTON_LEFT and event.shift_pressed and not _slot.is_empty():
