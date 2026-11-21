@@ -234,7 +234,10 @@ func _find_clear_cell() -> Vector3:
 		cand.y = _game.world_gen.get_height(cand.x, cand.z)
 		var clear := _Terrain.tree_near(cand, 6.0) == null
 		clear = clear and _Terrain.tree_near(cand + Vector3(3.0, 0, 0), 6.0) == null
-		if clear and _game.world_gen.get_height(cand.x, cand.z) > 2.0 and _game.world_gen.get_height(cand.x + 3.0, cand.z) > 2.0:
+		if clear and _game.world_gen.get_height(cand.x, cand.z) > 2.0 and _game.world_gen.get_height(cand.x + 3.0, cand.z) > 2.0 \
+				and not _game.world_gen.near_river(cand.x, cand.z, 8.0) and not _game.world_gen.near_river(cand.x + 3.0, cand.z, 8.0) \
+				and _GA.placement_problem(_GA.snap_piece("wood_floor", cand).pos, "wood_floor", 0.0) == "" \
+				and _GA.placement_problem(_GA.snap_piece("wood_floor", cand + Vector3(3.0, 0, 0)).pos, "wood_floor", 0.0) == "":
 			return cand
 	return spot
 

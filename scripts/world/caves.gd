@@ -279,6 +279,20 @@ static func plan(gen: WorldGen) -> Dictionary:
 				edges.append([i, j])
 				loops += 1
 				break
+	# An entrance whose tunnel couldn't grow (no room in the rock there) is no entrance: a dent in the slope leading
+	# nowhere. It's dropped (its lone node stays in the list, touching nothing).
+	var joined := {}
+	for ed: Array in edges:
+		joined[int(ed[0])] = true
+		joined[int(ed[1])] = true
+	var kept_spots: Array = []
+	var kept_roots: Array = []
+	for e in roots.size():
+		if joined.has(int(roots[e])):
+			kept_spots.append(spots[e])
+			kept_roots.append(roots[e])
+	spots = kept_spots
+	roots = kept_roots
 	timing['links'] = (Time.get_ticks_usec() - _t) / 1000.0
 	_t = Time.get_ticks_usec()
 	# Chests in some chambers, glowing fungus on the floors.

@@ -316,28 +316,99 @@ static func umbrella(kit: MeshKit, rng: RandomNumberGenerator, bark: Color, leaf
 
 ## Jungle giant: a tall trunk with buttresses, a dense dome of foliage and hanging vines.
 static func jungle(kit: MeshKit, rng: RandomNumberGenerator, bark: Color, leaf: Color, height: float, radius: float) -> void:
-	var top := trunk(kit, rng, Vector3.ZERO, height, radius, bark, Vector3(rng.randf_range(-0.3, 0.3), 0, rng.randf_range(-0.3, 0.3)), 9)
+	# Mossy low on the trunk (the damp), bark above.
+	var moss := leaf.darkened(0.15).lerp(Color(0.3, 0.42, 0.2), 0.5)
+	var top := trunk(kit, rng, Vector3.ZERO, height, radius, bark.lerp(moss, 0.35), Vector3(rng.randf_range(-0.3, 0.3), 0, rng.randf_range(-0.3, 0.3)), 9)
+	buttresses(kit, rng, radius, height * 0.12, bark.lerp(moss, 0.45), rng.randi_range(3, 5))
 	var tips: Array = []
+	var crooks: Array = []
 	for i in rng.randi_range(4, 6):
 		var yaw := rng.randf() * TAU
 		var dir := Vector3(cos(yaw), rng.randf_range(0.3, 0.7), sin(yaw)).normalized()
-		branch(kit, rng, top - Vector3(0, height * 0.22, 0), dir, height * rng.randf_range(0.3, 0.4), radius * 0.55, 2, bark, tips, 6)
+		var start := top - Vector3(0, height * 0.22, 0)
+		if rng.randf() < 0.6:
+			crooks.append(start + dir * 0.5)
+		branch(kit, rng, start, dir, height * rng.randf_range(0.3, 0.4), radius * 0.55, 2, bark, tips, 6)
 	tips.append(top)
 	for tip: Vector3 in tips:
 		var r := rng.randf_range(1.5, 2.1)
 		blob(kit, rng, tip + Vector3(0, r * 0.3, 0), r, rng.randf_range(0.7, 0.85), leaf.lightened(rng.randf_range(-0.05, 0.05)), 0.5)
-	# Vines: thin tapered wood hanging from the canopy.
-	for i in rng.randi_range(5, 8):
-		var a := rng.randf() * TAU
-		var start := top + Vector3(cos(a) * 2.2, rng.randf_range(-0.8, 0.2), sin(a) * 2.2)
-		var length := rng.randf_range(2.0, 4.0)
+	epiphytes(kit, rng, crooks, leaf)
+	# Lianas: some short, some down to the ground in long loops.
+	lianas(kit, rng, top, 2.2, height, bark.darkened(0.2).lerp(leaf, 0.35), rng.randi_range(4, 7))
+
+
+## Buttress roots: thin flared fins of wood running out from a rainforest trunk's foot, tall against the trunk and
+## sinking into the ground a few metres out.
+static func buttresses(kit: MeshKit, rng: RandomNumberGenerator, radius: float, height: float, bark: Color, count: int) -> void:
+	var a0 := rng.randf() * TAU
+	for i in count:
+		var a := a0 + TAU * i / count + rng.randf_range(-0.25, 0.25)
+		var out := Vector3(cos(a), 0, sin(a))
+		var reach := radius * rng.randf_range(3.5, 5.5)
+		var tall := height * rng.randf_range(0.8, 1.2)
 		var path: Array = []
 		var radii: Array = []
-		for k in 4:
-			var t := float(k) / 3.0
-			path.append(start + Vector3(sin(t * 2.0 + a) * 0.25, -length * t, cos(t * 2.0 + a) * 0.25))
-			radii.append(lerpf(0.035, 0.012, t))
-		kit.loft(path, radii, 4, leaf.darkened(0.2), Callable(), Callable(), true, true)
+		for k in 6:
+			var t := k / 5.0
+			# Up the trunk at the start, curving down and out to the ground.
+			var y := tall * pow(1.0 - t, 1.7) - 0.15
+			path.append(out * (radius * 0.6 + reach * t) + Vector3(0, y, 0))
+			radii.append(lerpf(radius * 0.35, radius * 0.12, t))
+		# Flattened across: each fin is wide in its own upright plane and thin across it.
+		kit.loft(path, radii, 5, bark.darkened(0.05), Callable(), func(_t: float, ang: float) -> Vector2:
+			return Vector2(cos(ang) * 0.35, sin(ang) * 2.2), true, true, 0.04)
+
+
+## Mossy, leafy rosettes (bromeliads and ferns) sitting in the crooks of branches.
+static func epiphytes(kit: MeshKit, rng: RandomNumberGenerator, spots: Array, leaf: Color) -> void:
+	for p: Vector3 in spots:
+		var n := rng.randi_range(5, 8)
+		var c := leaf.lerp(Color(0.6, 0.75, 0.3), rng.randf_range(0.1, 0.4))
+		if rng.randf() < 0.3:
+			c = c.lerp(Color(0.85, 0.3, 0.35), 0.5)   # a red-hearted bromeliad
+		for k in n:
+			var a := TAU * k / n + rng.randf_range(-0.2, 0.2)
+			var d := Vector3(cos(a), rng.randf_range(0.6, 1.1), sin(a)).normalized()
+			kit.add_primitive(MeshKit.sphere(0.5, 5, 3), Transform3D(Basis.looking_at(d, Vector3.UP if absf(d.y) < 0.95 else Vector3.FORWARD).scaled(Vector3(0.09, 0.03, 0.42)), p + d * 0.22), c, 0.0, 0.06)
+
+
+## Lianas: woody vines dropping from the canopy in long sagging loops, some reaching the ground.
+static func lianas(kit: MeshKit, rng: RandomNumberGenerator, top: Vector3, spread: float, height: float, color: Color, count: int) -> void:
+	for i in count:
+		var a := rng.randf() * TAU
+		var start := top + Vector3(cos(a) * spread, rng.randf_range(-1.0, 0.2), sin(a) * spread)
+		var to_ground := rng.randf() < 0.55
+		var drop := (start.y - rng.randf_range(0.0, 0.4)) if to_ground else rng.randf_range(2.5, height * 0.45)
+		var sway := Vector3(cos(a + 1.3), 0, sin(a + 1.3)) * rng.randf_range(0.4, 1.4)
+		var path: Array = []
+		var radii: Array = []
+		for k in 7:
+			var t := k / 6.0
+			path.append(start + Vector3(0, -drop * t, 0) + sway * sin(t * PI) + Vector3(sin(t * 5.0 + a), 0, cos(t * 4.0 + a)) * 0.15)
+			radii.append(lerpf(0.06, 0.035, t))
+		kit.loft(path, radii, 4, color, Callable(), Callable(), false, true)
+
+
+## Emergent rainforest giant: a tall straight pale trunk on great buttress roots, bare until near the top, then a few
+## long limbs carrying a broad flat umbrella of a crown that stands clear above the rest of the canopy.
+static func emergent(kit: MeshKit, rng: RandomNumberGenerator, bark: Color, leaf: Color, height: float, radius: float) -> void:
+	var top := trunk(kit, rng, Vector3.ZERO, height, radius, bark, Vector3(rng.randf_range(-0.15, 0.15), 0, rng.randf_range(-0.15, 0.15)), 10, 0.5)
+	buttresses(kit, rng, radius, height * 0.16, bark, rng.randi_range(5, 7))
+	var tips: Array = []
+	var crooks: Array = []
+	for i in rng.randi_range(5, 7):
+		var yaw := TAU * i / 6.0 + rng.randf_range(-0.4, 0.4)
+		var dir := Vector3(cos(yaw), rng.randf_range(0.25, 0.5), sin(yaw)).normalized()
+		var start := top - Vector3(0, height * rng.randf_range(0.04, 0.14), 0)
+		crooks.append(start + dir * 0.6)
+		branch(kit, rng, start, dir, height * rng.randf_range(0.26, 0.34), radius * 0.45, 1, bark, tips, 6)
+	tips.append(top + Vector3(0, 0.5, 0))
+	for tip: Vector3 in tips:
+		var r := rng.randf_range(2.4, 3.2)
+		blob(kit, rng, tip + Vector3(0, r * 0.15, 0), r, rng.randf_range(0.42, 0.55), leaf.lightened(rng.randf_range(-0.06, 0.06)), 0.5)
+	epiphytes(kit, rng, crooks, leaf)
+	lianas(kit, rng, top - Vector3(0, height * 0.1, 0), height * 0.2, height, bark.darkened(0.25).lerp(leaf, 0.3), rng.randi_range(4, 7))
 
 
 ## Dead tree: bare gnarled branches, no canopy.

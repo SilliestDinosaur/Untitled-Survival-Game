@@ -144,6 +144,8 @@ func apply_puppets(list: Array) -> void:
 			a.removed.connect(func(x: Animal) -> void:
 				_animals.erase(x)
 				_by_net_id.erase(x.net_id))
+		if e.size() > 6 and bool(e[6]) and not a.young:
+			a.make_young()
 		a.net_update(e[2], e[3], e[4], e[5])
 		_puppet_seen[id] = 0.0
 
@@ -256,6 +258,9 @@ func _spawn_herd(center: Vector3, at: Variant = null, sp: FaunaLibrary.Species =
 		_next_net_id += 1
 		a.herd = herd
 		a.leader = herd[0] if not herd.is_empty() else null
+		# Grazing herds have young among them, keeping close to their mother (the herd's leader).
+		if sp.role == "grazer" and herd.size() >= 2 and _rng.randf() < 0.4:
+			a.make_young()
 		herd.append(a)
 		a.removed.connect(func(x: Animal) -> void:
 			_animals.erase(x)

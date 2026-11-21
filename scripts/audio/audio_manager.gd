@@ -12,6 +12,7 @@ var _wind: AudioStreamPlayer
 var _cave: AudioStreamPlayer
 var _ocean: AudioStreamPlayer
 var _river: AudioStreamPlayer
+var _jungle: AudioStreamPlayer
 var _rng := RandomNumberGenerator.new()
 var _build_task := -1
 
@@ -58,6 +59,7 @@ func _ready() -> void:
 	_ocean = _loop_player(SoundGen.ocean())
 	_cave = _loop_player(SoundGen.cave_tone())
 	_river = _loop_player(null)
+	_jungle = _loop_player(null)
 	Settings.apply()
 
 
@@ -77,10 +79,13 @@ func _build_variants() -> void:
 			made[name].append(_make(name, rng))
 	var fire := SoundGen.fire_loop()
 	var river := SoundGen.river_loop()
-	_finish_build.call_deferred(made, fire, river)
+	var jungle := SoundGen.jungle_loop()
+	_finish_build.call_deferred(made, fire, river, jungle)
 
 
-func _finish_build(made: Dictionary, fire: AudioStreamWAV, river: AudioStreamWAV) -> void:
+func _finish_build(made: Dictionary, fire: AudioStreamWAV, river: AudioStreamWAV, jungle: AudioStreamWAV) -> void:
+	_jungle.stream = jungle
+	_jungle.play()
 	_variants.merge(made, true)
 	sfx.fire = fire
 	_river.stream = river
@@ -192,8 +197,9 @@ func hover() -> void:
 
 ## Wind gets louder up high; the ocean gets louder near the shore; underground the open air fades and the cave's own
 ## hollow tone takes over (`cave_level` 0 outside .. 1 deep in).
-func set_ambience(wind_level: float, ocean_level: float, delta: float, cave_level := 0.0, river_level := 0.0) -> void:
+func set_ambience(wind_level: float, ocean_level: float, delta: float, cave_level := 0.0, river_level := 0.0, jungle_level := 0.0) -> void:
 	var k := 1.0 - exp(-delta * 1.5)
+	_jungle.volume_db = lerpf(_jungle.volume_db, linear_to_db(maxf(jungle_level * (1.0 - cave_level), 0.0005) * 0.5), k)
 	_river.volume_db = lerpf(_river.volume_db, linear_to_db(maxf(river_level * (1.0 - cave_level), 0.0005) * 0.45), k)
 	wind_level *= 1.0 - cave_level * 0.85
 	ocean_level *= 1.0 - cave_level

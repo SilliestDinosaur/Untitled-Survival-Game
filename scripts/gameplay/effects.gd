@@ -829,6 +829,7 @@ static func _ambient(mesh: Mesh, amount: int, lifetime: float, box: Vector3) -> 
 
 ## Fireflies: little lights drifting about low over the grass, blinking on and off.
 static func fireflies() -> CPUParticles3D:
+	_setup()   # (before the mesh is read: it's made there)
 	var p := _ambient(_glow_quad, 40, 7.0, Vector3(14, 1.2, 14))
 	p.direction = Vector3.UP
 	p.spread = 180.0
@@ -852,6 +853,7 @@ static func fireflies() -> CPUParticles3D:
 
 ## Leaves coming down out of the canopy and spinning to the ground.
 static func falling_leaves() -> CPUParticles3D:
+	_setup()   # (before the mesh is read: it's made there)
 	var p := _ambient(_leaf, 26, 8.0, Vector3(18, 2.5, 18))
 	p.direction = Vector3.DOWN
 	p.spread = 30.0
@@ -873,6 +875,7 @@ static func falling_leaves() -> CPUParticles3D:
 
 ## Snow drifting down and sideways.
 static func snowfall() -> CPUParticles3D:
+	_setup()   # (before the mesh is read: it's made there)
 	var p := _ambient(_quad, 160, 7.0, Vector3(20, 5, 20))
 	p.direction = Vector3.DOWN
 	p.spread = 15.0
@@ -896,6 +899,7 @@ static func snowfall() -> CPUParticles3D:
 
 ## Dust motes and grit drifting along on the wind (deserts, badlands, dry plains).
 static func dust_drift() -> CPUParticles3D:
+	_setup()   # (before the mesh is read: it's made there)
 	var p := _ambient(_quad, 70, 6.0, Vector3(18, 2.0, 18))
 	p.direction = Vector3(1, 0.1, 0.4)
 	p.spread = 25.0
@@ -906,6 +910,30 @@ static func dust_drift() -> CPUParticles3D:
 	p.tangential_accel_max = 0.2
 	p.scale_amount_min = 0.03
 	p.scale_amount_max = 0.09
+	return p
+
+
+## Mist: big soft pale puffs drifting slowly along low over the ground (the jungle's damp air).
+static func mist() -> CPUParticles3D:
+	_setup()   # (before _puff is read: it's made there)
+	var p := _ambient(_puff, 22, 12.0, Vector3(20, 1.2, 20))
+	p.direction = Vector3(1, 0.05, 0.3)
+	p.spread = 40.0
+	p.initial_velocity_min = 0.15
+	p.initial_velocity_max = 0.4
+	p.gravity = Vector3(0.02, 0.0, 0.01)
+	p.angle_min = 0.0
+	p.angle_max = 360.0
+	p.angular_velocity_min = -4.0
+	p.angular_velocity_max = 4.0
+	p.scale_amount_min = 3.5
+	p.scale_amount_max = 6.0
+	var g := Gradient.new()
+	g.set_color(0, Color(0.85, 0.92, 0.86, 0.0))
+	g.set_color(1, Color(0.85, 0.92, 0.86, 0.0))
+	g.add_point(0.3, Color(0.85, 0.92, 0.86, 0.16))
+	g.add_point(0.7, Color(0.85, 0.92, 0.86, 0.12))
+	p.color_ramp = g
 	return p
 
 

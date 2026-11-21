@@ -12,7 +12,7 @@ var _rescan := 0.0
 var _chirp := 2.0
 var _rng := RandomNumberGenerator.new()
 const SCARE := 7.0
-const TREE_TOPS := {"jungle_tree": 8.5, "oak": 5.0, "autumn_oak": 5.0, "birch": 6.0, "willow": 4.5, "acacia": 4.5, "palm": 6.5, "pine": 6.0, "fir": 7.0}
+const TREE_TOPS := {"kapok": 20.0, "jungle_tree": 8.5, "oak": 5.0, "autumn_oak": 5.0, "birch": 6.0, "willow": 4.5, "acacia": 4.5, "palm": 6.5, "pine": 6.0, "fir": 7.0}
 
 
 func setup(sp: FaunaLibrary.Species, centre: Vector3, p: Node3D) -> bool:

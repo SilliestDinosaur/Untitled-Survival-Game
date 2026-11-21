@@ -14,7 +14,7 @@ const BIOME_TREES := {
 	Biome.TAIGA: [["fir", 0.8], ["pine", 0.2]],
 	Biome.MARSH: [["willow", 0.65], ["birch", 0.2], ["dead_tree", 0.15]],
 	Biome.DESERT: [["cactus", 0.8], ["dead_tree", 0.2]],
-	Biome.JUNGLE: [["jungle_tree", 0.85], ["willow", 0.15]],   # no palms: they grow only on beaches (see ChunkGenerator)
+	Biome.JUNGLE: [["jungle_tree", 0.72], ["kapok", 0.13], ["willow", 0.15]],   # no palms: they grow only on beaches (see ChunkGenerator)
 	Biome.TUNDRA: [["fir", 0.4], ["dead_tree", 0.6]],
 	Biome.BADLANDS: [["dead_tree", 0.5], ["cactus", 0.3], ["acacia", 0.2]],
 	Biome.FUNGAL: [["giant_mushroom", 0.85], ["dead_tree", 0.15]],
@@ -141,6 +141,8 @@ const KINDS := {
 	"heliconia": {"category": "bush", "label": "Heliconia", "variants": 3, "solid": false, "hp": 30, "target": "bush", "yield": "bush", "shape": "bush"},
 	"fern_palm": {"category": "bush", "label": "Fern palm", "variants": 3, "solid": false, "hp": 40, "target": "bush", "yield": "bush", "shape": "bush"},
 	"cliff_vine": {"category": "bush", "label": "Vines", "variants": 3, "solid": false, "hp": 25, "target": "bush", "yield": "reeds", "shape": "small"},
+	# The jungle's emergent giants, standing over its canopy (last again).
+	"kapok": {"category": "tree", "label": "Giant tree", "variants": 3, "solid": true, "hp": 260, "target": "tree", "yield": "tree", "shape": "tree"},
 }
 
 ## The jungle's own layer of undergrowth, on top of its bushes (see ChunkGenerator): [kind, weight].
@@ -370,6 +372,7 @@ func _build_mesh(kind: String, index: int, variant_seed: int) -> ArrayMesh:
 		"heliconia": _heliconia(kit, rng)
 		"fern_palm": _fern_palm(kit, rng)
 		"cliff_vine": _cliff_vine(kit, rng)
+		"kapok": TreeModels.emergent(kit, rng, _vary(_pal.bark, rng).lightened(0.3), _vary(_pal.jungle_leaves, rng).darkened(0.05), rng.randf_range(22.0, 27.0), rng.randf_range(0.6, 0.75))
 	if kind == ItemDB.fruit_tree and not _bare:
 		_add_fruit(kit, rng)
 	var cat: String = KINDS[kind].category

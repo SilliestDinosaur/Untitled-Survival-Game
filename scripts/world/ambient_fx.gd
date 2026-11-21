@@ -22,6 +22,7 @@ func _ready() -> void:
 	_add("leaves", Effects.falling_leaves(), Vector3(0, 7.0, 0))
 	_add("snow", Effects.snowfall(), Vector3(0, 7.0, 0))
 	_add("dust", Effects.dust_drift(), Vector3(0, 1.4, 0))
+	_add("mist", Effects.mist(), Vector3(0, 0.9, 0))
 	var motes := Effects.motes(Vector3(5, 1.6, 5), Color(0.4, 0.37, 0.33), 40)   # dust hanging in the still air of caves
 	motes.emitting = false
 	_add("cave_dust", motes, Vector3(0, 0.4, 0))
@@ -74,6 +75,8 @@ func _decide(eye: Vector3) -> void:
 		_want.snow = 1.0
 	elif b == WorldGen.Biome.HIGHLANDS or b == WorldGen.Biome.TAIGA:
 		_want.snow = 0.25
+	if b == WorldGen.Biome.JUNGLE or b == WorldGen.Biome.MARSH:
+		_want.mist = 1.0 if b == WorldGen.Biome.JUNGLE else 0.6
 	if b in DUST_BIOMES:
 		_want.dust = 0.7 if b == WorldGen.Biome.DRYLANDS else 1.0
 	if b != _biome:

@@ -564,6 +564,42 @@ static func fire_loop(seconds := 6.0) -> AudioStreamWAV:
 	return to_stream(_make_loop(out, n, RATE), true)
 
 
+## The jungle, as a seamless loop: a bed of insect hum, cicadas pulsing in and out, frogs and now and then a bird
+## calling somewhere off in the trees.
+static func jungle_loop(seconds := 10.0) -> AudioStreamWAV:
+	var rng := RandomNumberGenerator.new()
+	rng.seed = 61
+	var n := int(RATE * seconds)
+	var out := _buf(n + RATE)
+	var hum := _filter(_noise(out.size(), rng), "bp", 4200.0, 3.0)
+	var hum2 := _filter(_noise(out.size(), rng), "bp", 5600.0, 4.0)
+	for i in out.size():
+		var t := float(i) / RATE
+		# Cicadas: a fast trill swelling and fading in long slow waves.
+		var swell := pow(0.5 + 0.5 * sin(t * 0.7 + sin(t * 0.23) * 2.0), 3.0)
+		var trill := 0.5 + 0.5 * sin(TAU * 38.0 * t)
+		out[i] = hum[i] * 0.25 + hum2[i] * swell * trill * 0.6
+	# Frogs: short low croaks in little runs.
+	for k in int(seconds * 0.8):
+		var at := rng.randf_range(0.0, seconds + 0.6)
+		var f := rng.randf_range(180.0, 320.0)
+		for c in rng.randi_range(2, 4):
+			_glide(out, at + c * 0.16, 0.08, f * 1.2, f, 0.18, 30.0)
+	# Birds: a whistle or two, rising or falling, now and then.
+	for k in int(seconds * 0.5):
+		var at := rng.randf_range(0.0, seconds + 0.6)
+		var f := rng.randf_range(1800.0, 3200.0)
+		var up := rng.randf() < 0.5
+		for c in rng.randi_range(1, 3):
+			_glide(out, at + c * 0.22, rng.randf_range(0.12, 0.25), f if up else f * 1.4, f * 1.4 if up else f, 0.12, 8.0)
+	var top := 0.0
+	for v in out:
+		top = maxf(top, absf(v))
+	for i in out.size():
+		out[i] *= 0.55 / maxf(top, 0.001)
+	return to_stream(_make_loop(out, n, RATE), true)
+
+
 ## A river nearby, as a seamless loop: water babbling over stones.
 static func river_loop(seconds := 6.0) -> AudioStreamWAV:
 	var rng := RandomNumberGenerator.new()

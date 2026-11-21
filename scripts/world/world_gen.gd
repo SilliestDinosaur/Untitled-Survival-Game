@@ -42,6 +42,15 @@ var _temperature := FastNoiseLite.new()
 var _moisture := FastNoiseLite.new()
 var _forest := FastNoiseLite.new()     # clumping of trees inside a biome
 var _lake := FastNoiseLite.new()       # lake basins in the lowlands
+var _hills := FastNoiseLite.new()      # rolling hills between the plains and the ranges
+var _hilly := FastNoiseLite.new()      # where the land is hilly and where it lies in broad plains
+var _plateau := FastNoiseLite.new()    # raised tablelands with escarpment edges
+var _warp := FastNoiseLite.new()       # bends the island's outline into bays and peninsulas
+## The island's outline: a few overlapping lobes (Vector3: centre x, centre z, radius, all as shares of the map's
+## half width), merged softly into one coast with peninsulas and bays; and some small islets offshore.
+var _lobes: Array[Vector3] = []
+var _islets: Array[Vector3] = []
+var plateau_amount: float              ## 0..1: how much tableland this world has
 
 
 func _init(seed_value: int, pal: WorldPalette) -> void:
@@ -104,16 +113,50 @@ func _init(seed_value: int, pal: WorldPalette) -> void:
 	_lake.fractal_octaves = 2
 	lake_amount = rng.randf_range(0.0, 1.0)
 
+	_hills.seed = seed_value + 11
+	_hills.noise_type = FastNoiseLite.TYPE_SIMPLEX_SMOOTH
+	_hills.frequency = rng.randf_range(0.005, 0.0075)
+	_hills.fractal_octaves = 3
+	_hills.fractal_gain = 0.45
+	_hilly.seed = seed_value + 12
+	_hilly.noise_type = FastNoiseLite.TYPE_SIMPLEX_SMOOTH
+	_hilly.frequency = 0.0018
+	_plateau.seed = seed_value + 13
+	_plateau.noise_type = FastNoiseLite.TYPE_SIMPLEX_SMOOTH
+	_plateau.frequency = rng.randf_range(0.0022, 0.0032)
+	_plateau.fractal_octaves = 2
+	plateau_amount = rng.randf_range(0.2, 1.0)
+	_warp.seed = seed_value + 14
+	_warp.noise_type = FastNoiseLite.TYPE_SIMPLEX_SMOOTH
+	_warp.frequency = 0.0009
+	_warp.fractal_octaves = 2
+	# The outline: one lobe in the middle (so there's always land there), and three to five more around it of
+	# different sizes, reaching out as peninsulas or swelling the island to one side.
+	_lobes.append(Vector3(rng.randf_range(-0.08, 0.08), rng.randf_range(-0.08, 0.08), rng.randf_range(0.58, 0.68)))
+	var ang := rng.randf() * TAU
+	for k in rng.randi_range(3, 6):
+		ang += rng.randf_range(0.8, 1.8)
+		var reach := rng.randf_range(0.36, 0.6)
+		var r := rng.randf_range(0.2, 0.38)
+		r = minf(r, 0.9 - reach)   # never out to the map's edge
+		_lobes.append(Vector3(cos(ang) * reach, sin(ang) * reach, r))
+	# Islets offshore: small, apart from the main island.
+	for k in rng.randi_range(2, 5):
+		var a := rng.randf() * TAU
+		_islets.append(Vector3(cos(a), sin(a), 0.0) * rng.randf_range(0.7, 0.82) + Vector3(0, 0, rng.randf_range(0.035, 0.07)))
+
 	if not pal.exotic:
 		_pick_fungal_home()
 		_fungal_limit = true
 	rivers = Rivers.plan(self)   # before the caves, so they run under the river beds
-	caves = Caves.plan(self)   # planned from the base ground, so it's the same on every machine   # planned from the base ground, so it's the same on every machine
+	caves = Caves.plan(self)   # planned from the base ground, so it's the same on every machine
+	landmarks = Landmarks.plan(self)
 
 
 ## Terrain height in meters at world position (x, z). Sea level is 0.
 var caves: Dictionary = {}   ## the cave plan (see Caves.plan)
 var rivers: Dictionary = {}  ## the river plan (see Rivers.plan)
+var landmarks: Array = []    ## the island's places worth finding (see Landmarks.plan)
 
 
 ## The height of the water's surface at (x, z): a river's or pond's where there is one, otherwise the sea's
@@ -157,9 +200,19 @@ func edit_at(x: float, z: float) -> float:
 ## bays and headlands: x is the broad outline, y adds the rocky edge's finer wobble.
 func _coast_at(x: float, z: float) -> Vector2:
 	var half := Game.WORLD_SIZE * 0.5
-	var dx := (x - half) / half
-	var dz := (z - half) / half
-	var coast_raw := sqrt(dx * dx + dz * dz) + _coast.get_noise_2d(x, z) * 0.13 + _detail.get_noise_2d(x * 0.12, z * 0.12) * 0.035
+	# Bent a little first, so the lobes' round edges become irregular bays and headlands.
+	var dx := (x - half) / half + _warp.get_noise_2d(x, z) * 0.15
+	var dz := (z - half) / half + _warp.get_noise_2d(z + 917.0, x) * 0.15
+	# How far out a point is: 0.75 on a lobe's edge (where the beaches start to fall to the sea), merged softly
+	# between lobes so they join with smooth necks and bays, never past the map's edge.
+	var k := 0.0
+	for lb: Vector3 in _lobes:
+		k += exp(-11.0 * Vector2(dx - lb.x, dz - lb.y).length() / lb.z)
+	var shape := -0.75 * log(maxf(k, 1e-12)) / 11.0
+	shape = maxf(shape, sqrt(dx * dx + dz * dz) * 0.97)
+	for il: Vector3 in _islets:
+		shape = minf(shape, 0.75 * Vector2(dx - il.x, dz - il.y).length() / il.z + 0.12)
+	var coast_raw := shape + _coast.get_noise_2d(x, z) * 0.12 + _detail.get_noise_2d(x * 0.12, z * 0.12) * 0.045
 	return Vector2(coast_raw, coast_raw + _detail.get_noise_2d(x * 0.12, z * 0.12) * 0.09)
 
 
@@ -190,8 +243,19 @@ func get_base_height(x: float, z: float) -> float:
 		var over := mountains - peak_cap * 0.7
 		mountains = peak_cap * 0.7 + over / (1.0 + over / (peak_cap * 0.5))
 	var bumps := _detail.get_noise_2d(x, z) * 0.9
+	# Rolling hills: some country is broad open plain, some rolls in hills (and nothing pokes up out of the beaches).
+	var hilly := smoothstep(-0.25, 0.35, _hilly.get_noise_2d(x, z)) * smoothstep(0.4, 0.75, mask)
+	var hn := _hills.get_noise_2d(x, z)
+	var hills := (hn * 0.5 + 0.5) * hilly * hill_scale * 0.55 * (1.0 - range_t * 0.5)
 
-	var land := 3.0 + lowlands + foothills + mountains + bumps
+	var land := 3.0 + lowlands + hills + foothills + mountains + bumps
+	# Tablelands: here and there the ground stands up as a broad flat-topped plateau, its edge an escarpment (steep
+	# where the noise climbs quickly, a walkable ramp where it climbs slowly), kept off the ranges and the coast.
+	var pl := _plateau.get_noise_2d(x, z)
+	var pl_th := lerpf(0.42, 0.22, plateau_amount)
+	var plateau := smoothstep(pl_th, pl_th + 0.05, pl) * (1.0 - range_t) * smoothstep(0.55, 0.85, mask)
+	if plateau > 0.0:
+		land += plateau * (7.0 + 5.0 * smoothstep(pl_th + 0.05, pl_th + 0.3, pl))
 	# Beaches: the lowest ground by the sea is a gentle, nearly flat strip.
 	var beach := (1.0 - smoothstep(1.2, 5.0, land)) * smoothstep(0.5, 0.8, coast)
 	land = lerpf(land, 1.4 + bumps * 0.18, beach * 0.7)
@@ -219,8 +283,7 @@ func get_base_height(x: float, z: float) -> float:
 
 ## How strongly the badlands climate holds here (ignores altitude so terraces stay put).
 func badlands_amount(x: float, z: float) -> float:
-	var t := clampf(_temperature.get_noise_2d(x, z) * 0.8 + 0.5, 0.0, 1.0)
-	var c := Vector2(t, get_moisture(x, z))
+	var c := Vector2(_warmth(x, z), get_moisture(x, z))
 	return 1.0 - smoothstep(0.08, 0.2, c.distance_to(CLIMATE_BIOMES[Biome.BADLANDS]))
 
 
@@ -254,13 +317,23 @@ func get_normal(x: float, z: float) -> Vector3:
 	return Vector3(hl - hr, 2.0 * e, hd - hu).normalized()
 
 
+## How wet a place is: the noise's patches, wetter along the coasts (sea air) and drier deep inland.
 func get_moisture(x: float, z: float) -> float:
-	return clampf(_moisture.get_noise_2d(x, z) * 0.8 + 0.5, 0.0, 1.0)
+	var c := _coast_at(x, z).x
+	var coastal := smoothstep(0.45, 0.72, c) * 0.12 - (1.0 - smoothstep(0.15, 0.45, c)) * 0.06
+	return clampf(_moisture.get_noise_2d(x, z) * 0.75 + 0.5 + coastal, 0.0, 1.0)
+
+
+## How warm a place is before altitude: the north of the island cooler and the south warmer, with the noise's
+## patches on top (so the biomes fall in a believable order across the island, not scattered at random).
+func _warmth(x: float, z: float) -> float:
+	var south := z / Game.WORLD_SIZE - 0.5   # -0.5 north .. 0.5 south
+	return clampf(_temperature.get_noise_2d(x, z) * 0.62 + 0.5 + south * 0.55, 0.0, 1.0)
 
 
 ## Temperature and moisture (both 0..1). Higher ground is colder.
 func get_climate(x: float, z: float, height: float) -> Vector2:
-	var t := clampf(_temperature.get_noise_2d(x, z) * 0.8 + 0.5 - maxf(height - 20.0, 0.0) * 0.007, 0.0, 1.0)
+	var t := clampf(_warmth(x, z) - maxf(height - 20.0, 0.0) * 0.007, 0.0, 1.0)
 	return Vector2(t, get_moisture(x, z))
 
 

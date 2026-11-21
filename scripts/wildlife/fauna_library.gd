@@ -47,6 +47,8 @@ class Species:
 	var venom := false        ## its bite poisons
 	var segs := 0             ## serpents: how many body segments follow the head
 	var seg_mesh: ArrayMesh   ## serpents: one segment of the body (the head mesh leads them)
+	var tail_mesh: ArrayMesh  ## the tail on its own (it swishes), built about its root
+	var tail_pivot := Vector3.ZERO   ## where the tail joins the body
 	var bird_kind := "flock"  ## birds: flock (circling) | perch (lands in trees and on logs) | soar (high slow circles)
 
 const ROLE_LABELS := {"grazer": "Grazer", "defensive": "Territorial beast", "critter": "Critter", "bird": "Bird", "small": "Small animal"}
@@ -444,9 +446,11 @@ func _make_quadruped(rng: RandomNumberGenerator, arch: String, home := -1, look 
 			rim.append(Vector3(cos(ang) * W * 0.69, H * 0.3, sin(ang) * L * 0.55))
 			rim_r.append(H * 0.07)
 		kit.loft(rim, rim_r, 8, shell.darkened(0.15), Callable(), func(_t: float, _a: float) -> Vector2: return Vector2(0.6, 1.0), false, false, 0.0, true)
-	# Tail: a lofted curve from the rump.
+	# Tail: a lofted curve from the rump, built on its own (so it can swish) and joined back on at its root.
 	var tail_len := size * rng.randf_range(0.18, 0.45)
 	var tail_root: Vector3 = torso[0] + Vector3(0, H * 0.2, -L * 0.02)
+	var body_kit := kit
+	kit = MeshKit.new(hash([s.id, "tail"]))
 	if arch == "ferret":
 		tail_len = L * 0.85
 	if arch == "feline":
@@ -493,6 +497,10 @@ func _make_quadruped(rng: RandomNumberGenerator, arch: String, home := -1, look 
 		kit.loft(tp, [size * 0.05, size * 0.04, size * 0.028, size * 0.012], 7, coat, func(t: float, a: float) -> Color: return accent if t > 0.7 else coat)
 		if tail_len > size * 0.3 and arch != "ferret":
 			kit.add_primitive(MeshKit.sphere(size * 0.05, 8, 5), Transform3D(Basis.from_scale(Vector3(1, 1.7, 1)), tp[3]), accent, 0.05, 0.04)
+	if kit.verts.size() > 0:
+		s.tail_mesh = _shifted(kit.commit(material), -tail_root)
+		s.tail_pivot = tail_root
+	kit = body_kit
 	s.body_mesh = kit.commit(material)
 
 	# --- Head & neck: a tapering lofted neck rising from the chest, a lofted skull-to-nose head ---
@@ -629,6 +637,20 @@ func _make_quadruped(rng: RandomNumberGenerator, arch: String, home := -1, look 
 
 
 ## A tapered limb/neck segment between two points (joint spheres keep it smooth).
+## The same mesh moved by `offset` (a part built in the body's space, re-centred on its own pivot).
+static func _shifted(mesh: ArrayMesh, offset: Vector3) -> ArrayMesh:
+	var out := ArrayMesh.new()
+	for si in mesh.get_surface_count():
+		var arrays := mesh.surface_get_arrays(si)
+		var v: PackedVector3Array = arrays[Mesh.ARRAY_VERTEX]
+		for i in v.size():
+			v[i] += offset
+		arrays[Mesh.ARRAY_VERTEX] = v
+		out.add_surface_from_arrays(Mesh.PRIMITIVE_TRIANGLES, arrays)
+		out.surface_set_material(si, mesh.surface_get_material(si))
+	return out
+
+
 func _segment(kit: MeshKit, a: Vector3, b: Vector3, ra: float, rb: float, col: Color, color_fn: Callable) -> void:
 	var d := b - a
 	var length := d.length()

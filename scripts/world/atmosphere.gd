@@ -114,11 +114,30 @@ func apply_palette() -> void:
 	_apply_time(true)
 
 
+var _humid := 0.0         ## how deep in the jungle the camera is (0..1), eased
+var _humid_cd := 0.0
+
+
 func _process(delta: float) -> void:
 	_update_cd -= delta
 	if _update_cd <= 0.0:
 		_update_cd = 0.05   # 20 times a second is plenty for a slow sun
 		_apply_time()
+	# In the jungle the air is thick and damp: the haze closes in, green-grey. (Looked up twice a second, eased.)
+	_humid_cd -= delta
+	if _humid_cd <= 0.0 and Game.world_gen:
+		_humid_cd = 0.5
+		var cam := get_viewport().get_camera_3d()
+		var want := 0.0
+		if cam and not Game.in_cave:
+			var p := cam.global_position
+			var w := Game.world_gen.biome_weights_at(p.x, p.z, p.y)
+			want = smoothstep(0.25, 0.7, float(w.get(WorldGen.Biome.JUNGLE, 0.0)) + float(w.get(WorldGen.Biome.MARSH, 0.0)) * 0.5)
+		set_meta("humid_want", want)
+	_humid = move_toward(_humid, float(get_meta("humid_want", 0.0)), delta * 0.25)
+	var far := Settings.view_radius() * Game.CHUNK_SIZE
+	environment.fog_depth_begin = lerpf(far * 0.42, 14.0, _humid)
+	environment.fog_depth_end = lerpf(far * 0.95, far * 0.6, _humid)
 
 
 ## 0..1 values describing the light right now.
@@ -158,7 +177,7 @@ func _apply_time(_force := false) -> void:
 	sky_material.set_shader_parameter("sunset", golden)
 	sky_material.set_shader_parameter("sun_dir", sun_dir)
 	sky_material.set_shader_parameter("moon_dir", moon_dir)
-	environment.fog_light_color = horizon.lerp(top, 0.3 * (1.0 - day))
+	environment.fog_light_color = horizon.lerp(top, 0.3 * (1.0 - day)).lerp(Color(0.62, 0.72, 0.6) * lerpf(0.25, 1.0, day), _humid * 0.6)
 	environment.ambient_light_sky_contribution = lerpf(SKY_AMBIENT_NIGHT, SKY_AMBIENT_DAY, day)
 	environment.fog_sun_scatter = 0.35 + golden * 0.4
 	environment.adjustment_saturation = lerpf(0.55, 1.1, day)

@@ -1078,7 +1078,7 @@ func _send_animals() -> void:
 				continue
 			if a.global_position.distance_to(center) > ANIMAL_RANGE:
 				continue
-			out.append([a.net_id, a.species_index, a.global_position, a.rotation.y, int(a.state), a.dead])
+			out.append([a.net_id, a.species_index, a.global_position, a.rotation.y, int(a.state), a.dead, a.young])
 		# In batches small enough for one packet: a herd in one went over the MTU, and over the internet a
 		# split unreliable packet is lost whole if any piece is.
 		for i in range(0, out.size(), ANIMALS_PER_PACKET):

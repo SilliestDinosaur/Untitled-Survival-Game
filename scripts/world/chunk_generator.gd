@@ -252,12 +252,19 @@ static func _place_resources(coord: Vector2i, origin: Vector3, gen: WorldGen, fl
 			"hp": FloraLibrary.KINDS[kind].hp,
 		})
 
+	# The landmarks reaching into this chunk: no trees on their ground (a giant tree's clearing, a meadow, the stones).
+	var marks: Array = []
+	for lm: Dictionary in gen.landmarks:
+		var lp: Vector3 = lm.pos
+		if lp.x > origin.x - 30.0 and lp.x < origin.x + size + 30.0 and lp.z > origin.z - 30.0 and lp.z < origin.z + size + 30.0:
+			marks.append(lm)
+
 	# Every attempt draws the same number of random values, whether it succeeds or not,
 	# so placement is identical on every machine. (Ids are numbered in a fixed order too.)
 	for i in TREE_ATTEMPTS:
 		var a := _attempt(rng, origin, size)
 		var h := gen.get_height(a.x, a.z)
-		if h < 2.6 or gen.near_river(a.x, a.z) or h > 60.0:
+		if h < 2.6 or gen.near_river(a.x, a.z) or h > 60.0 or (not marks.is_empty() and not Landmarks.at(marks, a.x, a.z).is_empty()):
 			counter[0] += 1
 			continue
 		var nrm := gen.get_normal(a.x, a.z)
@@ -393,6 +400,16 @@ static func _place_resources(coord: Vector2i, origin: Vector3, gen: WorldGen, fl
 		if out.size() > before:
 			out[-1].transform = Transform3D(face.basis, face.top)
 	_place_cave_resources(coord, origin, gen, flora, removed, out)
+	# A landmark's giant tree: an old tree of the country round it, two and a half times the size, in its clearing.
+	for lm: Dictionary in marks:
+		var lp: Vector3 = lm.pos
+		if lm.kind != "giant_tree" or lp.x < origin.x or lp.x >= origin.x + size or lp.z < origin.z or lp.z >= origin.z + size:
+			continue
+		var gb := gen.get_biome(lp.x, lp.z)
+		var gk: String = {Biome.JUNGLE: "jungle_tree", Biome.DRYLANDS: "acacia", Biome.AUTUMN: "autumn_oak"}.get(gb, "oak")
+		var gs := 2.8 + float(absi(int(lm.seed)) % 5) * 0.12
+		add.call(gk, int(lm.seed), Vector3(lp.x, _ground_under(gen, lp.x, lp.z, 1.6) - 0.3, lp.z), float(lm.yaw), Vector3.ONE * gs)
+
 	return out
 
 
@@ -618,7 +635,12 @@ static func _place_ground_cover(coord: Vector2i, origin: Vector3, gen: WorldGen,
 		var shade := rng.randf_range(0.85, 1.1)
 		_append_instance(buffers, fern_keys[variant % fern_keys.size()], t, Color(shade, shade, shade))
 
-	for i in int(FLOWER_ATTEMPTS * density):
+	var meadow_here := false   # a flower glade reaches this chunk: more tries at flowers, most of them in the glade
+	for lm: Dictionary in gen.landmarks:
+		var lp: Vector3 = lm.pos
+		if lm.kind == "meadow" and lp.x > origin.x - 25.0 and lp.x < origin.x + size + 25.0 and lp.z > origin.z - 25.0 and lp.z < origin.z + size + 25.0:
+			meadow_here = true
+	for i in int(FLOWER_ATTEMPTS * density * (4.0 if meadow_here else 1.0)):
 		var lx := rng.randf() * size
 		var lz := rng.randf() * size
 		var keep := rng.randf()
@@ -630,9 +652,10 @@ static func _place_ground_cover(coord: Vector2i, origin: Vector3, gen: WorldGen,
 		if h < 2.2 or gen.near_river(wx, wz) or h > 58.0:
 			continue
 		var w := gen.biome_weights_at(wx, wz, h)
-		# Flowers in meadows and autumn groves, plus alpine flowers on high gentle slopes.
+		# Flowers in meadows and autumn groves, plus alpine flowers on high gentle slopes, and thick in a glade.
 		var alpine := smoothstep(40.0, 55.0, h) * 0.5
-		if keep > w[Biome.MEADOW] * 0.7 + w[Biome.AUTUMN] * 0.2 + alpine or gen.get_normal(wx, wz).y < 0.85:
+		var glade := 1.5 if meadow_here and not Landmarks.at(gen.landmarks, wx, wz).is_empty() else 0.0
+		if keep > w[Biome.MEADOW] * 0.7 + w[Biome.AUTUMN] * 0.2 + alpine + glade or gen.get_normal(wx, wz).y < 0.85:
 			continue
 		# Flowers of one color grow in patches.
 		var patch := int(floor(wx / 9.0) * 7.0 + floor(wz / 9.0) * 13.0)

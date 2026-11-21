@@ -31,9 +31,11 @@ var _orbit := 0.0
 var _ambience_timer := 0.0
 var _cave_sound_cd := 3.0
 var _river_level := 0.0
+var _jungle_level := 0.0
 var _ocean_level := 0.0
 var _autosave := AUTOSAVE_SECONDS
 var _cave_features: CaveFeatures
+var _landmarks: LandmarkModels
 var _cave_check := 0.0            ## counts down to the next look at whether the player is underground
 var _map: WorldMap
 var _reveal_timer := 0.0          ## counts down to the next uncovering of the map around the player
@@ -217,6 +219,13 @@ func _build_cave_features() -> void:
 	_cave_features.name = "CaveFeatures"
 	add_child(_cave_features)
 	_cave_features.build(Game.world_gen.caves)
+	if _landmarks:
+		remove_child(_landmarks)
+		_landmarks.queue_free()
+	_landmarks = LandmarkModels.new()
+	_landmarks.name = "Landmarks"
+	add_child(_landmarks)
+	_landmarks.build(Game.world_gen.landmarks)
 
 
 ## Whether the player is inside a cave tunnel right now (sets Game.in_cave for the sky, music and
@@ -504,6 +513,9 @@ func _update_ambience(delta: float) -> void:
 			if Game.world_gen.get_height(p.x + cos(a) * 45.0, p.z + sin(a) * 45.0) < 0.0:
 				water += 1
 		_ocean_level = clampf(water / 4.0, 0.0, 1.0) * clampf(1.0 - p.y / 50.0, 0.1, 1.0)
+		# The jungle's insects and birds, by how much jungle is round you (louder at dusk and night, the insects).
+		var jw := Game.world_gen.biome_weights_at(p.x, p.z, p.y)
+		_jungle_level = smoothstep(0.2, 0.65, float(jw.get(WorldGen.Biome.JUNGLE, 0.0))) * lerpf(1.25, 0.8, Game.daylight())
 		# A river or stream babbling nearby: louder the closer you are.
 		var hit := Rivers.nearest_water(Game.world_gen.rivers, p.x, p.z, 16.0)
 		_river_level = 0.0 if hit.is_empty() else (1.0 - smoothstep(0.0, 16.0, maxf(float(hit.past), 0.0))) * (1.0 if hit.big else 0.6) \
@@ -521,4 +533,4 @@ func _update_ambience(delta: float) -> void:
 				Audio.play_3d("rumble", where, -6.0, randf_range(0.7, 1.0))
 			else:
 				Audio.play_3d("drip", where, -12.0, randf_range(0.85, 1.2))
-	Audio.set_ambience(wind, _ocean_level, delta, cave, _river_level)
+	Audio.set_ambience(wind, _ocean_level, delta, cave, _river_level, _jungle_level)

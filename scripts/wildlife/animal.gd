@@ -7,7 +7,7 @@ extends Node3D
 
 signal removed(animal: Animal)
 
-enum State { IDLE, GRAZE, WANDER, ALERT, FLEE, WARN, ATTACK, DEAD, HUNT, EAT, TREE }
+enum State { IDLE, GRAZE, WANDER, ALERT, FLEE, WARN, ATTACK, DEAD, HUNT, EAT, TREE, REST, DRINK }
 
 var species: FaunaLibrary.Species
 var hp := 10.0
@@ -59,6 +59,14 @@ var _hunger := 0.0              ## seconds until a predator feels like hunting
 # Serpents: their body follows the head's trail.
 var _segs: Array[Node3D] = []
 var _gait_rot := Vector2.ZERO   ## the body-type sway (pitch, roll) added this frame, taken off again before the next
+var _tail: Node3D
+var _tail_t := 0.0
+var _swish := 0.0               ## a quick flick of the tail (at flies), easing away
+var _fidget := 0.0              ## a head shake, easing away
+var _fidget_cd := 0.0
+var _rest := 0.0                ## 0 standing .. 1 lying down (eased)
+var _asleep := false
+var young := false              ## a young one: small, keeps close to its mother (the herd's leader)
 var _reach: PackedFloat32Array = []   ## each leg's stretch to meet the ground under its foot (1 = its own length)
 var _reach_cd := 0.0
 var _trail: Array[Vector3] = []
@@ -70,7 +78,7 @@ var _tree_res := {}             ## the tree it's in (it drops down if the tree i
 var _found_res := {}
 var _hop_from := Vector3.ZERO
 var _hop_t := 0.0
-const TREE_TOPS := {"jungle_tree": 8.5, "oak": 5.0, "autumn_oak": 5.0, "birch": 6.0, "willow": 4.5, "acacia": 4.5, "palm": 6.5, "pine": 6.0, "fir": 7.0}
+const TREE_TOPS := {"kapok": 20.0, "jungle_tree": 8.5, "oak": 5.0, "autumn_oak": 5.0, "birch": 6.0, "willow": 4.5, "acacia": 4.5, "palm": 6.5, "pine": 6.0, "fir": 7.0}
 var _cave := false
 const LAIR_LEASH := 14.0
 
@@ -98,6 +106,11 @@ func setup(sp: FaunaLibrary.Species, pos: Vector3, p: Node3D) -> void:
 	_head.position = sp.head_pivot
 	_head.add_child(_mesh(sp.head_mesh))
 	_body.add_child(_head)
+	if sp.tail_mesh:
+		_tail = Node3D.new()
+		_tail.position = sp.tail_pivot
+		_tail.add_child(_mesh(sp.tail_mesh))
+		_body.add_child(_tail)
 	for off in sp.leg_offsets:
 		var leg := Node3D.new()
 		leg.position = off
@@ -157,8 +170,10 @@ func _mesh(m: Mesh) -> MeshInstance3D:
 
 
 func _enter(s: State) -> void:
-	if s in [State.ALERT, State.FLEE] and state in [State.IDLE, State.GRAZE, State.WANDER]:
+	if s in [State.ALERT, State.FLEE] and state in [State.IDLE, State.GRAZE, State.WANDER, State.REST, State.DRINK]:
 		_startle = 1.0   # it jumps
+	if s != State.REST:
+		_asleep = false
 	state = s
 	if s == State.ATTACK:
 		Music.combat_ping(1.0)
@@ -189,6 +204,10 @@ func _enter(s: State) -> void:
 			_timer = _rng.randf_range(12.0, 20.0)
 		State.TREE:
 			_timer = _rng.randf_range(20.0, 50.0)
+		State.REST:
+			_timer = _rng.randf_range(25.0, 60.0) if _asleep else _rng.randf_range(10.0, 25.0)
+		State.DRINK:
+			_timer = 25.0   # (to get to the water; the drink itself is timed when it arrives)
 	# Climbers run for a tree when frightened.
 	if s == State.FLEE and species.climbs and not in_tree:
 		_try_climb.call_deferred()
@@ -197,7 +216,8 @@ func _enter(s: State) -> void:
 func _pick_wander_target() -> void:
 	# Herd members drift toward their leader instead of wandering off alone.
 	if is_instance_valid(leader) and not leader.dead:
-		_target = leader.position + Vector3(_rng.randf_range(-5, 5), 0, _rng.randf_range(-5, 5))
+		var spread := 2.0 if young else 5.0   # the young keep close by their mother
+		_target = leader.position + Vector3(_rng.randf_range(-spread, spread), 0, _rng.randf_range(-spread, spread))
 		return
 	if _cave:   # pace about the lair
 		for i in 6:
@@ -289,13 +309,25 @@ func _physics_process(delta: float) -> void:
 	var want_speed := 0.0
 	var graze := 0.0
 	var alert := 0.0
+	# A young one that has fallen behind its mother hurries after her.
+	var behind := 0.0
+	if young and is_instance_valid(leader) and not leader.dead:
+		behind = Vector2(leader.position.x - position.x, leader.position.z - position.z).length()
+		if behind > 7.0 and state in [State.IDLE, State.GRAZE, State.REST, State.DRINK]:
+			_enter(State.WANDER)
 	match state:
 		State.IDLE, State.GRAZE:
 			graze = 1.0 if state == State.GRAZE else 0.0
 			if _timer <= 0.0:
 				if not _maybe_hunt():
+					var sleepy := _sleepy() or (young and is_instance_valid(leader) and leader.state == State.REST)
 					if species.climbs and _rng.randf() < 0.3:
 						_try_climb()
+					elif _can_lie() and _rng.randf() < (0.75 if sleepy else 0.12):
+						_asleep = sleepy
+						_enter(State.REST)
+					elif not sleepy and _rng.randf() < 0.1 and _find_water():
+						_enter(State.DRINK)
 					else:
 						_enter(State.WANDER if _rng.randf() < 0.65 else (State.GRAZE if state == State.IDLE else State.IDLE))
 		State.HUNT:
@@ -334,6 +366,28 @@ func _physics_process(delta: float) -> void:
 				_prey = null
 				_hunger = _rng.randf_range(150.0, 320.0)
 				_enter(State.WANDER)
+		State.REST:
+			# Lying down: up again when it's had its rest (or, asleep, when the night's over).
+			if _timer <= 0.0:
+				if _asleep and _sleepy():
+					_timer = _rng.randf_range(20.0, 40.0)
+				else:
+					_asleep = false
+					_enter(State.IDLE)
+		State.DRINK:
+			var d := _target - position
+			d.y = 0.0
+			if d.length() > 1.0 and _timer > 12.0:
+				want_dir = d.normalized()
+				want_speed = species.walk_speed
+			else:
+				if _timer > 12.0:
+					_timer = _rng.randf_range(5.0, 9.0)   # at the water: head down, drinking
+					var w := _drink_at - position
+					_desired_yaw = atan2(-w.x, -w.z)
+				graze = 1.3
+				if _timer <= 0.0:
+					_enter(State.IDLE)
 		State.WANDER:
 			var d := _target - position
 			d.y = 0.0
@@ -341,7 +395,9 @@ func _physics_process(delta: float) -> void:
 				_enter(State.GRAZE if _rng.randf() < 0.6 else State.IDLE)
 			else:
 				want_dir = d.normalized()
-				want_speed = species.walk_speed
+				want_speed = species.walk_speed * (2.2 if behind > 7.0 else 1.0)
+				if young and behind > 3.0 and is_instance_valid(leader):
+					_target = leader.position   # (she's moving: keep heading for her)
 		State.ALERT:
 			# Stand still, head up, face the player; then decide.
 			alert = 1.0
@@ -406,6 +462,50 @@ func _physics_process(delta: float) -> void:
 			_call()
 
 
+## Makes this one young: two thirds grown (a little bigger-headed would be nice, but scale is what reads), weaker,
+## and it keeps close by its mother.
+func make_young() -> void:
+	young = true
+	scale = Vector3.ONE * 0.6
+	hp *= 0.5
+
+
+## Time for sleep: night for animals of the day, day for animals of the night.
+func _sleepy() -> bool:
+	var night := 1.0 - Game.daylight()
+	match species.active:
+		"day": return night > 0.6
+		"night": return night < 0.3
+	return false
+
+
+## Whether this body can lie down (quadrupeds and the upright ones; snakes, frogs and seals already lie low).
+func _can_lie() -> bool:
+	return not _cave and species.body in ["quad", "upright"] and not species.swims
+
+
+var _drink_at := Vector3.ZERO
+## Water within a short walk (a river, a lake, a pond): heads for the dry bank beside it. False if none near.
+func _find_water() -> bool:
+	if _cave or species.swims:
+		return false
+	var g: WorldGen = Game.world_gen
+	for i in 12:
+		var a := _rng.randf() * TAU
+		var d := _rng.randf_range(8.0, 30.0)
+		var q := position + Vector3(cos(a) * d, 0, sin(a) * d)
+		if g.water_level(q.x, q.z) > g.get_height(q.x, q.z) + 0.2:
+			# Step back toward here until on dry ground: that's where it stands to drink.
+			var back := (position - q).normalized()
+			for k in 12:
+				var b := q + back * (0.6 * k + 0.6)
+				if g.water_level(b.x, b.z) < g.get_height(b.x, b.z) - 0.05 and g.get_normal(b.x, b.z).y > 0.75:
+					_target = b
+					_drink_at = q
+					return true
+	return false
+
+
 ## Decide whether the player is worth reacting to.
 func _perceive(dist: float, sprinting: bool) -> void:
 	if state in [State.FLEE, State.ATTACK, State.DEAD]:
@@ -424,6 +524,8 @@ func _perceive(dist: float, sprinting: bool) -> void:
 	if species.flee_radius <= 0.0:
 		return
 	var radius := species.flee_radius * (1.7 if sprinting else 1.0)
+	if state == State.REST:
+		radius *= 0.6 if _asleep else 0.85   # asleep it notices you late (and then jumps up all the faster)
 	if dist < radius * 0.45:
 		_enter(State.FLEE)   # far too close: bolt immediately
 		_alarm_herd()
@@ -587,6 +689,42 @@ func _animate(delta: float, graze: float, alert: float) -> void:
 	head_pitch += sin(_gait * 2.0) * 0.05 * moving   # nodding with the steps
 	_head.rotation.x = lerpf(_head.rotation.x, head_pitch, 1.0 - exp(-5.0 * delta))
 	_head.rotation.y = _look_yaw
+	# Lying down: the body sinks to the ground, the legs fold under it, the head comes down (to the ground, asleep).
+	_rest = move_toward(_rest, 1.0 if state == State.REST else 0.0, delta * (0.8 if state == State.REST else 2.5))
+	if _rest > 0.001:
+		var lie := smoothstep(0.0, 1.0, _rest)
+		_body.position.y = lerpf(_body.position.y, species.body_h * 0.42, lie)
+		_body.rotation.x = lerpf(_body.rotation.x, 0.0, lie)
+		_body.rotation.z = lerpf(_body.rotation.z, 0.06, lie)
+		for i in _legs.size():
+			var front := _leg_base[i].z < 0.0
+			_legs[i].rotation.x = lerpf(_legs[i].rotation.x, -1.35 if front else 1.45, lie)
+			_legs[i].scale.y = lerpf(_legs[i].scale.y, 0.75, lie)
+		var head_down := deg_to_rad(55.0) if _asleep else deg_to_rad(10.0) + sin(_breath * 0.6) * 0.08
+		_head.rotation.x = lerpf(_head.rotation.x, head_down, lie)
+		_body.position.y += sin(_breath * 0.7) * 0.012 * species.size * lie   # slow deep breaths
+	# The tail: hangs and sways a little with the gait, lifts at a run, swishes lazily when still, now and then a
+	# sharp flick (flies); and a shake of the head from time to time.
+	_fidget_cd -= delta
+	if _fidget_cd <= 0.0 and moving < 0.3 and state in [State.IDLE, State.GRAZE, State.REST]:
+		_fidget_cd = _rng.randf_range(3.0, 9.0)
+		if _rng.randf() < 0.6:
+			_swish = 1.0
+		elif not _asleep:
+			_fidget = 1.0
+	_swish = move_toward(_swish, 0.0, delta * 1.6)
+	_fidget = move_toward(_fidget, 0.0, delta * 2.2)
+	if _fidget > 0.0:
+		_head.rotation.z = sin(_fidget * TAU * 2.0) * 0.25 * _fidget
+	else:
+		_head.rotation.z = lerpf(_head.rotation.z, 0.0, 1.0 - exp(-8.0 * delta))
+	if _tail:
+		_tail_t += delta
+		var lazy := sin(_tail_t * 1.3 + _breath) * 0.18 * (1.0 - moving)
+		var flick := sin(_swish * TAU * 2.5) * 0.9 * _swish
+		var trot := sin(_gait) * 0.12 * moving
+		_tail.rotation.y = lazy + flick + trot
+		_tail.rotation.x = lerpf(_tail.rotation.x, -0.45 * stride - (0.35 if alert > 0.5 else 0.0), 1.0 - exp(-4.0 * delta))
 	# How each body type moves.
 	match species.body:
 		"serpent":
@@ -613,7 +751,7 @@ func _animate(delta: float, graze: float, alert: float) -> void:
 ## stretches or shortens to the ground below it, instead of the downhill feet hanging in the air and the uphill ones
 ## sinking in. Worked out a few times a second (the ground doesn't change fast), eased in between.
 func _leg_reach(delta: float) -> void:
-	if _legs.is_empty() or _cave or species.leg_len < 0.05 or not species.body in ["quad", "upright"]:
+	if _legs.is_empty() or _cave or species.leg_len < 0.05 or not species.body in ["quad", "upright"] or _rest > 0.01:
 		return
 	if _reach.size() != _legs.size():
 		_reach.resize(_legs.size())
@@ -631,7 +769,7 @@ func _leg_reach(delta: float) -> void:
 				continue
 			var foot := _body.global_transform * (_leg_base[i] + Vector3(0, -ll, 0))
 			var gap := foot.y - g.get_height(foot.x, foot.z)   # + in the air, - under the ground
-			_reach[i] = clampf(1.0 + gap / ll, 0.7, 1.45)
+			_reach[i] = clampf(1.0 + gap / (ll * scale.y), 0.7, 1.45)
 	var k := 1.0 - exp(-10.0 * delta)
 	for i in _legs.size():
 		_legs[i].scale.y = lerpf(_legs[i].scale.y, _reach[i], k)

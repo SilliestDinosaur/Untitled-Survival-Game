@@ -78,7 +78,9 @@ func _find_clear_cell() -> Vector3:
 		cand.x = floorf(cand.x / 3.0) * 3.0 + 1.5
 		cand.z = floorf(cand.z / 3.0) * 3.0 + 1.5
 		cand.y = _game.world_gen.get_height(cand.x, cand.z)
-		if _Terrain.tree_near(cand, 6.0) == null and _game.world_gen.get_height(cand.x, cand.z) > 2.0:
+		if _Terrain.tree_near(cand, 6.0) == null and _game.world_gen.get_height(cand.x, cand.z) > 2.0 \
+				and not _game.world_gen.near_river(cand.x, cand.z, 8.0) \
+				and _GA.placement_problem(_GA.snap_piece("brick_floor", cand).pos, "brick_floor", 0.0) == "":
 			return cand
 	return spot
 
