@@ -61,24 +61,49 @@ func _scan() -> void:
 			var chunk = world.get_chunk(here + Vector2i(dx, dz))
 			if not chunk:
 				continue
-			for r: Dictionary in chunk.resources:
-				if r.get("removed", false):
-					continue
-				var xf: Transform3D = r.transform
-				if xf.origin.distance_to(position) > 45.0:
-					continue
-				var top: Variant = null
-				if TREE_TOPS.has(r.kind) and Game.flora.has_mesh(r.key):
-					# Out on the crown's lower edge, where a bird on a branch can be seen from below.
-					var bb := _crown(String(r.key))
-					var a := _rng.randf() * TAU
-					top = xf * Vector3(cos(a) * bb.x * 0.4, bb.y * (0.42 if r.kind == "jungle_tree" else 0.7), sin(a) * bb.x * 0.4)
-				elif r.kind == "log":
-					top = xf.origin + xf.basis.y.normalized() * 0.5 * xf.basis.y.length()
-				elif r.kind in ["rock", "boulder"]:
-					top = xf.origin + Vector3(0, 0.85 * xf.basis.y.length(), 0)
-				if top != null:
+			for pr: Array in perches_in(chunk):
+				var top: Vector3 = pr[0]
+				if not (pr[1] as Dictionary).get("removed", false) and top.distance_to(position) < 45.0:   # not a felled tree
 					_perches.append(top)
+	# Anyone sitting where there's no perch any more (the tree was felled) flies off.
+	if _perches.is_empty():
+		return
+	for b in _birds:
+		if b.flying:
+			continue
+		var held := false
+		for p: Vector3 in _perches:
+			if p.distance_to(b.at) < 1.6:
+				held = true
+				break
+		if not held:
+			_take_off(b, _perches[_rng.randi() % _perches.size()], 0.0)
+
+
+## Every place to land in a chunk ([spot, its resource]): the crowns of its trees (out on the lower edge, where a bird on a branch can be
+## seen from below), its fallen logs and rocks. Worked out once per chunk (a chunk that's rebuilt is a new one).
+static var _chunk_perches := {}
+static func perches_in(chunk: Node) -> Array:
+	var id := chunk.get_instance_id()
+	if _chunk_perches.has(id):
+		return _chunk_perches[id]
+	if _chunk_perches.size() > 300:
+		_chunk_perches.clear()
+	var out: Array = []
+	var rng := RandomNumberGenerator.new()
+	rng.seed = id
+	for r: Dictionary in chunk.resources:
+		var xf: Transform3D = r.transform
+		if TREE_TOPS.has(r.kind) and Game.flora.has_mesh(r.key):
+			var bb := _crown(String(r.key))
+			var a := rng.randf() * TAU
+			out.append([xf * Vector3(cos(a) * bb.x * 0.4, bb.y * (0.42 if r.kind == "jungle_tree" else 0.7), sin(a) * bb.x * 0.4), r])
+		elif r.kind == "log":
+			out.append([xf.origin + xf.basis.y.normalized() * 0.5 * xf.basis.y.length(), r])
+		elif r.kind in ["rock", "boulder"]:
+			out.append([xf.origin + Vector3(0, 0.85 * xf.basis.y.length(), 0), r])
+	_chunk_perches[id] = out
+	return out
 
 
 ## A tree model's crown: (width, height), from its mesh (looked up once per model).

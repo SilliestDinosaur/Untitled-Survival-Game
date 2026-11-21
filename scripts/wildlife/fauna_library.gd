@@ -744,8 +744,10 @@ func _make_bird(rng: RandomNumberGenerator) -> Species:
 
 # --- The bigger menagerie -----------------------------------------------------------------------------------------
 
-## Jungle, tundra, river and desert animals, each made for its own biome, and birds that perch or soar. Drawn from
-## their own random numbers, after every other species, so the animals older worlds already have stay as they were.
+## Jungle, tundra, river and desert animals, each made for its own biome, and birds that perch or soar. Each fills a
+## niche (a climber, a stalker, a waddling swimmer, ...) but is made up fresh for every world like the others: its
+## body, colours, markings and name. Drawn from their own random numbers, after every other species, so the animals
+## older worlds already have stay as they were.
 func _more_fauna() -> void:
 	var rng := RandomNumberGenerator.new()
 	rng.seed = hash([Game.world_seed, "more fauna"])
@@ -753,43 +755,50 @@ func _more_fauna() -> void:
 		for b: int in prefs:
 			sp.biome_pref[b] = prefs[b]
 		species.append(sp)
-	# Jungle: monkeys, a big cat, a harmless snake and a venomous one.
-	add.call(_named(_make_quadruped(rng, "monkey", Biome.JUNGLE, {"coat": ["dark", "russet", "stone"][rng.randi() % 3], "patterns": ["none", "saddle"]}), "Monkey"), {})
-	add.call(_named(_make_quadruped(rng, "feline", Biome.JUNGLE, {"coat": "tan" if rng.randf() < 0.6 else "dark", "patterns": ["spots", "stripes"]}), "Jungle cat"), {})
+	var pick := func(list: Array) -> Variant: return list[rng.randi() % list.size()]
+	# Jungle: tree climbers, a big stalker, a harmless serpent and a venomous one.
+	add.call(_labelled(rng, _make_quadruped(rng, "monkey", Biome.JUNGLE, {"coat": pick.call(["dark", "russet", "stone", "tan", "olive"]), "patterns": pick.call([["none"], ["saddle"], ["stripes"], ["none", "saddle"]])}), ["climber", "canopy-leaper", "tree-runner"]), {})
+	add.call(_labelled(rng, _make_quadruped(rng, "feline", Biome.JUNGLE, {"coat": pick.call(["tan", "dark", "russet", "vivid", "stone"]), "patterns": pick.call([["spots"], ["stripes"], ["none"], ["spots", "stripes"]])}), ["stalker", "prowler", "ambusher"]), {})
 	add.call(_make_serpent(rng, false), {Biome.JUNGLE: 1.0, Biome.MARSH: 0.7, Biome.FOREST: 0.4, Biome.MEADOW: 0.3})
 	add.call(_make_serpent(rng, true), {Biome.JUNGLE: 0.7, Biome.DESERT: 0.8, Biome.BADLANDS: 0.8, Biome.DRYLANDS: 0.5})
-	# Tundra: penguins, a fox, seals.
-	add.call(_make_penguin(rng), {Biome.TUNDRA: 1.0, Biome.SNOW: 0.6})
-	add.call(_named(_make_quadruped(rng, "canine", Biome.TUNDRA, {"fur": true}), "Arctic fox"), {Biome.SNOW: 0.6, Biome.TAIGA: 0.4})
-	add.call(_make_seal(rng), {Biome.TUNDRA: 1.0, Biome.SNOW: 0.5, Biome.TAIGA: 0.3})
-	# Rivers and wetlands: frogs, herons, otters.
+	# Tundra: an upright waddling swimmer, a prowler, a big shore lounger.
+	add.call(_make_upright_swimmer(rng), {Biome.TUNDRA: 1.0, Biome.SNOW: 0.6})
+	add.call(_labelled(rng, _make_quadruped(rng, "canine", Biome.TUNDRA, {"fur": true, "coat": pick.call(["snow", "snow", "stone", "dark"]), "patterns": pick.call([["none"], ["saddle"]])}), ["prowler", "snow-hunter", "drift-runner"]), {Biome.SNOW: 0.6, Biome.TAIGA: 0.4})
+	add.call(_make_lounger(rng), {Biome.TUNDRA: 1.0, Biome.SNOW: 0.5, Biome.TAIGA: 0.3})
+	# Rivers and wetlands: croakers, a stilt-legged fisher, a sleek swimmer.
 	add.call(_make_frog(rng), {Biome.MARSH: 1.0, Biome.JUNGLE: 0.6, Biome.FOREST: 0.4, Biome.MEADOW: 0.3})
-	add.call(_named(_make_quadruped(rng, "heron", Biome.MARSH, {"coat": "stone" if rng.randf() < 0.6 else "snow", "patterns": ["saddle", "none"]}), "Heron"), {Biome.MEADOW: 0.3, Biome.FOREST: 0.3})
-	add.call(_named(_make_quadruped(rng, "otter", Biome.MARSH, {"coat": "dark", "patterns": ["none"]}), "Otter"), {Biome.FOREST: 0.5, Biome.TAIGA: 0.5, Biome.MEADOW: 0.3})
-	# Desert and badlands: lizards and a coyote.
-	add.call(_named(_make_quadruped(rng, "lizard", Biome.DESERT, {"coat": "olive" if rng.randf() < 0.5 else "tan", "patterns": ["stripes", "spots"]}), "Lizard"), {Biome.BADLANDS: 0.9, Biome.DRYLANDS: 0.7})
-	add.call(_named(_make_quadruped(rng, "canine", Biome.BADLANDS, {"coat": "tan"}), "Coyote"), {Biome.DESERT: 0.6, Biome.DRYLANDS: 0.8})
-	species[-1].diet = "omni"   # the coyote eats what it finds
-	# Birds: parrots and toucans in the jungle, songbirds in the woods (these land in the trees), vultures over the
-	# dry lands (these soar).
+	add.call(_labelled(rng, _make_quadruped(rng, "heron", Biome.MARSH, {"coat": pick.call(["stone", "snow", "dark", "tan", "olive"]), "patterns": pick.call([["saddle"], ["none"], ["stripes"]])}), ["stilt-walker", "fisher", "reed-stalker"]), {Biome.MEADOW: 0.3, Biome.FOREST: 0.3})
+	add.call(_labelled(rng, _make_quadruped(rng, "otter", Biome.MARSH, {"coat": pick.call(["dark", "russet", "tan", "stone"]), "patterns": pick.call([["none"], ["saddle"], ["spots"]])}), ["swimmer", "river-runner", "slider"]), {Biome.FOREST: 0.5, Biome.TAIGA: 0.5, Biome.MEADOW: 0.3})
+	# Desert and badlands: baskers and a scavenger.
+	add.call(_labelled(rng, _make_quadruped(rng, "lizard", Biome.DESERT, {"coat": pick.call(["olive", "tan", "sand", "rust", "vivid"]), "patterns": pick.call([["stripes"], ["spots"], ["saddle"], ["none"]])}), ["basker", "skitterer", "sand-runner"]), {Biome.BADLANDS: 0.9, Biome.DRYLANDS: 0.7})
+	add.call(_labelled(rng, _make_quadruped(rng, "canine", Biome.BADLANDS, {"coat": pick.call(["tan", "sand", "rust", "stone"]), "patterns": pick.call([["none"], ["saddle"], ["spots"]])}), ["scavenger", "yipper", "skulker"]), {Biome.DESERT: 0.6, Biome.DRYLANDS: 0.8})
+	species[-1].diet = "omni"   # the scavenger eats what it finds
+	# Birds: two kinds that land in the jungle trees, one in the woods, and one that soars over the dry lands.
 	species.append(_make_perch_bird(rng, "parrot"))
 	species.append(_make_perch_bird(rng, "toucan"))
 	species.append(_make_perch_bird(rng, "songbird"))
 	species.append(_make_perch_bird(rng, "vulture"))
 
 
-func _named(sp: Species, label: String) -> Species:
-	sp.label = label
+## "<Home biome> <one of the niche's words>": the label shown under a species' name.
+func _labelled(rng: RandomNumberGenerator, sp: Species, words: Array) -> Species:
+	sp.label = _niche_label(rng, sp.home, words)
 	return sp
 
 
-## A coat for one of the new animals, by its home's scheme (exotic worlds shift it like the others).
-func _coat_for(rng: RandomNumberGenerator, home: int) -> Color:
-	return _biome_coat(rng, String(BIOME_TRAITS.get(home, {}).get("coat", "")))
+func _niche_label(rng: RandomNumberGenerator, home: int, words: Array) -> String:
+	var word: String = words[rng.randi() % words.size()]
+	return ("%s %s" % [WorldGen.BIOME_NAMES[home], word]) if home >= 0 else word.capitalize()
 
 
-## A snake: the head mesh leads, `segs` body segments follow along its trail (see Animal). Venomous ones are bolder
-## coloured, with a broad head, and warn before they bite.
+## A colour from a natural scheme (exotic worlds shift it like the others).
+func _scheme(rng: RandomNumberGenerator, schemes: Array) -> Color:
+	return _biome_coat(rng, String(schemes[rng.randi() % schemes.size()]))
+
+
+## A serpent: the head mesh leads, `segs` body segments follow along its trail (see Animal). Each world's has its own
+## colours, markings (bands, diamonds, stripes, blotches or none), head and length; a venomous one is boldly coloured
+## with a broad head, and warns before it bites.
 func _make_serpent(rng: RandomNumberGenerator, venomous: bool) -> Species:
 	var s := Species.new()
 	s.body = "serpent"
@@ -797,148 +806,178 @@ func _make_serpent(rng: RandomNumberGenerator, venomous: bool) -> Species:
 	s.venom = venomous
 	s.diet = "carn"
 	s.home = Biome.JUNGLE if not venomous else Biome.DESERT
-	s.label = "Viper" if venomous else "Snake"
+	s.label = _niche_label(rng, s.home, ["fang", "venom-coil", "rattler"] if venomous else ["serpent", "slitherer", "grass-coil"])
 	s.id = "serpent_%d" % species.size()
 	s.name = NameGen.species_name(rng, "critter")
-	s.size = rng.randf_range(0.35, 0.5) if venomous else rng.randf_range(0.3, 0.45)
+	s.size = rng.randf_range(0.35, 0.55) if venomous else rng.randf_range(0.28, 0.5)
 	var size := s.size
 	s.hp = 14.0 if venomous else 8.0
-	s.walk_speed = 0.7
-	s.run_speed = 2.6
-	s.flee_radius = 0.0 if venomous else 5.0
+	s.walk_speed = rng.randf_range(0.55, 0.85)
+	s.run_speed = rng.randf_range(2.2, 3.2)
+	s.flee_radius = 0.0 if venomous else rng.randf_range(4.0, 6.5)
 	s.temperament = "wary"
 	s.damage = rng.randf_range(6.0, 9.0) if venomous else 0.0
 	s.herd = Vector2i(1, 1)
 	s.yield_scale = 0.25
 	s.leg_len = 0.0
-	s.body_h = size * 0.2
-	s.body_w = size * 0.2
+	var girth := rng.randf_range(0.09, 0.13)
+	s.body_h = size * girth * 1.8
+	s.body_w = s.body_h
 	s.body_len = size * 0.4
-	s.segs = 12
-	var base: Color = Color.from_hsv(rng.randf_range(0.2, 0.35), rng.randf_range(0.4, 0.6), rng.randf_range(0.35, 0.5))
-	var mark: Color = base.darkened(0.45)
-	if venomous:
-		base = Color.from_hsv(rng.randf_range(0.05, 0.12), rng.randf_range(0.45, 0.65), rng.randf_range(0.55, 0.7))
-		mark = Color(0.12, 0.1, 0.08)
-	if _pal.exotic:
-		base = Color.from_hsv(fposmod(base.h + _exotic_shift, 1.0), base.s, base.v)
-	var r := size * 0.11
-	# One segment: a short fat capsule along -z with a band of markings (diamonds on a viper).
+	s.segs = rng.randi_range(10, 14)
+	var base: Color = _scheme(rng, ["olive", "dark", "tan", "stone", "sand"])
+	var mark: Color = base.darkened(rng.randf_range(0.35, 0.6))
+	if venomous:   # warning colours
+		base = Color.from_hsv(rng.randf_range(0.0, 0.16) if rng.randf() < 0.7 else rng.randf_range(0.25, 0.4), rng.randf_range(0.5, 0.75), rng.randf_range(0.55, 0.8))
+		mark = [Color(0.1, 0.08, 0.07), Color(0.95, 0.9, 0.75), base.darkened(0.6)][rng.randi() % 3]
+		if _pal.exotic:
+			base = Color.from_hsv(fposmod(base.h + _exotic_shift, 1.0), base.s, base.v)
+	var belly := base.lightened(rng.randf_range(0.25, 0.45))
+	var pattern: String = ["bands", "diamonds", "stripe", "blotch", "plain"][rng.randi() % 5]
+	if venomous and pattern == "plain":
+		pattern = "bands"
+	var band_w := rng.randf_range(0.15, 0.3)
+	var r := size * girth
+	# One segment: a short fat capsule along -z, its marking on top.
 	var kit := MeshKit.new(rng.randi())
 	kit.loft([Vector3(0, 0, r * 1.6), Vector3(0, 0, 0), Vector3(0, 0, -r * 1.6)], [r * 0.95, r, r * 0.95], 10, base,
 		func(t: float, a: float) -> Color:
-			var top := cos(a) < -0.3
-			if not top:
-				return base.lightened(0.35)   # pale belly
-			if venomous:
-				return mark if absf(t - 0.5) < 0.22 and absf(sin(a)) < 0.6 else base
-			return mark if t < 0.25 else base,
+			if cos(a) > -0.3:
+				return belly
+			match pattern:
+				"bands": return mark if t < band_w else base
+				"diamonds": return mark if absf(t - 0.5) + absf(sin(a)) * 0.35 < 0.3 else base
+				"stripe": return mark if absf(sin(a)) < 0.25 else base
+				"blotch": return mark if absf(t - 0.5) < 0.25 and absf(sin(a)) < 0.7 else base
+			return base,
 		func(_t: float, _a: float) -> Vector2: return Vector2(1.0, 0.75), true, true)
 	s.seg_mesh = kit.commit(material)
 	# The head: wedge-shaped, flat, eyes on the sides, a flicking tongue.
 	kit = MeshKit.new(rng.randi())
-	var hw := r * (1.6 if venomous else 1.2)
-	kit.loft([Vector3(0, 0, r * 0.8), Vector3(0, r * 0.15, -r * 0.6), Vector3(0, r * 0.1, -r * 1.9), Vector3(0, 0, -r * 2.6)], [r * 0.9, hw * 0.8, hw * 0.6, r * 0.25], 10, base,
-		func(t: float, a: float) -> Color: return base.lightened(0.3) if cos(a) > 0.3 else base,
+	var hw := r * (rng.randf_range(1.5, 1.8) if venomous else rng.randf_range(1.05, 1.35))
+	var snout := rng.randf_range(2.2, 3.0)
+	kit.loft([Vector3(0, 0, r * 0.8), Vector3(0, r * 0.15, -r * 0.6), Vector3(0, r * 0.1, -r * snout * 0.72), Vector3(0, 0, -r * snout)], [r * 0.9, hw * 0.8, hw * 0.6, r * 0.25], 10, base,
+		func(t: float, a: float) -> Color: return belly if cos(a) > 0.3 else base,
 		func(_t: float, _a: float) -> Vector2: return Vector2(1.0, 0.6), true, true)
+	var eye := Color.from_hsv(rng.randf_range(0.08, 0.18), 0.8, 0.85) if venomous or rng.randf() < 0.3 else Color(0.08, 0.06, 0.05)
 	for side in [-1.0, 1.0]:
-		kit.add_primitive(MeshKit.sphere(r * 0.22, 7, 5), Transform3D(Basis(), Vector3(side * hw * 0.5, r * 0.25, -r * 1.4)), Color(0.9, 0.75, 0.2) if venomous else Color(0.08, 0.06, 0.05), 0.0, 0.0)
-	kit.loft([Vector3(0, -r * 0.1, -r * 2.5), Vector3(0, -r * 0.12, -r * 3.4)], [r * 0.05, r * 0.03], 4, Color(0.75, 0.15, 0.2))   # tongue
+		kit.add_primitive(MeshKit.sphere(r * 0.22, 7, 5), Transform3D(Basis(), Vector3(side * hw * 0.5, r * 0.25, -r * snout * 0.54)), eye, 0.0, 0.0)
+	kit.loft([Vector3(0, -r * 0.1, -r * (snout - 0.1)), Vector3(0, -r * 0.12, -r * (snout + 0.8))], [r * 0.05, r * 0.03], 4, Color(0.75, 0.15, 0.2))   # tongue
 	s.body_mesh = kit.commit(material)   # the body node carries the head; its segments follow behind
 	s.head_mesh = null
 	s.call_sound = SoundGen.creature_call("hiss", size, rng)
 	return s
 
 
-## A penguin: an upright black-and-white body, flippers, a short orange-tipped bill, little feet. Waddles on land,
-## slides on its belly when it's in a hurry, and swims.
-func _make_penguin(rng: RandomNumberGenerator) -> Species:
+## An upright swimmer of the cold shores: stands on short legs, flippers for wings, waddles on land, slides on its
+## belly in a hurry, and swims. Each world's has its own build, coat, front, bill and head trimmings.
+func _make_upright_swimmer(rng: RandomNumberGenerator) -> Species:
 	var s := Species.new()
 	s.body = "upright"
 	s.role = "grazer"
 	s.home = Biome.TUNDRA
-	s.label = "Penguin"
+	s.label = _niche_label(rng, s.home, ["waddler", "diver", "shore-strutter", "ice-slider"])
 	s.id = "penguin_%d" % species.size()
 	s.name = NameGen.species_name(rng, "grazer")
-	s.size = rng.randf_range(0.55, 0.8)
+	s.size = rng.randf_range(0.45, 1.0)
 	var size := s.size
-	s.hp = 18.0
-	s.walk_speed = 0.7
-	s.run_speed = 3.2
-	s.flee_radius = 8.0
-	s.temperament = "curious"
-	s.herd = Vector2i(3, 7)
-	s.yield_scale = 0.6
+	s.hp = 14.0 + size * 10.0
+	s.walk_speed = rng.randf_range(0.55, 0.85)
+	s.run_speed = rng.randf_range(2.6, 3.6)
+	s.flee_radius = rng.randf_range(6.0, 10.0)
+	s.temperament = ["curious", "wary", "calm"][rng.randi() % 3]
+	s.herd = Vector2i(3, rng.randi_range(5, 9))
+	s.yield_scale = 0.6 * size
 	s.diet = "carn"
 	s.swims = true
 	s.habitat = "water"
-	s.leg_len = size * 0.12
-	s.body_h = size * 0.8
-	s.body_w = size * 0.42
-	s.body_len = size * 0.4
-	var back := Color(0.1, 0.11, 0.14).lerp(Color(0.25, 0.3, 0.38), rng.randf() * 0.5)
-	var front := Color(0.94, 0.94, 0.92)
-	var dash := Color(0.98, 0.7, 0.2).lerp(Color(0.95, 0.45, 0.2), rng.randf())
+	s.leg_len = size * rng.randf_range(0.09, 0.15)
+	s.body_h = size * rng.randf_range(0.65, 0.95)
+	s.body_w = size * rng.randf_range(0.35, 0.55)
+	s.body_len = s.body_w
+	var back := _scheme(rng, ["dark", "dark", "stone", "cave", "russet", "olive"])
+	var front := back.lightened(rng.randf_range(0.6, 0.9)) if rng.randf() < 0.4 else Color.from_hsv(rng.randf_range(0.08, 0.15), rng.randf_range(0.0, 0.25), rng.randf_range(0.85, 0.97))
+	var front_style: String = ["full", "full", "bib", "plain"][rng.randi() % 4]
+	var bill_col: Color = [Color(0.13, 0.12, 0.12), Color(0.95, 0.6, 0.15), Color(0.9, 0.8, 0.2), Color(0.8, 0.3, 0.2)][rng.randi() % 4]
+	var accent := Color.from_hsv(rng.randf(), rng.randf_range(0.5, 0.85), rng.randf_range(0.7, 0.95))
+	if _pal.exotic:
+		accent = Color.from_hsv(fposmod(accent.h + _exotic_shift, 1.0), accent.s, accent.v)
 	var kit := MeshKit.new(rng.randi())
 	var H := s.body_h
-	# The body stands up: a fat teardrop from the feet to the shoulders, white in front.
+	var W := s.body_w
+	var plump := rng.randf_range(0.55, 0.72)
 	var path := [Vector3(0, -H * 0.1, 0), Vector3(0, H * 0.25, 0), Vector3(0, H * 0.55, 0), Vector3(0, H * 0.78, -size * 0.02)]
-	kit.loft(path, [s.body_w * 0.45, s.body_w * 0.62, s.body_w * 0.55, s.body_w * 0.35], 14, back,
-		func(t: float, a: float) -> Color: return front if cos(a + PI) > 0.25 and t < 0.92 else back, Callable(), true, true)
+	kit.loft(path, [W * 0.45, W * plump, W * (plump - 0.07), W * 0.35], 14, back,
+		func(t: float, a: float) -> Color:
+			var facing := cos(a + PI)
+			match front_style:
+				"full": return front if facing > 0.25 and t < 0.92 else back
+				"bib": return front if facing > 0.35 and t > 0.45 and t < 0.92 else back
+			return back.lightened(0.12) if facing > 0.5 else back, Callable(), true, true)
+	var flip := H * rng.randf_range(0.32, 0.5)
 	for side in [-1.0, 1.0]:   # flippers
-		var fb := Basis(Vector3.FORWARD, side * 0.25)
-		kit.add_primitive(MeshKit.sphere(0.5, 8, 5), Transform3D(fb * Basis.from_scale(Vector3(size * 0.05, H * 0.42, size * 0.16)), Vector3(side * s.body_w * 0.6, H * 0.42, 0)), back, 0.0, 0.03)
+		var fb := Basis(Vector3.FORWARD, side * rng.randf_range(0.15, 0.35))
+		kit.add_primitive(MeshKit.sphere(0.5, 8, 5), Transform3D(fb * Basis.from_scale(Vector3(size * 0.05, flip * 2.0, size * 0.16)), Vector3(side * W * 0.6, H * 0.42, 0)), back, 0.0, 0.03)
 	s.body_mesh = kit.commit(material)
 	kit = MeshKit.new(rng.randi())
-	var hr := size * 0.16
+	var hr := size * rng.randf_range(0.13, 0.2)
+	var bill_len := hr * rng.randf_range(0.7, 1.7)
 	kit.add_primitive(MeshKit.sphere(hr, 12, 8), Transform3D(Basis(), Vector3.ZERO), back, 0.0, 0.03)
-	kit.add_primitive(MeshKit.cylinder(0.0, hr * 0.3, hr * 1.1, 6), Transform3D(Basis(Vector3.RIGHT, -PI * 0.5), Vector3(0, -hr * 0.1, -hr * 1.2)), Color(0.15, 0.14, 0.14), 0.0, 0.0)
-	kit.add_primitive(MeshKit.sphere(hr * 0.15, 6, 4), Transform3D(Basis.from_scale(Vector3(1.4, 0.6, 2.0)), Vector3(0, -hr * 0.2, -hr * 0.8)), dash, 0.0, 0.0)
+	kit.add_primitive(MeshKit.cylinder(0.0, hr * rng.randf_range(0.22, 0.34), bill_len, 6), Transform3D(Basis(Vector3.RIGHT, -PI * 0.5 + rng.randf_range(-0.15, 0.2)), Vector3(0, -hr * 0.1, -hr * 0.65 - bill_len * 0.5)), bill_col, 0.0, 0.0)
+	if rng.randf() < 0.6:   # cheek patches
+		for side in [-1.0, 1.0]:
+			kit.add_primitive(MeshKit.sphere(hr * 0.45, 8, 5), Transform3D(Basis.from_scale(Vector3(0.3, 1.0, 1.0)), Vector3(side * hr * 0.72, hr * 0.05, -hr * 0.05)), front if rng.randf() < 0.6 else accent, 0.0, 0.0)
+	if rng.randf() < 0.35:   # a crest of plumes
+		for k in rng.randi_range(3, 5):
+			var a := (k - 2) * 0.3
+			kit.loft([Vector3(sin(a) * hr * 0.4, hr * 0.7, -hr * 0.2), Vector3(sin(a) * hr * 1.1, hr * 1.2, hr * 0.5)], [hr * 0.08, hr * 0.02], 4, accent)
+	var eye := Color(0.05, 0.05, 0.05) if rng.randf() < 0.7 else Color(0.85, 0.2, 0.15)
 	for side in [-1.0, 1.0]:
-		kit.add_primitive(MeshKit.sphere(hr * 0.45, 8, 5), Transform3D(Basis.from_scale(Vector3(0.3, 1.0, 1.0)), Vector3(side * hr * 0.72, hr * 0.05, -hr * 0.05)), front, 0.0, 0.0)   # white cheeks
-		kit.add_primitive(MeshKit.sphere(hr * 0.12, 6, 4), Transform3D(Basis(), Vector3(side * hr * 0.62, hr * 0.25, -hr * 0.55)), Color(0.05, 0.05, 0.05), 0.0, 0.0)
+		kit.add_primitive(MeshKit.sphere(hr * 0.12, 6, 4), Transform3D(Basis(), Vector3(side * hr * 0.62, hr * 0.25, -hr * 0.55)), eye, 0.0, 0.0)
 	s.head_mesh = kit.commit(material)
 	s.head_pivot = Vector3(0, H * 0.88, -size * 0.02)
 	kit = MeshKit.new(rng.randi())
-	kit.loft([Vector3(0, 0, 0), Vector3(0, -s.leg_len, 0)], [size * 0.04, size * 0.035], 6, dash.darkened(0.2))
-	kit.add_primitive(MeshKit.sphere(0.5, 7, 4), Transform3D(Basis.from_scale(Vector3(size * 0.12, size * 0.03, size * 0.18)), Vector3(0, -s.leg_len, -size * 0.05)), dash.darkened(0.2), 0.0, 0.0)
+	var foot: Color = bill_col.darkened(0.2) if rng.randf() < 0.5 else Color(0.85, 0.55, 0.45)
+	kit.loft([Vector3(0, 0, 0), Vector3(0, -s.leg_len, 0)], [size * 0.04, size * 0.035], 6, foot)
+	kit.add_primitive(MeshKit.sphere(0.5, 7, 4), Transform3D(Basis.from_scale(Vector3(size * 0.12, size * 0.03, size * 0.18)), Vector3(0, -s.leg_len, -size * 0.05)), foot, 0.0, 0.0)
 	s.leg_mesh = kit.commit(material)
-	s.leg_offsets = [Vector3(-s.body_w * 0.22, 0.0, 0), Vector3(s.body_w * 0.22, 0.0, 0)]
+	s.leg_offsets = [Vector3(-W * 0.22, 0.0, 0), Vector3(W * 0.22, 0.0, 0)]
 	s.call_sound = SoundGen.creature_call("honk", size, rng)
 	return s
 
 
-## A seal: a long sleek body that humps along on land and glides in the water, fore-flippers and a forked tail.
-func _make_seal(rng: RandomNumberGenerator) -> Species:
+## A big lounger of the cold shores: a long sleek body that humps along on land and glides in the water, fore-flippers
+## and a forked tail. Each world's has its own size, coat, markings, snout, and sometimes tusks.
+func _make_lounger(rng: RandomNumberGenerator) -> Species:
 	var s := Species.new()
 	s.body = "seal"
 	s.role = "grazer"
 	s.home = Biome.TUNDRA
-	s.label = "Seal"
+	s.label = _niche_label(rng, s.home, ["lounger", "flopper", "shore-basker", "blubberback"])
 	s.id = "seal_%d" % species.size()
 	s.name = NameGen.species_name(rng, "grazer")
-	s.size = rng.randf_range(1.0, 1.3)
+	s.size = rng.randf_range(0.8, 1.5)
 	var size := s.size
 	s.hp = 55.0 * size
-	s.walk_speed = 0.5
-	s.run_speed = 1.6
-	s.flee_radius = 7.0
-	s.temperament = "calm"
-	s.herd = Vector2i(1, 4)
+	s.walk_speed = rng.randf_range(0.4, 0.6)
+	s.run_speed = rng.randf_range(1.3, 1.9)
+	s.flee_radius = rng.randf_range(5.0, 9.0)
+	s.temperament = ["calm", "calm", "wary"][rng.randi() % 3]
+	s.herd = Vector2i(1, rng.randi_range(3, 6))
 	s.yield_scale = 1.3 * size
 	s.diet = "carn"
 	s.swims = true
 	s.habitat = "water"
 	s.leg_len = 0.0
-	s.body_h = size * 0.42
-	s.body_w = size * 0.45
-	s.body_len = size * 1.5
-	var coat := Color.from_hsv(rng.randf_range(0.55, 0.65), rng.randf_range(0.05, 0.15), rng.randf_range(0.35, 0.6))
-	if _pal.exotic:
-		coat = Color.from_hsv(fposmod(coat.h + _exotic_shift, 1.0), coat.s + 0.1, coat.v)
+	s.body_h = size * rng.randf_range(0.36, 0.48)
+	s.body_w = size * rng.randf_range(0.4, 0.52)
+	s.body_len = size * rng.randf_range(1.3, 1.7)
+	var coat := _scheme(rng, ["stone", "stone", "dark", "snow", "tan", "cave"])
+	var mark := coat.darkened(rng.randf_range(0.2, 0.4)) if rng.randf() < 0.7 else coat.lightened(0.35)
+	var pattern: String = ["spots", "spots", "saddle", "none"][rng.randi() % 4]
 	var noise := FastNoiseLite.new()
 	noise.seed = rng.randi()
-	noise.frequency = 4.0
+	noise.frequency = rng.randf_range(2.5, 6.0)
 	var kit := MeshKit.new(rng.randi())
 	var L := s.body_len
 	var H := s.body_h
@@ -946,7 +985,10 @@ func _make_seal(rng: RandomNumberGenerator) -> Species:
 	kit.loft(path, [H * 0.12, H * 0.42, H * 0.55, H * 0.5, H * 0.38], 14, coat,
 		func(t: float, a: float) -> Color:
 			var c := coat.lightened(0.25) if cos(a) > 0.4 else coat
-			return c.darkened(0.25) if noise.get_noise_2d(t * 20.0, a * 3.0) > 0.35 else c,
+			match pattern:
+				"spots": return mark if noise.get_noise_2d(t * 20.0, a * 3.0) > 0.35 else c
+				"saddle": return mark if cos(a) < -0.5 and t > 0.25 and t < 0.75 else c
+			return c,
 		func(_t: float, _a: float) -> Vector2: return Vector2(1.15, 0.85), true, true)
 	for side in [-1.0, 1.0]:
 		var fb := Basis(Vector3.UP, side * 0.5) * Basis(Vector3.FORWARD, side * 0.6)
@@ -955,10 +997,14 @@ func _make_seal(rng: RandomNumberGenerator) -> Species:
 		kit.add_primitive(MeshKit.sphere(0.5, 8, 5), Transform3D(tb * Basis.from_scale(Vector3(size * 0.14, size * 0.04, size * 0.26)), Vector3(side * H * 0.12, H * 0.0, L * 0.66)), coat.darkened(0.15), 0.0, 0.03)
 	s.body_mesh = kit.commit(material)
 	kit = MeshKit.new(rng.randi())
-	var hr := H * 0.4
+	var hr := H * rng.randf_range(0.35, 0.45)
+	var snout := rng.randf_range(0.6, 1.2)
 	kit.add_primitive(MeshKit.sphere(hr, 12, 8), Transform3D(Basis.from_scale(Vector3(1.0, 0.95, 1.2)), Vector3.ZERO), coat, 0.0, 0.03)
-	kit.add_primitive(MeshKit.sphere(hr * 0.55, 10, 6), Transform3D(Basis.from_scale(Vector3(1.0, 0.8, 1.0)), Vector3(0, -hr * 0.2, -hr * 0.85)), coat.lightened(0.15), 0.0, 0.03)
-	kit.add_primitive(MeshKit.sphere(hr * 0.14, 6, 4), Transform3D(Basis(), Vector3(0, -hr * 0.05, -hr * 1.3)), Color(0.08, 0.07, 0.07), 0.0, 0.0)
+	kit.add_primitive(MeshKit.sphere(hr * 0.55, 10, 6), Transform3D(Basis.from_scale(Vector3(1.0, 0.8, snout)), Vector3(0, -hr * 0.2, -hr * (0.6 + snout * 0.3))), coat.lightened(0.15), 0.0, 0.03)
+	kit.add_primitive(MeshKit.sphere(hr * 0.14, 6, 4), Transform3D(Basis(), Vector3(0, -hr * 0.05, -hr * (0.9 + snout * 0.45))), Color(0.08, 0.07, 0.07), 0.0, 0.0)
+	if rng.randf() < 0.2:   # tusks
+		for side in [-1.0, 1.0]:
+			kit.add_primitive(MeshKit.cylinder(0.0, hr * 0.08, hr * 1.2, 6), Transform3D(Basis(Vector3.RIGHT, 0.25), Vector3(side * hr * 0.2, -hr * 0.85, -hr * (0.6 + snout * 0.3))), Color(0.92, 0.88, 0.75), 0.0, 0.03)
 	for side in [-1.0, 1.0]:
 		kit.add_primitive(MeshKit.sphere(hr * 0.2, 8, 5), Transform3D(Basis(), Vector3(side * hr * 0.42, hr * 0.25, -hr * 0.75)), Color(0.04, 0.04, 0.05), 0.0, 0.0)
 	s.head_mesh = kit.commit(material)
@@ -968,21 +1014,22 @@ func _make_seal(rng: RandomNumberGenerator) -> Species:
 	return s
 
 
-## A frog: squat, wide-mouthed, big-eyed, folded jumping legs. Hops about by the water and plops away.
+## A croaker: squat, wide-mouthed, big-eyed, folded jumping legs. Hops about by the water and plops away. Each world's
+## has its own skin, markings, eyes and build (now and then a bright warning-coloured one).
 func _make_frog(rng: RandomNumberGenerator) -> Species:
 	var s := Species.new()
 	s.body = "frog"
 	s.role = "small"
 	s.home = Biome.MARSH
-	s.label = "Frog"
+	s.label = _niche_label(rng, s.home, ["croaker", "leaper", "pond-hopper"])
 	s.id = "frog_%d" % species.size()
 	s.name = NameGen.species_name(rng, "critter")
-	s.size = rng.randf_range(0.16, 0.24)
+	s.size = rng.randf_range(0.14, 0.28)
 	var size := s.size
 	s.hp = 4.0
 	s.walk_speed = 0.6
-	s.run_speed = 3.0
-	s.flee_radius = 4.0
+	s.run_speed = rng.randf_range(2.5, 3.5)
+	s.flee_radius = rng.randf_range(3.0, 5.0)
 	s.temperament = "skittish"
 	s.herd = Vector2i(1, 3)
 	s.yield_scale = 0.1
@@ -990,20 +1037,29 @@ func _make_frog(rng: RandomNumberGenerator) -> Species:
 	s.swims = true
 	s.habitat = "water"
 	s.leg_len = size * 0.12
-	s.body_h = size * 0.45
-	s.body_w = size * 0.6
-	s.body_len = size * 0.7
-	var skin := Color.from_hsv(rng.randf_range(0.18, 0.32), rng.randf_range(0.45, 0.7), rng.randf_range(0.4, 0.6))
+	s.body_h = size * rng.randf_range(0.38, 0.52)
+	s.body_w = size * rng.randf_range(0.5, 0.7)
+	s.body_len = size * rng.randf_range(0.6, 0.8)
+	var skin := _scheme(rng, ["olive", "olive", "tan", "dark", "stone"])
 	if rng.randf() < 0.25:
-		skin = Color.from_hsv(rng.randf_range(0.0, 0.1) if rng.randf() < 0.5 else rng.randf_range(0.55, 0.65), 0.8, 0.75)   # a bright poison-dart frog
-	if _pal.exotic:
-		skin = Color.from_hsv(fposmod(skin.h + _exotic_shift, 1.0), skin.s, skin.v)
-	var spot := skin.darkened(0.45)
+		skin = Color.from_hsv(rng.randf(), rng.randf_range(0.7, 0.9), rng.randf_range(0.65, 0.85))   # bright warning colours
+		if _pal.exotic:
+			skin = Color.from_hsv(fposmod(skin.h + _exotic_shift, 1.0), skin.s, skin.v)
+	var spot := skin.darkened(rng.randf_range(0.35, 0.55)) if rng.randf() < 0.7 else Color.from_hsv(rng.randf(), 0.7, 0.2)
+	var pattern: String = ["spots", "stripes", "plain", "marbled"][rng.randi() % 4]
+	var freq := rng.randf_range(45.0, 70.0) / size
 	var kit := MeshKit.new(rng.randi())
 	var H := s.body_h
 	var W := s.body_w
 	kit.add_primitive(MeshKit.sphere(0.5, 12, 8), Transform3D(Basis(Vector3.RIGHT, -0.35).scaled(Vector3(W, H, s.body_len)), Vector3.ZERO), skin, 0.0, 0.03,
-		null, func(p: Vector3) -> Color: return skin.lightened(0.4) if p.y < -H * 0.25 else (spot if sin(p.x * 60.0 / size) * sin(p.z * 55.0 / size) > 0.6 else skin))
+		null, func(p: Vector3) -> Color:
+			if p.y < -H * 0.25:
+				return skin.lightened(0.4)
+			match pattern:
+				"spots": return spot if sin(p.x * freq) * sin(p.z * freq * 0.9) > 0.6 else skin
+				"stripes": return spot if absf(p.x) < W * 0.08 or absf(absf(p.x) - W * 0.3) < W * 0.05 else skin
+				"marbled": return spot if sin(p.x * freq * 0.6 + sin(p.z * freq * 0.5) * 2.0) > 0.5 else skin
+			return skin)
 	for side in [-1.0, 1.0]:
 		# Folded hind legs: thigh and shin tucked along the body's sides.
 		kit.add_primitive(MeshKit.sphere(0.5, 8, 5), Transform3D(Basis(Vector3.UP, side * 0.35).scaled(Vector3(size * 0.16, size * 0.14, size * 0.38)), Vector3(side * W * 0.5, -H * 0.15, s.body_len * 0.2)), skin, 0.0, 0.03)
@@ -1011,11 +1067,13 @@ func _make_frog(rng: RandomNumberGenerator) -> Species:
 	s.body_mesh = kit.commit(material)
 	kit = MeshKit.new(rng.randi())
 	kit.add_primitive(MeshKit.sphere(0.5, 10, 6), Transform3D(Basis.from_scale(Vector3(W * 0.95, H * 0.55, size * 0.4)), Vector3.ZERO), skin, 0.0, 0.03)
+	var iris := Color.from_hsv(rng.randf_range(0.05, 0.18) if rng.randf() < 0.7 else rng.randf(), 0.8, 0.85)
+	var bulge := rng.randf_range(0.08, 0.12)
 	for side in [-1.0, 1.0]:
 		var e := Vector3(side * W * 0.3, H * 0.28, -size * 0.04)
-		kit.add_primitive(MeshKit.sphere(size * 0.1, 8, 6), Transform3D(Basis(), e), skin, 0.0, 0.03)
-		kit.add_primitive(MeshKit.sphere(size * 0.07, 8, 6), Transform3D(Basis(), e + Vector3(side * size * 0.03, size * 0.03, -size * 0.04)), Color(0.85, 0.6, 0.15), 0.0, 0.0)
-		kit.add_primitive(MeshKit.sphere(size * 0.035, 6, 4), Transform3D(Basis(), e + Vector3(side * size * 0.05, size * 0.05, -size * 0.07)), Color(0.04, 0.04, 0.04), 0.0, 0.0)
+		kit.add_primitive(MeshKit.sphere(size * bulge, 8, 6), Transform3D(Basis(), e), skin, 0.0, 0.03)
+		kit.add_primitive(MeshKit.sphere(size * bulge * 0.7, 8, 6), Transform3D(Basis(), e + Vector3(side * size * 0.03, size * 0.03, -size * 0.04)), iris, 0.0, 0.0)
+		kit.add_primitive(MeshKit.sphere(size * bulge * 0.35, 6, 4), Transform3D(Basis(), e + Vector3(side * size * 0.05, size * 0.05, -size * 0.07)), Color(0.04, 0.04, 0.04), 0.0, 0.0)
 	s.head_mesh = kit.commit(material)
 	s.head_pivot = Vector3(0, H * 0.18, -s.body_len * 0.42)
 	kit = MeshKit.new(rng.randi())   # small front legs
@@ -1026,13 +1084,14 @@ func _make_frog(rng: RandomNumberGenerator) -> Species:
 	return s
 
 
-## Birds that land: parrots and toucans in the jungle, songbirds in the woods; and vultures that soar over the dry
-## lands. They share the circling birds' parts (a body and one wing, mirrored).
+## Birds that land (two kinds in the jungle, one in the woods) and one that soars over the dry lands, each made up for
+## the world: colours, bill, crest, tail and wings. `kind` is the niche: parrot (bright, hooked bill), toucan (dark,
+## huge bill), songbird (small, plain), vulture (big, bare-headed, soaring).
 func _make_perch_bird(rng: RandomNumberGenerator, kind: String) -> Species:
 	var s := Species.new()
 	s.role = "bird"
 	s.bird_kind = "soar" if kind == "vulture" else "perch"
-	s.label = {"parrot": "Parrot", "toucan": "Toucan", "songbird": "Songbird", "vulture": "Vulture"}[kind]
+	s.label = {"parrot": "Screecher", "toucan": "Bigbill", "songbird": "Songbird", "vulture": "Soaring carrion bird"}[kind]
 	s.id = "%s_%d" % [kind, species.size()]
 	s.name = NameGen.species_name(rng, "bird")
 	match kind:
@@ -1040,63 +1099,69 @@ func _make_perch_bird(rng: RandomNumberGenerator, kind: String) -> Species:
 		"toucan": s.biome_pref = {Biome.JUNGLE: 0.8}
 		"songbird": s.biome_pref = {Biome.FOREST: 1.0, Biome.AUTUMN: 1.0, Biome.MEADOW: 0.7, Biome.TAIGA: 0.6, Biome.MARSH: 0.5}
 		"vulture": s.biome_pref = {Biome.DESERT: 1.0, Biome.BADLANDS: 1.0, Biome.DRYLANDS: 0.9}
-	s.size = {"parrot": 0.5, "toucan": 0.46, "songbird": 0.18, "vulture": 0.75}[kind] * rng.randf_range(0.9, 1.1)
+	s.size = {"parrot": 0.5, "toucan": 0.46, "songbird": 0.18, "vulture": 0.75}[kind] * rng.randf_range(0.8, 1.2)
 	var size := s.size
 	var main: Color
 	var wing_col: Color
 	var belly: Color
-	var bill: Color = Color(0.25, 0.22, 0.2)
+	var bill: Color
 	match kind:
 		"parrot":
-			main = Color.from_hsv([0.0, 0.33, 0.58, 0.14][rng.randi() % 4], 0.85, 0.85)
-			wing_col = Color.from_hsv(fposmod(main.h + rng.randf_range(0.3, 0.6), 1.0), 0.8, 0.75)
-			belly = Color.from_hsv(fposmod(main.h + 0.12, 1.0), 0.75, 0.9)
-			bill = Color(0.85, 0.82, 0.75)
+			main = Color.from_hsv(rng.randf(), rng.randf_range(0.7, 0.9), rng.randf_range(0.7, 0.9))
+			wing_col = Color.from_hsv(fposmod(main.h + rng.randf_range(0.2, 0.6), 1.0), rng.randf_range(0.6, 0.85), rng.randf_range(0.6, 0.85))
+			belly = Color.from_hsv(fposmod(main.h + rng.randf_range(-0.15, 0.15), 1.0), 0.75, 0.9)
+			bill = [Color(0.85, 0.82, 0.75), Color(0.15, 0.14, 0.14), Color(0.9, 0.6, 0.2)][rng.randi() % 3]
 		"toucan":
-			main = Color(0.07, 0.07, 0.08)
-			wing_col = main
-			belly = Color(0.98, 0.9, 0.55)
-			bill = Color(0.98, 0.55, 0.12)
+			main = _scheme(rng, ["dark", "dark", "cave", "olive"])
+			wing_col = main.darkened(0.1)
+			belly = Color.from_hsv(rng.randf(), rng.randf_range(0.4, 0.8), rng.randf_range(0.8, 0.98))
+			bill = Color.from_hsv(rng.randf_range(0.0, 0.18) if rng.randf() < 0.7 else rng.randf(), rng.randf_range(0.7, 0.9), rng.randf_range(0.8, 0.98))
 		"songbird":
 			main = _coat(rng).lightened(0.1)
-			wing_col = main.darkened(0.3)
-			belly = Color.from_hsv(rng.randf_range(0.0, 0.12), rng.randf_range(0.3, 0.7), 0.9)
+			wing_col = main.darkened(rng.randf_range(0.2, 0.4))
+			belly = Color.from_hsv(rng.randf(), rng.randf_range(0.3, 0.7), 0.9)
 			bill = Color(0.3, 0.25, 0.2)
 		_:
-			main = Color(0.18, 0.15, 0.13)
-			wing_col = Color(0.12, 0.1, 0.09)
+			main = _scheme(rng, ["dark", "dark", "stone", "russet"])
+			wing_col = main.darkened(0.25)
 			belly = main.lightened(0.1)
 			bill = Color(0.85, 0.8, 0.7)
-	if _pal.exotic and kind != "toucan":
+	if _pal.exotic and kind in ["parrot", "songbird"]:
 		main = Color.from_hsv(fposmod(main.h + _exotic_shift, 1.0), main.s, main.v)
 	var kit := MeshKit.new(rng.randi())
 	kit.add_primitive(MeshKit.sphere(0.5, 10, 6), Transform3D(Basis().scaled(Vector3(size * 0.5, size * 0.5, size)), Vector3.ZERO), main, 0.0, 0.05,
 		null, func(p: Vector3) -> Color: return belly if p.y < -size * 0.05 and p.z < size * 0.1 else main)
 	var head_c := Vector3(0, size * 0.22, -size * 0.5)
-	var head_col := Color(0.75, 0.45, 0.42) if kind == "vulture" else main   # a bare head
+	var head_col := main
+	if kind == "vulture":   # a bare head
+		head_col = [Color(0.75, 0.45, 0.42), Color(0.8, 0.25, 0.2), Color(0.6, 0.6, 0.62), Color(0.9, 0.85, 0.8)][rng.randi() % 4]
 	kit.add_primitive(MeshKit.sphere(size * 0.22, 9, 6), Transform3D(Basis(), head_c), head_col, 0.0, 0.05)
 	match kind:
 		"toucan":
-			kit.loft([head_c + Vector3(0, 0, -size * 0.15), head_c + Vector3(0, -size * 0.04, -size * 0.55), head_c + Vector3(0, -size * 0.12, -size * 0.85)], [size * 0.13, size * 0.1, size * 0.03], 8, bill,
-				func(t: float, _a: float) -> Color: return Color(0.1, 0.1, 0.1) if t > 0.9 else bill)
-			kit.add_primitive(MeshKit.sphere(size * 0.11, 7, 5), Transform3D(Basis.from_scale(Vector3(1.3, 1, 0.4)), head_c + Vector3(0, -size * 0.02, size * 0.0)), Color(0.98, 0.92, 0.6), 0.0, 0.0)
+			var bl := rng.randf_range(0.65, 1.0)
+			kit.loft([head_c + Vector3(0, 0, -size * 0.15), head_c + Vector3(0, -size * 0.04, -size * bl * 0.6), head_c + Vector3(0, -size * 0.12, -size * bl)], [size * 0.13, size * 0.1, size * 0.03], 8, bill,
+				func(t: float, _a: float) -> Color: return bill.darkened(0.7) if t > 0.9 else bill)
+			kit.add_primitive(MeshKit.sphere(size * 0.11, 7, 5), Transform3D(Basis.from_scale(Vector3(1.3, 1, 0.4)), head_c + Vector3(0, -size * 0.02, 0.0)), belly, 0.0, 0.0)
 		"parrot":
 			kit.loft([head_c + Vector3(0, size * 0.02, -size * 0.18), head_c + Vector3(0, -size * 0.06, -size * 0.3), head_c + Vector3(0, -size * 0.16, -size * 0.28)], [size * 0.08, size * 0.05, size * 0.015], 7, bill)
 		"vulture":
 			kit.loft([head_c + Vector3(0, 0, -size * 0.15), head_c + Vector3(0, -size * 0.06, -size * 0.32)], [size * 0.06, size * 0.02], 6, bill)
-			kit.add_primitive(MeshKit.sphere(size * 0.2, 8, 5), Transform3D(Basis.from_scale(Vector3(1.4, 0.6, 1.0)), head_c + Vector3(0, -size * 0.15, size * 0.18)), Color(0.85, 0.82, 0.78), 0.05, 0.05)   # neck ruff
+			kit.add_primitive(MeshKit.sphere(size * 0.2, 8, 5), Transform3D(Basis.from_scale(Vector3(1.4, 0.6, 1.0)), head_c + Vector3(0, -size * 0.15, size * 0.18)), main.lightened(rng.randf_range(0.3, 0.6)), 0.05, 0.05)   # neck ruff
 		_:
 			kit.add_primitive(MeshKit.cylinder(0.0, size * 0.05, size * 0.2, 6), Transform3D(Basis(Vector3.RIGHT, -PI / 2), head_c + Vector3(0, -size * 0.02, -size * 0.25)), bill, 0.0, 0.0)
+	if kind != "vulture" and rng.randf() < 0.3:   # a crest
+		for k in 3:
+			kit.loft([head_c + Vector3((k - 1) * size * 0.04, size * 0.15, 0), head_c + Vector3((k - 1) * size * 0.07, size * 0.36, size * 0.15)], [size * 0.03, size * 0.008], 4, wing_col.lightened(0.2))
 	for side in [-1.0, 1.0]:
 		kit.add_primitive(MeshKit.sphere(size * 0.045, 6, 4), Transform3D(Basis(), head_c + Vector3(side * size * 0.17, size * 0.05, -size * 0.06)), Color(0.04, 0.04, 0.04), 0.0, 0.0)
-	var tail_len := size * (1.1 if kind == "parrot" else 0.6)
+	var tail_len := size * (rng.randf_range(0.8, 1.4) if kind == "parrot" else rng.randf_range(0.45, 0.8))
 	kit.add_primitive(MeshKit.sphere(0.5, 8, 4), Transform3D(Basis().scaled(Vector3(size * 0.3, size * 0.06, tail_len)), Vector3(0, 0.0, size * 0.35 + tail_len * 0.45)), wing_col, 0.0, 0.04)
 	# Little legs and toes, for perching.
 	for side in [-1.0, 1.0]:
 		kit.loft([Vector3(side * size * 0.1, -size * 0.2, 0), Vector3(side * size * 0.1, -size * 0.38, 0)], [size * 0.025, size * 0.02], 4, Color(0.4, 0.35, 0.3))
 	s.body_mesh = kit.commit(material)
 	kit = MeshKit.new(rng.randi())
-	var span := size * (2.2 if kind == "vulture" else 1.2)
+	var span := size * (rng.randf_range(1.9, 2.5) if kind == "vulture" else rng.randf_range(1.0, 1.4))
 	kit.add_primitive(MeshKit.sphere(0.5, 9, 4), Transform3D(Basis().scaled(Vector3(span, size * 0.05, size * (0.6 if kind == "vulture" else 0.5))), Vector3(span * 0.5, 0, 0)), wing_col, 0.0, 0.05)
 	s.wing_mesh = kit.commit(material)
 	s.call_sound = SoundGen.creature_call("squawk" if kind in ["parrot", "toucan"] else ("hiss" if kind == "vulture" else "bird"), size, rng)

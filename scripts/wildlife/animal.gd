@@ -58,11 +58,14 @@ var _prey: Animal = null        ## what it's hunting
 var _hunger := 0.0              ## seconds until a predator feels like hunting
 # Serpents: their body follows the head's trail.
 var _segs: Array[Node3D] = []
+var _gait_rot := Vector2.ZERO   ## the body-type sway (pitch, roll) added this frame, taken off again before the next
 var _trail: Array[Vector3] = []
 # Climbers: up a tree.
 var in_tree := false
 var _tree_top := Vector3.ZERO   ## where it sits in the canopy
 var _tree_phase := ""           ## to_trunk | up | sit | hop | down
+var _tree_res := {}             ## the tree it's in (it drops down if the tree is felled)
+var _found_res := {}
 var _hop_from := Vector3.ZERO
 var _hop_t := 0.0
 const TREE_TOPS := {"jungle_tree": 8.5, "oak": 5.0, "autumn_oak": 5.0, "birch": 6.0, "willow": 4.5, "acacia": 4.5, "palm": 6.5, "pine": 6.0, "fir": 7.0}
@@ -121,8 +124,10 @@ func setup(sp: FaunaLibrary.Species, pos: Vector3, p: Node3D) -> void:
 	_collider.set_meta("animal", self)
 	var shape := BoxShape3D.new()
 	shape.size = Vector3(maxf(sp.body_w * 1.2, 0.4), sp.body_h * 1.2 + sp.leg_len * 0.6, maxf(sp.body_len * 1.3, 0.5))
+	# Small things still get a box you can hit (a frog's own would be a few centimetres tall).
+	shape.size = Vector3(maxf(shape.size.x, 0.45), maxf(shape.size.y, 0.4), maxf(shape.size.z, 0.5))
 	if sp.body == "serpent":
-		shape.size = Vector3(0.5, 0.3, 0.7)
+		shape.size = Vector3(0.6, 0.4, 0.8)
 	elif sp.body == "upright":
 		shape.size = Vector3(sp.body_w * 1.3, sp.body_h * 1.1, sp.body_w * 1.3)
 	var cs := CollisionShape3D.new()
@@ -542,6 +547,10 @@ func _animate(delta: float, graze: float, alert: float) -> void:
 	var hop := sin(_startle * PI) * 0.14 * species.size
 	_body.position.y = base_y + bob + hop + sin(_breath) * 0.006 * species.size * (1.0 - moving)
 	_body.position.z = -sin(_lunge * PI) * 0.3 * species.size
+	# Take off last frame's body-type sway first, so it never builds up through the easing below.
+	_body.rotation.x -= _gait_rot.x
+	_body.rotation.z -= _gait_rot.y
+	_gait_rot = Vector2.ZERO
 	var fwd := Vector3(-sin(_yaw), 0, -cos(_yaw))
 	var side := Vector3(-fwd.z, 0, fwd.x)
 	var half := species.body_len * 0.5
@@ -581,18 +590,20 @@ func _animate(delta: float, graze: float, alert: float) -> void:
 			_slither(moving)
 		"upright":
 			if state == State.FLEE and species.swims:   # tobogganing along on its belly
-				_body.rotation.x = lerpf(_body.rotation.x, -1.35, 1.0 - exp(-8.0 * delta))
+				_gait_rot.x = -1.35
 				_body.position.y = species.body_w * 0.45
 				for leg in _legs:
 					leg.rotation.x = 1.2
 			else:   # a side-to-side waddle
-				_body.rotation.z += sin(_gait) * 0.18 * moving
+				_gait_rot.y = sin(_gait) * 0.18 * moving
 		"seal":   # humping along on its belly
 			_body.position.y += absf(sin(_gait * 0.7)) * species.body_h * 0.3 * moving
-			_body.rotation.x += sin(_gait * 0.7) * 0.14 * moving
+			_gait_rot.x = sin(_gait * 0.7) * 0.14 * moving
 		"frog":   # hops
 			_body.position.y += absf(sin(_gait * 0.5)) * species.size * 1.8 * moving
-			_body.rotation.x += -absf(sin(_gait * 0.5)) * 0.4 * moving
+			_gait_rot.x = -absf(sin(_gait * 0.5)) * 0.4 * moving
+	_body.rotation.x += _gait_rot.x
+	_body.rotation.z += _gait_rot.y
 
 
 ## A snake's body: the head weaves side to side, and the segments follow along the trail it leaves.
@@ -665,6 +676,7 @@ func _try_climb() -> void:
 	if top == null:
 		return
 	_tree_top = top
+	_tree_res = _found_res
 	_tree_phase = "to_trunk"
 	_enter(State.TREE)
 
@@ -690,6 +702,7 @@ func _nearest_tree(p: Vector3, reach: float, not_at: Vector3) -> Variant:
 				var d := Vector2(xf.origin.x - p.x, xf.origin.z - p.z).length()
 				if d < best_d and Vector2(xf.origin.x - not_at.x, xf.origin.z - not_at.z).length() > 1.0 and Game.flora.has_mesh(r.key):
 					best_d = d
+					_found_res = r
 					# Up in the lower crown, against the trunk.
 					var h: float = PerchBirds._crown(String(r.key)).y
 					best = xf.origin + Vector3(0, h * xf.basis.y.length() * (0.5 if r.kind == "jungle_tree" else 0.62), 0)
@@ -700,6 +713,8 @@ func _nearest_tree(p: Vector3, reach: float, not_at: Vector3) -> Variant:
 ## down again once things are quiet.
 func _tree_step(delta: float, dist_to_player: float) -> void:
 	_breath += delta * 1.7
+	if _tree_phase in ["up", "sit"] and _tree_res.get("removed", false):
+		_tree_phase = "down"   # the tree was felled under it: it drops to the ground
 	match _tree_phase:
 		"to_trunk":
 			var d := Vector3(_tree_top.x - position.x, 0, _tree_top.z - position.z)
@@ -735,6 +750,7 @@ func _tree_step(delta: float, dist_to_player: float) -> void:
 				if next != null and (next as Vector3).distance_to(position) > 2.0:
 					_hop_from = position
 					_tree_top = next
+					_tree_res = _found_res
 					_hop_t = 0.0
 					_tree_phase = "hop"
 					_call(1.1)
@@ -753,7 +769,7 @@ func _tree_step(delta: float, dist_to_player: float) -> void:
 				_tree_phase = "sit"
 		"down":
 			var ground := Game.world_gen.get_height(position.x, position.z)
-			position.y = move_toward(position.y, ground, 3.0 * delta)
+			position.y = move_toward(position.y, ground, (12.0 if _tree_res.get("removed", false) else 3.0) * delta)
 			_gait += delta * 9.0
 			_body.rotation.x = lerpf(_body.rotation.x, -1.1, 1.0 - exp(-8.0 * delta))
 			if position.y - ground < 0.05:

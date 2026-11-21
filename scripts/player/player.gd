@@ -379,8 +379,8 @@ func _on_vines(dir: Vector3, delta: float) -> bool:
 					var chunk = world.get_chunk(here + Vector2i(dx, dz))
 					if not chunk:
 						continue
-					for r: Dictionary in chunk.resources:
-						if r.kind != "cliff_vine" or r.get("removed", false):
+					for r: Dictionary in _chunk_vines(chunk):
+						if r.get("removed", false):
 							continue
 						var xf: Transform3D = r.transform
 						if xf.origin.distance_to(global_position) > 16.0:
@@ -405,6 +405,17 @@ func _on_vines(dir: Vector3, delta: float) -> bool:
 		if Vector2(dir.x, dir.z).dot(into) > 0.35:
 			return true
 	return false
+
+
+## A chunk's vine curtains, picked out of its resources once (a chunk that's rebuilt is a new one).
+var _vine_cache := {}
+func _chunk_vines(chunk: Node) -> Array:
+	var id := chunk.get_instance_id()
+	if not _vine_cache.has(id):
+		if _vine_cache.size() > 200:
+			_vine_cache.clear()
+		_vine_cache[id] = (chunk.resources as Array).filter(func(r: Dictionary) -> bool: return r.kind == "cliff_vine")
+	return _vine_cache[id]
 
 
 ## Knock the camera (radians of pitch, yaw, roll); it springs back by itself.

@@ -24,7 +24,7 @@ const FERN_ATTEMPTS := 90
 const PALM_ATTEMPTS := 10
 const TALL_GRASS_ATTEMPTS := 160
 const CLOVER_ATTEMPTS := 120
-const UNDERGROWTH_ATTEMPTS := 46   ## the jungle's extra layer of plants
+const UNDERGROWTH_ATTEMPTS := 40   ## the jungle's extra layer of plants
 const VINE_ATTEMPTS := 110        ## vines on rock faces
 
 
