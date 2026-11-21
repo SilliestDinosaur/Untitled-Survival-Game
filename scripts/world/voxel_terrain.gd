@@ -201,7 +201,13 @@ static func build(gen: WorldGen, origin: Vector3, size: float, step: float, segs
 					vert.y = gh
 				var nrm := nsum.normalized() if nsum.length_squared() > 0.000001 else Vector3.UP
 				var col: Color
-				if vert.y < gh - ROCK_BAND:
+				# Rock below the ground's skin; grass, sand or snow on it. Near the surface the two blend, and a face that
+				# turns down or sideways (the lip and ceiling of a cave mouth) is rock even close under the ground, rather
+				# than a smear of the meadow's colour on the roof.
+				var depth := gh - vert.y
+				var rock_w := maxf(smoothstep(0.15, ROCK_BAND, depth), smoothstep(0.55, 0.05, nrm.y) * smoothstep(0.0, 0.35, depth))
+				rock_w = maxf(rock_w, smoothstep(0.0, -0.3, nrm.y))   # anything facing down is a cave's roof or lip
+				if rock_w >= 0.999:
 					col = Caves.rock_color(plan, vert, nrm.y)
 				else:
 					var ckey := ck * ncx + ci
@@ -210,6 +216,8 @@ static func build(gen: WorldGen, origin: Vector3, size: float, step: float, segs
 						var cz := oz + (ck - PAD + 0.5) * step
 						col_weights[ckey] = gen.biome_weights_at(cx, cz, gh)
 					col = gen.get_terrain_color(vert.y, nrm.y, vert.x, vert.z, col_weights[ckey])
+					if rock_w > 0.001:
+						col = col.lerp(Caves.rock_color(plan, vert, nrm.y), rock_w)
 				col = col.srgb_to_linear()
 				col.a = sd.x
 				cell_vert[(ck * ncy + cj) * ncx + ci] = verts.size()

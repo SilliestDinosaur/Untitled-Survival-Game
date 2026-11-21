@@ -24,7 +24,7 @@ func _process(_d: float) -> bool:
 	match _step:
 		0:
 			if _f == 5:
-				_main.create_world("Voxel Test", 8181)
+				_main.create_world("Voxel Test", 8182)
 			if _main.state == _main.State.PLAYING:
 				_ChunkScript = load("res://scripts/world/chunk_generator.gd")
 				_VoxelScript = load("res://scripts/world/voxel_terrain.gd")

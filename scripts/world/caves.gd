@@ -25,6 +25,7 @@ const NO_FLOOR := -1.0e9
 const NO_CEILING := 1.0e9
 const MAX_LAKES := 5
 const MAX_CRYSTAL_ROOMS := 4
+const MOUTH_R := 2.8          ## a cave mouth's radius
 
 
 static func theme_for_biome(b: int) -> int:
@@ -43,16 +44,20 @@ static func theme_for_biome(b: int) -> int:
 ## The cave rock's colour for a theme (sRGB), on a wall or (up-facing) a floor.
 static func theme_rock(theme: int, floor_up: float, y: float) -> Color:
 	var stone: Color = Game.palette.rock.darkened(0.3)
+	# Layers in the walls: soft bands of lighter and darker rock running level round the caves (wavering a little),
+	# strongest on the walls, gone on the floors.
+	var strata := (sin(y * 1.9 + sin(y * 0.55) * 1.7) * 0.6 + sin(y * 4.7 + 1.3) * 0.4) * 0.07 * (1.0 - floor_up)
+	stone = stone.lightened(maxf(strata, 0.0)).darkened(maxf(-strata, 0.0))
 	match theme:
 		Rock.ICE:
-			return Color(0.5, 0.6, 0.68).lerp(Color(0.8, 0.86, 0.9), floor_up)
+			return Color(0.5, 0.6, 0.68).lerp(Color(0.8, 0.86, 0.9), floor_up).lightened(maxf(strata, 0.0) * 0.6).darkened(maxf(-strata, 0.0) * 0.6)
 		Rock.MOSS:
 			return stone.lerp(Color(0.24, 0.3, 0.17), 0.35 + 0.5 * floor_up)
 		Rock.SAND:
 			var band := 0.5 + 0.5 * sin(y * 2.3 + sin(y * 0.7) * 1.5)
 			return Color(0.56, 0.38, 0.25).lerp(Color(0.7, 0.53, 0.36), band).lerp(Color(0.66, 0.52, 0.38), floor_up * 0.5)
 		Rock.FUNGAL:
-			return Color(0.3, 0.24, 0.33).lerp(Color(0.38, 0.28, 0.42), floor_up)
+			return Color(0.3, 0.24, 0.33).lerp(Color(0.38, 0.28, 0.42), floor_up).lightened(maxf(strata, 0.0)).darkened(maxf(-strata, 0.0))
 		Rock.CRYSTAL:
 			return Color(0.2, 0.2, 0.28).lerp(Color(0.28, 0.27, 0.36), floor_up)
 	return stone
@@ -79,6 +84,14 @@ static func rock_color(plan: Dictionary, p: Vector3, up: float) -> Color:
 	var c := theme_rock(ta, f, p.y)
 	if tb != ta:
 		c = c.lerp(theme_rock(tb, f, p.y), smoothstep(0.2, 0.8, float(hit.t)))
+	# Wet round an underground lake: darker and cooler on the shore and the walls just over the water.
+	for lk: Array in plan.get("lakes", []):
+		var at: Vector3 = lk[0]
+		var reach := float(lk[1]) + 2.5
+		var dx := Vector2(p.x - at.x, p.z - at.z).length()
+		if dx < reach and p.y < at.y + 2.0 and p.y > at.y - 1.5:
+			var wet := (1.0 - smoothstep(float(lk[1]), reach, dx)) * (1.0 - smoothstep(at.y + 0.6, at.y + 2.0, p.y))
+			c = c.lerp(c.darkened(0.35).lerp(Color(0.16, 0.22, 0.26), 0.25), wet)
 	return c
 
 
@@ -158,7 +171,8 @@ static func plan(gen: WorldGen) -> Dictionary:
 	for e in spots.size():
 		var s: Vector3 = spots[e]
 		# The mouth: just under the slope, so the void breaks the surface and makes an opening.
-		var root := _add_node(nodes, Vector3(s.x, gen.get_base_height(s.x, s.z) - 0.8, s.z), 2.4, e, 0.6)
+		# (Wide enough to read as a cave from down the slope, not a dimple in it.)
+		var root := _add_node(nodes, Vector3(s.x, gen.get_base_height(s.x, s.z) - 1.0, s.z), MOUTH_R, e, 0.6)
 		roots.append(root)
 		# Start heading into the hill (uphill, and down a little).
 		var g := _base_grad(gen, s.x, s.z)   # points uphill
@@ -167,7 +181,7 @@ static func plan(gen: WorldGen) -> Dictionary:
 			uphill = Vector3(1, 0, 0)
 		var start_dir := (uphill.normalized() + Vector3(0, -0.4, 0)).normalized()
 		# Frontier items: [node index, direction, radius, steps left, tree]
-		var frontier: Array = [[root, start_dir, 2.4, 14 + rng.randi() % 10, e]]
+		var frontier: Array = [[root, start_dir, MOUTH_R, 17 + rng.randi() % 11, e]]
 		var stretch := 0       # steps left of a hall or a crawl
 		var stretch_r := 0.0
 		var stretch_k := 0.8
@@ -180,6 +194,7 @@ static func plan(gen: WorldGen) -> Dictionary:
 			var rad: float = item[2]
 			var steps: int = item[3]
 			var tree: int = item[4]
+			var chain: Array = [cur]   # this run of tunnel's own nodes, newest last (the last few are kept)
 			for _step in steps:
 				if nodes.size() >= MAX_NODES:
 					break
@@ -208,13 +223,16 @@ static func plan(gen: WorldGen) -> Dictionary:
 				if is_room:
 					nr = rng.randf_range(4.5, 7.5)
 					nk = 0.55   # chambers have wide floors
+					length += nr * 0.75   # and open out at the end of the tunnel, rather than swallowing its last stretch
 				var fit: Variant = null
 				# A few headings: one that would cut through another tunnel at a different height (a hole in that one's
 				# floor) or drop away too steeply is swapped for a turn.
-				for attempt in 4:
-					var d := dir if attempt == 0 else dir.rotated(Vector3.UP, (0.7 + 0.35 * attempt) * (1.0 if attempt % 2 == 1 else -1.0))
+				for attempt in 8:
+					var d := dir if attempt == 0 else dir.rotated(Vector3.UP, (0.45 + 0.3 * ((attempt + 1) / 2)) * (1.0 if attempt % 2 == 1 else -1.0))
 					fit = _follow(gen, nodes[cur], nodes[cur].p + d * length, nr, nk)
-					if fit != null and _breaks_floor(nodes, fit, nr, nk):
+					# (A chamber's wide floor would reach back under the tunnel it comes from: only the node it grows
+					# from is let off, so it opens where that tunnel's floor runs level into it.)
+					if fit != null and _breaks_floor(nodes, fit, nr, nk, [cur] if is_room else chain):
 						fit = null
 					if fit != null:
 						dir = d
@@ -226,9 +244,12 @@ static func plan(gen: WorldGen) -> Dictionary:
 				if is_room:
 					rooms.append(nxt)
 				cur = nxt
+				chain.append(nxt)
+				if chain.size() > 4:
+					chain.pop_front()
 				rad = nr
 				# Branches: side tunnels that are narrower and shorter.
-				if rng.randf() < 0.16 and steps > 3:
+				if rng.randf() < 0.2 and steps > 3:
 					var bd := dir.rotated(Vector3.UP, (1.0 if rng.randf() < 0.5 else -1.0) * rng.randf_range(0.6, 1.3))
 					frontier.append([cur, bd.normalized(), maxf(rad * 0.7, 1.1), rng.randi_range(3, 8), tree])
 	timing['tunnels'] = (Time.get_ticks_usec() - _t) / 1000.0
@@ -879,12 +900,15 @@ static func _add_node(nodes: Array, p: Vector3, r: float, tree: int, k := FLOOR_
 
 
 const NODE_CELL := 16.0
+## How much more than a gentle slope's rise two overlapping tunnels' floors may differ by: little more than a step,
+## so where tunnels cross or run side by side there's no ledge or pit you'd have to jump (or couldn't climb out of).
+const BREAK_SLACK := 0.5
 static var _node_grid := {}   ## node indices by 16 m cell, for the plan being made
 
 
 ## Whether a node at p (radius r) would overlap another tunnel whose floor is at a height you couldn't walk between
 ## over that distance: one would open a pit or a ledge in the other's floor.
-static func _breaks_floor(nodes: Array, p: Vector3, r: float, k := FLOOR_K) -> bool:
+static func _breaks_floor(nodes: Array, p: Vector3, r: float, k := FLOOR_K, chain: Array = []) -> bool:
 	var f := p.y - k * r
 	var cx := floori(p.x / NODE_CELL)
 	var cz := floori(p.z / NODE_CELL)
@@ -901,7 +925,13 @@ static func _breaks_floor(nodes: Array, p: Vector3, r: float, k := FLOOR_K) -> b
 				var fn := _floor_of(n)
 				if q.y + rn < f - 0.6 or p.y + r < fn - 0.6:
 					continue
-				if absf(fn - f) > 0.5 * run + 1.4:
+				# How far you'd walk between the two floors: from the edge of one's flat floor to the other's (a big
+				# chamber's floor reaches out most of its width, so a tunnel at its side is close to it).
+				var kn := float(n.get("k", FLOOR_K))
+				var walk := maxf(run - rn * sqrt(1.0 - kn * kn) - r * sqrt(1.0 - k * k), 0.0)
+				if chain.has(i):
+					walk = run   # the tunnel it's growing along: its floors follow on gently from these (see _follow)
+				if absf(fn - f) > 0.5 * walk + BREAK_SLACK:
 					return true
 	return false
 
@@ -919,7 +949,7 @@ static func _corridor(gen: WorldGen, nodes: Array, edges: Array, rng: RandomNumb
 		var p := pa.lerp(pb, t) + Vector3(rng.randf_range(-3, 3), rng.randf_range(-1.5, 1.5), rng.randf_range(-3, 3))
 		var r := rng.randf_range(1.5, 2.6)
 		var fit: Variant = _follow(gen, nodes[prev], p, r)
-		if fit == null or _breaks_floor(nodes, fit, r):
+		if fit == null or _breaks_floor(nodes, fit, r, FLOOR_K, [prev, a]):
 			continue
 		var nxt := _add_node(nodes, fit, r, nodes[a].tree)
 		edges.append([prev, nxt])

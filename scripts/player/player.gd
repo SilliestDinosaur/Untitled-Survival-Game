@@ -882,6 +882,10 @@ func _step_surface() -> String:
 			if not st.is_empty():
 				return "rock" if GameActions.piece_mat(st.kind) in ["stone", "brick"] else "wood"
 	if Game.in_cave:
+		for lk: Array in Game.world_gen.caves.get("lakes", []):   # wading in an underground lake
+			var at: Vector3 = lk[0]
+			if global_position.y < at.y + 0.05 and Vector2(global_position.x - at.x, global_position.z - at.z).length() < float(lk[1]):
+				return "water"
 		return "rock"
 	if Game.world_gen.water_level(global_position.x, global_position.z) > global_position.y + 0.1:
 		return "water"   # wading

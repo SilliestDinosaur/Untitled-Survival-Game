@@ -25,7 +25,7 @@ func _process(_d: float) -> bool:
 	match _step:
 		0:
 			if _f == 5:
-				_main.create_world("Cave Life", 6161)
+				_main.create_world("Cave Life", 6162)
 			if _main.state == _main.State.PLAYING:
 				_C = load("res://scripts/world/caves.gd")
 				_step = 1

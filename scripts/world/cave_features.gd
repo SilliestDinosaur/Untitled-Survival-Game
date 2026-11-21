@@ -21,6 +21,7 @@ func build(plan: Dictionary) -> void:
 	var rng := RandomNumberGenerator.new()
 	rng.seed = hash([Game.world_seed, "features"])
 	_build_chests(plan.chests)
+	_build_mouths(plan, rng)
 	_build_glowcaps(plan.glow, rng)
 	if plan.has("stalactites"):
 		_build_dressing(plan, rng)
@@ -71,11 +72,13 @@ func _build_glowcaps(glow: Array, rng: RandomNumberGenerator) -> void:
 		mi.visibility_range_end = SEEN_WITHIN
 		add_child(mi)
 		CaveShade.apply(mi, CaveShade.at(g))
-		if k % 10 == 0 and _lights.size() < 12:   # a few of them light the place up
+		# Many of them cast a pool of their glow on the floor and walls round them (each light is only drawn near the
+		# camera: see distance_fade).
+		if k % 3 == 0 and _lights.size() < 45:
 			var light := OmniLight3D.new()
 			light.light_color = Game.palette.glow
-			light.light_energy = 0.9
-			light.omni_range = 7.0
+			light.light_energy = 1.0
+			light.omni_range = 7.5
 			light.omni_attenuation = 1.5
 			light.position = g + Vector3(0, 0.5, 0)
 			light.distance_fade_enabled = true   # off the lighting work when you're nowhere near
@@ -102,6 +105,134 @@ func _process(delta: float) -> void:
 	if _check <= 0.0:
 		_check = 0.5
 		_wake_nearby()
+		if _shaft_mat:
+			var day := Game.daylight()
+			_shaft_mat.set_shader_parameter("day", day)
+			var cam := get_viewport().get_camera_3d()
+			if cam:
+				for sh: Array in _shafts:
+					var p := sh[0] as CPUParticles3D
+					var on := day > 0.2 and cam.global_position.distance_squared_to(sh[1]) < 35.0 * 35.0
+					if p.emitting != on:
+						p.emitting = on
+
+
+# --- Cave mouths ---------------------------------------------------------------------------------
+
+## Each mouth framed so it reads as a cave from down the slope: an arch of half-buried stones over the opening, a
+## boulder to each side at its foot. Seen from much further off than the dressing inside (one mesh per mouth).
+func _build_mouths(plan: Dictionary, rng: RandomNumberGenerator) -> void:
+	var gen: WorldGen = Game.world_gen
+	var mat := ArtStyle.painted({"brush_strength": 0.25, "rim_amount": 0.15})
+	for e in plan.roots.size():
+		var root: Dictionary = plan.nodes[plan.roots[e]]
+		var mouth: Vector3 = root.p
+		var inward := Vector3.ZERO
+		for sg: Array in plan.segs:
+			if (sg[0] as Vector3).distance_to(mouth) < 0.3:
+				inward = (sg[1] as Vector3) - mouth
+				break
+		inward.y = 0.0
+		if inward.length() < 0.1:
+			continue
+		inward = inward.normalized()
+		var side := inward.cross(Vector3.UP).normalized()
+		var stone: Color = Caves.rock_color(plan, mouth, 0.0).lerp(Game.palette.rock, 0.5)
+		var kit := MeshKit.new(e + 77)
+		var r := float(root.r)
+		var placed := 0
+		# The arch: stones round the top and sides of the opening, pushed out of the void and bedded in the ground.
+		for k in 11:
+			var a := lerpf(0.08, 0.92, k / 10.0) * PI + rng.randf_range(-0.05, 0.05)
+			var size := rng.randf_range(0.55, 0.85) * (1.0 + 0.45 * sin(a))   # bigger over the top (the lintel)
+			var p := mouth + side * cos(a) * r * 1.05 + Vector3.UP * sin(a) * r * 0.95 - inward * 0.6
+			var ground := gen.get_height(p.x, p.z)
+			if p.y > ground + size * 0.25:
+				p.y = ground + size * 0.25   # on the slope, not hanging in the air
+			if p.y < ground - size * 0.8:
+				continue   # buried: nothing would show
+			# Then out of the opening (the slope over it has been cut away): the stones sit in the rim, never in the
+			# way in. Outward from the mouth's middle and up the slope.
+			var clear := true
+			for it in 10:
+				var vd := Caves.void_distance(plan, p)
+				if vd >= size * 0.4:
+					break
+				var away := p - mouth
+				away.y = maxf(away.y, 0.0) + 0.5
+				p += away.normalized() * (size * 0.4 - vd + 0.05)
+				clear = it < 9
+			if not clear or p.y > gen.get_height(p.x, p.z) + size * 0.4:
+				continue   # nowhere it could sit on the rim
+			var b := Basis(Vector3(rng.randf(), rng.randf(), rng.randf()).normalized(), rng.randf() * TAU)
+			kit.add_primitive(MeshKit.sphere(1.0, 8, 5), Transform3D(b.scaled(Vector3(size * 1.3, size * 0.8, size)), p),
+				Color(stone.darkened(rng.randf_range(0.0, 0.25)), 1.0), 0.3, 0.06)
+			placed += 1
+		# A boulder to each side at the foot of the mouth (solid: you walk round them).
+		for sgn: float in [-1.0, 1.0]:
+			var size := rng.randf_range(0.7, 1.15)
+			var p := mouth + side * sgn * (r + size * 0.9) - inward * rng.randf_range(0.8, 1.8)
+			if Caves.void_distance(plan, p) < size:
+				continue
+			p.y = gen.get_height(p.x, p.z) + size * 0.25
+			kit.add_primitive(MeshKit.sphere(1.0, 9, 6), Transform3D(Basis(Vector3.UP, rng.randf() * TAU).scaled(Vector3(size * 1.2, size * 0.85, size)), p),
+				Color(stone.darkened(rng.randf_range(0.05, 0.2)), 1.0), 0.3, 0.06)
+			_solid(self, p + Vector3(0, size * 0.2, 0), Vector3(size * 1.6, size * 1.2, size * 1.4))
+			placed += 1
+		_shaft(mouth, inward, r)
+		if placed == 0:
+			continue
+		var mi := MeshInstance3D.new()
+		mi.mesh = _recentred(kit.commit(mat), mouth)
+		mi.position = mouth
+		mi.visibility_range_end = 220.0
+		add_child(mi)
+
+
+static var _shaft_mat: ShaderMaterial
+var _shafts: Array = []   ## [dust particles, mouth] (the dust only drifts while you're near)
+
+## Daylight slanting in through a mouth (crossed quads of glowing air, see light_shaft.gdshader) with dust drifting in
+## it: from the opening, in and down to the floor a few metres inside.
+func _shaft(mouth: Vector3, inward: Vector3, r: float) -> void:
+	if not _shaft_mat:
+		_shaft_mat = ShaderMaterial.new()
+		_shaft_mat.shader = preload("res://shaders/light_shaft.gdshader")
+	var top := mouth + Vector3(0, r * 0.55, 0) - inward * 0.4
+	var dir := (inward + Vector3(0, -0.55, 0)).normalized()
+	var length := r * 3.2
+	var width := r * 1.4
+	var st := SurfaceTool.new()
+	st.begin(Mesh.PRIMITIVE_TRIANGLES)
+	var side := inward.cross(Vector3.UP).normalized()
+	for across: Vector3 in [side, dir.cross(side).normalized()]:
+		var corners := [top - across * width * 0.5, top + across * width * 0.5,
+			top + dir * length + across * width * 0.75, top + dir * length - across * width * 0.75]
+		var uvs := [Vector2(0, 0), Vector2(1, 0), Vector2(1, 1), Vector2(0, 1)]
+		for k: int in [0, 1, 2, 0, 2, 3]:
+			st.set_uv(uvs[k])
+			st.add_vertex((corners[k] as Vector3) - mouth)
+	st.generate_normals()
+	var mi := MeshInstance3D.new()
+	mi.mesh = st.commit()
+	mi.material_override = _shaft_mat
+	mi.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+	mi.position = mouth
+	mi.visibility_range_end = 90.0
+	add_child(mi)
+	var dust := Effects.dust_drift()
+	dust.amount = 26
+	dust.emission_box_extents = Vector3(width * 0.4, r * 0.5, length * 0.35)
+	dust.initial_velocity_min = 0.05
+	dust.initial_velocity_max = 0.2
+	dust.direction = Vector3(0, -0.2, 0)
+	dust.gravity = Vector3(0, -0.01, 0)
+	dust.scale_amount_min = 0.015
+	dust.scale_amount_max = 0.035
+	dust.color = Color(1.0, 0.95, 0.85, 0.5)
+	add_child(dust)
+	dust.global_transform = Transform3D(Basis.looking_at(dir, Vector3.UP), top + dir * length * 0.45)
+	_shafts.append([dust, mouth])
 
 
 # --- Dressing -------------------------------------------------------------------------------------
@@ -111,7 +242,7 @@ const DRIP_NEAR := 22.0      ## drips only run within this of the camera
 const GLOW_COLOURS := [Color(0.35, 1.0, 0.82), Color(0.72, 0.5, 1.0), Color(1.0, 0.72, 0.3)]
 const CRYSTAL_COLOURS := [Color(0.45, 0.85, 1.0), Color(0.75, 0.5, 1.0), Color(1.0, 0.5, 0.75)]
 const SHROOM_COLOURS := [Color(0.55, 0.4, 1.0), Color(0.3, 0.85, 0.95), Color(1.0, 0.45, 0.7)]
-const MAX_GLOW_LIGHTS := 22
+const MAX_GLOW_LIGHTS := 40
 
 
 ## How far above a planned ceiling spot a hanging thing starts, so it's rooted in the rock: the built ceiling can sit
@@ -222,6 +353,40 @@ func _build_dressing(plan: Dictionary, rng: RandomNumberGenerator) -> void:
 			(a.rock as MeshKit).add_primitive(MeshKit.sphere(sz, 6, 4), Transform3D(Basis(Vector3.UP, rng.randf() * TAU).scaled(Vector3(1.2, 0.7, 1.0)), p),
 				_lit(_drip_colour(Caves.theme_at(plan, at), pal.rock).darkened(rng.randf_range(0.1, 0.3)), p), 0.25, 0.04)
 		a.n.rock += 1
+	# Pebbles: small stones scattered along the tunnel floors (on each piece's own flat floor, near its middle).
+	var gen: WorldGen = Game.world_gen
+	for sg: Array in plan.segs:
+		if float(sg[6]) <= Caves.NO_FLOOR * 0.5:
+			continue   # a lake's basin
+		var a0: Vector3 = sg[0]
+		var b0: Vector3 = sg[1]
+		var len := a0.distance_to(b0)
+		var flat := Vector3(b0.x - a0.x, 0, b0.z - a0.z)
+		if flat.length() < 0.5:
+			continue
+		var sd := flat.normalized().cross(Vector3.UP)
+		for k in int(len / 2.5):
+			if rng.randf() < 0.45:
+				continue
+			var t := rng.randf()
+			var mid := a0.lerp(b0, t)
+			var fl := lerpf(float(sg[6]), float(sg[7]), t)
+			var r := lerpf(float(sg[2]), float(sg[3]), t)
+			var dy := mid.y - fl
+			if dy >= r:
+				continue
+			var half := sqrt(r * r - dy * dy) * 0.75   # the flat floor's half width, kept clear of the wall's foot
+			var p := Vector3(mid.x, fl, mid.z) + sd * rng.randf_range(-half, half)
+			if p.y > gen.get_height(p.x, p.z) - 0.4:
+				continue   # out in the mouth: the open ground has its own stones
+			var a := _area(p)
+			var col := _drip_colour(Caves.theme_at(plan, p), pal.rock)
+			for n in rng.randi_range(1, 3):
+				var sz := rng.randf_range(0.04, 0.11)
+				var q := p + Vector3(rng.randf_range(-0.3, 0.3), sz * 0.2 - 0.02, rng.randf_range(-0.3, 0.3))
+				(a.rock as MeshKit).add_primitive(MeshKit.sphere(sz, 5, 3), Transform3D(Basis(Vector3.UP, rng.randf() * TAU).scaled(Vector3(1.3, 0.6, 1.0)), q),
+					_lit(col.darkened(rng.randf_range(0.0, 0.3)), q), 0.25, 0.04)
+			a.n.rock += 1
 	# Underground lakes: still dark water filling the bowl in a chamber's floor, wet stones along the shore.
 	for lk: Array in plan.get("lakes", []):
 		var at: Vector3 = lk[0]
@@ -431,6 +596,8 @@ func _commit_areas() -> void:
 		_water_mat.roughness = 0.06
 		_water_mat.metallic = 0.0
 		_water_mat.disable_ambient_light = true   # no sky to reflect down here: only lamps and torches glint on it
+		_water_mat.emission_enabled = true          # but a faint depth of its own, so it reads as water, not a hole
+		_water_mat.emission = Color(0.03, 0.08, 0.1)
 		_water_mat.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
 		_water_mat.albedo_color = Color(1, 1, 1, 0.88)
 	var rock_mat := ArtStyle.painted({"brush_strength": 0.2, "rim_amount": 0.2})
