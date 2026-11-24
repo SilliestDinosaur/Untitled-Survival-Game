@@ -640,6 +640,23 @@ static func _place_ground_cover(coord: Vector2i, origin: Vector3, gen: WorldGen,
 		var lp: Vector3 = lm.pos
 		if lm.kind == "meadow" and lp.x > origin.x - 25.0 and lp.x < origin.x + size + 25.0 and lp.z > origin.z - 25.0 and lp.z < origin.z + size + 25.0:
 			meadow_here = true
+	# Jungle floor: patches of wet mud in the shade, and jungle flowers among the ferns.
+	var mud_keys: Array = flora.variants.get("mud", [])
+	for i in int(24 * density):
+		var lx := rng.randf() * size
+		var lz := rng.randf() * size
+		var keep := rng.randf()
+		var variant := rng.randi()
+		var yaw := rng.randf() * TAU
+		var wx := origin.x + lx
+		var wz := origin.z + lz
+		var h := gen.get_height(wx, wz)
+		if mud_keys.is_empty() or h < 2.2 or h > 40.0 or gen.near_river(wx, wz):
+			continue
+		var w := gen.biome_weights_at(wx, wz, h)
+		if keep > float(w.get(Biome.JUNGLE, 0.0)) * 0.6 + float(w.get(Biome.MARSH, 0.0)) * 0.4 or gen.get_normal(wx, wz).y < 0.9:
+			continue
+		_append_instance(buffers, mud_keys[variant % mud_keys.size()], Transform3D(Basis(Vector3.UP, yaw).scaled(Vector3.ONE * rng.randf_range(0.8, 1.5)), Vector3(lx, h, lz)), Color(1, 1, 1))
 	for i in int(FLOWER_ATTEMPTS * density * (4.0 if meadow_here else 1.0)):
 		var lx := rng.randf() * size
 		var lz := rng.randf() * size
@@ -655,7 +672,7 @@ static func _place_ground_cover(coord: Vector2i, origin: Vector3, gen: WorldGen,
 		# Flowers in meadows and autumn groves, plus alpine flowers on high gentle slopes, and thick in a glade.
 		var alpine := smoothstep(40.0, 55.0, h) * 0.5
 		var glade := 1.5 if meadow_here and not Landmarks.at(gen.landmarks, wx, wz).is_empty() else 0.0
-		if keep > w[Biome.MEADOW] * 0.7 + w[Biome.AUTUMN] * 0.2 + alpine + glade or gen.get_normal(wx, wz).y < 0.85:
+		if keep > w[Biome.MEADOW] * 0.7 + w[Biome.AUTUMN] * 0.2 + w[Biome.JUNGLE] * 0.35 + alpine + glade or gen.get_normal(wx, wz).y < 0.85:
 			continue
 		# Flowers of one color grow in patches.
 		var patch := int(floor(wx / 9.0) * 7.0 + floor(wz / 9.0) * 13.0)

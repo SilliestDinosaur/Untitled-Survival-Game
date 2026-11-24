@@ -464,6 +464,7 @@ static func build_meshes(plan: Dictionary, parent: Node3D, sea_material: ShaderM
 			if deco:
 				parent.add_child(deco)
 			piece_start = piece_end
+	_cascades(plan, parent)
 	for pd: Array in plan.ponds:
 		var deco := _dress_pond(gen, pd, rng, mat)
 		if deco:
@@ -485,6 +486,52 @@ static func build_meshes(plan: Dictionary, parent: Node3D, sea_material: ShaderM
 		mi.visibility_range_end = 420.0
 		mi.set_meta("water", true)
 		parent.add_child(mi)
+
+
+## Where a river drops steeply (a run of rapids, a little fall): spray hanging over the white water and the rush of it.
+## The steepest spot of each steep run, kept well apart, a dozen at most on an island.
+static func _cascades(plan: Dictionary, parent: Node3D) -> void:
+	var spots: Array = []
+	for line: Dictionary in plan.lines:
+		var pts: Array = line.pts
+		var surf: PackedFloat32Array = line.surface
+		for i in range(1, pts.size() - 1):
+			var run := (pts[i - 1] as Vector2).distance_to(pts[i + 1])
+			var steep := (surf[i - 1] - surf[i + 1]) / maxf(run, 0.5)
+			if steep < 0.3 or surf[i] < 0.5:
+				continue
+			spots.append([steep, Vector3((pts[i] as Vector2).x, surf[i], (pts[i] as Vector2).y), float(line.width[i])])
+	spots.sort_custom(func(a: Array, b: Array) -> bool: return a[0] > b[0])
+	var kept: Array = []
+	for sp: Array in spots:
+		if kept.size() >= 12:
+			break
+		var far := true
+		for k: Array in kept:
+			if (k[1] as Vector3).distance_to(sp[1]) < 35.0:
+				far = false
+				break
+		if far:
+			kept.append(sp)
+	for sp: Array in kept:
+		var node := Node3D.new()
+		node.name = "Cascade"
+		node.position = sp[1]
+		parent.add_child(node)
+		var spray := Effects.spray(float(sp[2]))
+		node.add_child(spray)
+		node.set_meta("spray", spray)
+		Audio.rush_loop(node)
+
+
+## Spray and rush only near the camera (they cost nothing further off).
+static func update_cascades(parent: Node3D, eye: Vector3) -> void:
+	for c in parent.get_children():
+		if c.has_meta("spray"):
+			var p := c.get_meta("spray") as CPUParticles3D
+			var on := (c as Node3D).global_position.distance_squared_to(eye) < 70.0 * 70.0
+			if p.emitting != on:
+				p.emitting = on
 
 
 ## How far the river water is drawn: never past the terrain that's loaded (with a low view distance it would
@@ -526,6 +573,10 @@ static func _ribbon(plan: Dictionary, line: Dictionary, i0: int, i1: int) -> Mes
 				y = minf(y, float(other.surface) - 0.05)
 				mouth = true
 		var tan: Vector2 = ((pts[mini(i + 1, n - 1)] as Vector2) - (pts[maxi(i - 1, 0)] as Vector2)).normalized()
+		# How steeply the water falls here (rise per metre): white water where it's steep (see water.gdshader).
+		var i_a := maxi(i - 1, 0)
+		var i_b := mini(i + 1, n - 1)
+		var steep := clampf((surf[i_a] - surf[i_b]) / maxf((pts[i_a] as Vector2).distance_to(pts[i_b]), 0.5), 0.0, 1.0)
 		var side := Vector2(-tan.y, tan.x)
 		var half := wid[i] + 0.7   # a little under the banks, so the water's edge is hidden in them
 		var row: Array = []
@@ -540,7 +591,7 @@ static func _ribbon(plan: Dictionary, line: Dictionary, i0: int, i1: int) -> Mes
 			# An edge that opens into another river (where a stream comes in): no waterline across that opening.
 			if (k == 0 or k == 4) and not _nearest(plan, q.x + side.x * u, q.y + side.y * u, 0.6, own).is_empty():
 				inset = -99.0
-			row.append([Vector3(q.x, y, q.y) - centre, Vector2((u + 1.0) * half, along), half, inset])
+			row.append([Vector3(q.x, y, q.y) - centre, Vector2((u + 1.0) * half, along), half, inset, steep])
 		rows.append(row)
 		if i < n - 1:
 			along += p.distance_to(pts[i + 1])
@@ -554,6 +605,7 @@ static func _ribbon(plan: Dictionary, line: Dictionary, i0: int, i1: int) -> Mes
 			var d: Array = rows[r + 1][k + 1]
 			for v: Array in [a, c, b, b, c, d]:
 				st.set_uv(v[1])
+				st.set_color(Color(v[4], 0.0, 0.0))   # how steep (white water)
 				st.set_uv2(Vector2(v[2], v[3]))   # the ribbon's half width, and how far in from its edge the waterline is (far out: none)
 				st.set_normal(Vector3.UP)
 				st.add_vertex(v[0])

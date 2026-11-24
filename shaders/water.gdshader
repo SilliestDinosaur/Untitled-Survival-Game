@@ -82,7 +82,18 @@ void fragment() {
 		float shore = UV2.x - abs(UV.x - UV2.x) - UV2.y;   // metres in from the waterline
 		shore_foam = (1.0 - smoothstep(0.05, 0.4, shore + (fn - 0.5) * 0.35)) * 0.55;
 	}
-	float foam = clamp(max(smoothstep(0.35, 0.6, edge), shore_foam) + lines * 0.55 * step(0.45, fn), 0.0, 1.0);
+	// Rivers: white water where they run steeply (rapids, little falls): broken streaks of foam racing downstream
+	// across the whole width, thicker the steeper.
+	float rapids = 0.0;
+	if (flow > 0.0) {
+		float steep = smoothstep(0.12, 0.45, COLOR.r);
+		float race = texture(ripple_b, vec2(UV.x * 0.35, -UV.y * 0.18 + TIME * flow * 3.2)).r;
+		float race2 = texture(ripple_a, vec2(UV.x * 0.6 + 0.3, -UV.y * 0.3 + TIME * flow * 4.5)).r;
+		// (The ripple textures sit around 0.5: streaks where they run high, more of them the steeper.)
+		float r = race * 0.6 + race2 * 0.4;
+		rapids = steep * (smoothstep(0.56 - steep * 0.06, 0.64 - steep * 0.04, r) * 0.95 + 0.12);
+	}
+	float foam = clamp(max(max(smoothstep(0.35, 0.6, edge), shore_foam), rapids) + lines * 0.55 * step(0.45, fn), 0.0, 1.0);
 
 	// Brushy glints: hashed cells that light up with the ripples.
 	vec2 cell = floor(uv * 1.5);

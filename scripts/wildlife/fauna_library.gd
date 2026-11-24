@@ -373,10 +373,15 @@ func _make_quadruped(rng: RandomNumberGenerator, arch: String, home := -1, look 
 	var coat := _biome_coat(rng, tr.get("coat", ""))
 	var belly := coat.lightened(rng.randf_range(0.25, 0.45))
 	var accent := coat.darkened(rng.randf_range(0.3, 0.5)) if rng.randf() < 0.7 else coat.lightened(0.5)
-	var pattern: String = ["none", "stripes", "spots", "saddle", "none"][rng.randi() % 5]
+	var pattern: String = ["none", "stripes", "spots", "saddle", "none", "rosettes", "dorsal"][rng.randi() % 7]
 	if tr.has("patterns"):
 		var pats: Array = tr.patterns
 		pattern = pats[rng.randi() % pats.size()]
+		# Now and then a pattern outside the biome's usual (rosettes for the spotted, a back stripe for the plain).
+		if pattern == "spots" and rng.randf() < 0.4:
+			pattern = "rosettes"
+		elif pattern == "none" and rng.randf() < 0.35:
+			pattern = "dorsal"
 	match String(tr.get("coat", "")):
 		"vivid": accent = Color.from_hsv(fposmod(coat.h + 0.5, 1.0), 0.3, 0.15) if rng.randf() < 0.5 else coat.darkened(0.6)   # bold markings
 		"fungal", "cave": accent = _pal.glow   # glowing spots
@@ -386,22 +391,33 @@ func _make_quadruped(rng: RandomNumberGenerator, arch: String, home := -1, look 
 	var noise := FastNoiseLite.new()
 	noise.seed = rng.randi()
 	noise.frequency = 3.5 / size
+	var warp := FastNoiseLite.new()   # bends stripes and blurs edges, so markings look grown, not ruled
+	warp.seed = rng.randi()
+	warp.frequency = 2.0 / size
 	var stripe_f := rng.randf_range(9.0, 16.0) / size
 	var body_h := s.body_h
+	# Countershading: darker along the back, shading to the pale belly (a soft blend, not a line).
+	var back_col := coat.darkened(rng.randf_range(0.08, 0.18))
 	var coat_fn := func(p: Vector3) -> Color:
-		var c := coat
+		var wob := warp.get_noise_3dv(p)
+		var c := coat.lerp(back_col, smoothstep(0.0, body_h * 0.4, p.y) * 0.8)
+		var mark := 0.0
 		match pattern:
-			"stripes":
-				if sin(p.z * stripe_f + p.y * 3.0) > 0.45 and p.y > -body_h * 0.15:
-					c = accent
+			"stripes":   # wavering bands round the body, fading out low on the flanks
+				var band := sin(p.z * stripe_f + p.y * 3.0 + wob * 3.0)
+				mark = smoothstep(0.3, 0.6, band) * smoothstep(-body_h * 0.25, body_h * 0.05, p.y)
 			"spots":
-				if noise.get_noise_3dv(p) > 0.3:
-					c = accent
+				mark = smoothstep(0.24, 0.36, noise.get_noise_3dv(p) + wob * 0.1)
+			"rosettes":   # rings: dark rims round coat-coloured middles
+				var n := noise.get_noise_3dv(p)
+				mark = smoothstep(0.18, 0.26, n) * (1.0 - smoothstep(0.34, 0.42, n)) * smoothstep(-body_h * 0.3, 0.0, p.y)
 			"saddle":
-				if p.y > body_h * 0.18:
-					c = accent
-		if p.y < -body_h * 0.22:
-			c = c.lerp(belly, 0.8)
+				mark = smoothstep(body_h * 0.08, body_h * 0.28, p.y + wob * body_h * 0.15)
+			"dorsal":   # a dark stripe along the spine
+				mark = 1.0 - smoothstep(body_h * 0.06, body_h * 0.14, absf(p.x) + wob * body_h * 0.03)
+				mark *= smoothstep(body_h * 0.1, body_h * 0.3, p.y)
+		c = c.lerp(accent, clampf(mark, 0.0, 1.0))
+		c = c.lerp(belly, smoothstep(-body_h * 0.08, -body_h * 0.3, p.y + wob * body_h * 0.06) * 0.85)
 		return c
 
 	# --- Body: one continuous lofted torso (rump, waist, ribcage, shoulders) ---

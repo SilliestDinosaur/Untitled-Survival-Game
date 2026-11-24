@@ -52,7 +52,7 @@ const BIOME_CLUTTER := {
 	Biome.TAIGA: [["log", 0.3], ["stump", 0.2], ["mushroom", 0.15], ["pebbles", 0.1], ["herb", 0.1], ["branch", 0.2], ["sapling", 0.12], ["scree", 0.08], ["cache", 0.015]],
 	Biome.MARSH: [["log", 0.4], ["mushroom", 0.45], ["stump", 0.15], ["herb", 0.15], ["cache", 0.015]],
 	Biome.DESERT: [["pebbles", 0.3], ["boulder", 0.3], ["scree", 0.15], ["tumbleweed", 0.2], ["small_cactus", 0.2], ["cache", 0.03]],
-	Biome.JUNGLE: [["log", 0.35], ["mushroom", 0.2], ["herb", 0.2], ["stump", 0.1], ["branch", 0.2], ["sapling", 0.15], ["cache", 0.015]],
+	Biome.JUNGLE: [["mossy_log", 0.4], ["log", 0.15], ["mushroom", 0.2], ["herb", 0.2], ["stump", 0.1], ["branch", 0.15], ["sapling", 0.15], ["cache", 0.015]],
 	Biome.TUNDRA: [["ice_rock", 0.35], ["pebbles", 0.25], ["scree", 0.2], ["boulder", 0.15], ["branch", 0.05], ["cache", 0.02]],
 	Biome.BADLANDS: [["boulder", 0.3], ["scree", 0.3], ["pebbles", 0.2], ["tumbleweed", 0.15], ["cache", 0.025]],
 	Biome.FUNGAL: [["mushroom", 0.55], ["log", 0.2], ["herb", 0.1], ["stump", 0.1], ["cache", 0.02]],
@@ -143,6 +143,9 @@ const KINDS := {
 	"cliff_vine": {"category": "bush", "label": "Vines", "variants": 3, "solid": false, "hp": 25, "target": "bush", "yield": "reeds", "shape": "small"},
 	# The jungle's emergent giants, standing over its canopy (last again).
 	"kapok": {"category": "tree", "label": "Giant tree", "variants": 3, "solid": true, "hp": 260, "target": "tree", "yield": "tree", "shape": "tree"},
+	# The jungle floor: a fallen giant gone green with moss and ferns, and patches of wet mud (last again).
+	"mossy_log": {"category": "clutter", "label": "Mossy log", "variants": 3, "solid": true, "hp": 90, "target": "tree", "yield": "log", "shape": "log"},
+	"mud": {"category": "grass", "label": "", "variants": 3, "solid": false, "hp": 0},
 }
 
 ## The jungle's own layer of undergrowth, on top of its bushes (see ChunkGenerator): [kind, weight].
@@ -372,6 +375,8 @@ func _build_mesh(kind: String, index: int, variant_seed: int) -> ArrayMesh:
 		"heliconia": _heliconia(kit, rng)
 		"fern_palm": _fern_palm(kit, rng)
 		"cliff_vine": _cliff_vine(kit, rng)
+		"mossy_log": _mossy_log(kit, rng)
+		"mud": _mud(kit, rng)
 		"kapok": TreeModels.emergent(kit, rng, _vary(_pal.bark, rng).lightened(0.3), _vary(_pal.jungle_leaves, rng).darkened(0.05), rng.randf_range(22.0, 27.0), rng.randf_range(0.6, 0.75))
 	if kind == ItemDB.fruit_tree and not _bare:
 		_add_fruit(kit, rng)
@@ -745,6 +750,65 @@ func _boulder(kit: MeshKit, rng: RandomNumberGenerator) -> void:
 
 
 ## Fallen log: a gnarled lofted trunk with bark ridges, a broken end, moss and shelf fungi.
+## A fallen rainforest giant: long and thick, half sunk in the ground, grown over with moss nearly all over, ferns and
+## seedlings sprouting from it, and a buttress root reaching up from the end it fell from.
+func _mossy_log(kit: MeshKit, rng: RandomNumberGenerator) -> void:
+	var length := rng.randf_range(5.0, 7.5)
+	var r := rng.randf_range(0.45, 0.6)
+	var bark := _vary(_pal.bark, rng).darkened(0.1)
+	var moss := _vary(_pal.moss, rng).lerp(_pal.jungle_leaves, 0.3).darkened(0.25)
+	var path: Array = []
+	var radii: Array = []
+	var steps := 12
+	for i in steps + 1:
+		var t := float(i) / steps
+		path.append(Vector3(lerpf(-length * 0.5, length * 0.5, t), r * 0.55 + sin(t * 2.6) * 0.06, sin(t * 2.0 + 0.5) * 0.18))
+		radii.append(r * lerpf(1.1, 0.8, t) * (1.0 + 0.05 * sin(t * 11.0)))
+	# Moss over the top and down the sides, bark showing low along the ground.
+	kit.loft(path, radii, 14, moss, func(t: float, a: float) -> Color:
+		# Moss in patches over the top, bark (ridged) showing between them and all down the sides.
+		var patch := sin(t * 17.0 + a * 2.0) * 0.5 + sin(t * 41.0 - a * 5.0) * 0.3 + cos(a) * 0.9
+		if patch > 0.55:
+			return moss.lightened(0.07 * sin(t * 29.0 + a * 3.0))
+		return bark.darkened(0.15) if fposmod(a * 2.0 + t * 3.0, 1.0) < 0.3 else bark, Callable(), true, true, 0.04)
+	# Soft cushions of moss heaped along the top.
+	for i in rng.randi_range(8, 12):
+		var t := rng.randf_range(0.05, 0.95)
+		var k := int(t * steps)
+		var at: Vector3 = (path[k] as Vector3).lerp(path[mini(k + 1, steps)], t * steps - k)
+		var a := rng.randf_range(-0.9, 0.9)
+		var on: Vector3 = Vector3(0, cos(a), sin(a)) * float(radii[k]) * 0.95
+		kit.add_primitive(MeshKit.sphere(rng.randf_range(0.14, 0.26), 7, 4), Transform3D(Basis(Quaternion(Vector3.UP, on.normalized())).scaled(Vector3(1.5, 0.4, 1.2)), at + on), moss.lightened(rng.randf_range(-0.06, 0.12)), 0.03, 0.06)
+	# Ferns and seedlings growing out of it.
+	var fern := _vary(_pal.fern, rng)
+	for i in rng.randi_range(3, 5):
+		var t := rng.randf_range(0.15, 0.85)
+		var k := int(t * steps)
+		var at: Vector3 = (path[k] as Vector3) + Vector3(0, float(radii[k]) * 0.9, 0)
+		for j in 5:
+			var a := TAU * j / 5.0 + rng.randf_range(-0.3, 0.3)
+			var d := Vector3(cos(a), rng.randf_range(0.6, 1.0), sin(a)).normalized()
+			kit.add_primitive(MeshKit.sphere(0.5, 5, 3), Transform3D(Basis.looking_at(d, Vector3.FORWARD if absf(d.y) > 0.95 else Vector3.UP).scaled(Vector3(0.14, 0.03, 0.7)), at + d * 0.35), fern.lightened(rng.randf_range(-0.05, 0.08)), 0.0, 0.05)
+	# The root plate it tore up as it fell, standing on end.
+	var root_c: Vector3 = path[0] - Vector3(r * 0.15, r * 0.05, 0)
+	kit.add_primitive(MeshKit.cylinder(r * 1.5, r * 1.8, r * 0.5, 9), Transform3D(Basis(Vector3.FORWARD, PI * 0.5), root_c + Vector3(0, r * 0.6, 0)), bark.lerp(Color(0.32, 0.24, 0.17), 0.5), 0.25, 0.06)
+	for i in 6:
+		var a := TAU * i / 6.0
+		var d := Vector3(-0.3, cos(a), sin(a)).normalized()
+		kit.loft([root_c + Vector3(0, r * 0.6, 0), root_c + Vector3(0, r * 0.6, 0) + d * r * 2.2], [r * 0.18, r * 0.04], 5, bark.darkened(0.15))
+
+
+## A patch of wet mud: a flat dark sheen on the ground with a few puddles in it.
+func _mud(kit: MeshKit, rng: RandomNumberGenerator) -> void:
+	var mud := Color(0.24, 0.18, 0.12).lerp(_pal.ground[WorldGen.Biome.JUNGLE], 0.15)
+	for i in rng.randi_range(3, 5):
+		var at := Vector3(rng.randf_range(-0.9, 0.9), 0.02, rng.randf_range(-0.9, 0.9))
+		kit.add_primitive(MeshKit.cylinder(rng.randf_range(0.6, 1.1), rng.randf_range(0.7, 1.2), 0.04, 12), Transform3D(Basis(Vector3.UP, rng.randf() * TAU).scaled(Vector3(1.0, 1.0, rng.randf_range(0.6, 1.0))), at), mud.darkened(rng.randf_range(0.0, 0.15)), 0.0, 0.03)
+	for i in rng.randi_range(2, 3):   # puddles: darker, glossy-looking
+		var at := Vector3(rng.randf_range(-0.6, 0.6), 0.05, rng.randf_range(-0.6, 0.6))
+		kit.add_primitive(MeshKit.cylinder(rng.randf_range(0.2, 0.4), rng.randf_range(0.22, 0.42), 0.02, 10), Transform3D(Basis(), at), Color(0.1, 0.13, 0.12), 0.0, 0.0)
+
+
 func _log(kit: MeshKit, rng: RandomNumberGenerator) -> void:
 	var length := rng.randf_range(2.6, 3.6)
 	var r := rng.randf_range(0.26, 0.36)

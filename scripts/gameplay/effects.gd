@@ -913,6 +913,39 @@ static func dust_drift() -> CPUParticles3D:
 	return p
 
 
+## Spray over a cascade: fine white mist thrown up off the falling water, drifting and fading. `width`: the river's.
+static func spray(width: float) -> CPUParticles3D:
+	_setup()
+	var p := CPUParticles3D.new()
+	p.mesh = _puff
+	p.amount = 16
+	p.lifetime = 2.4
+	p.local_coords = false
+	p.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+	p.emission_shape = CPUParticles3D.EMISSION_SHAPE_BOX
+	p.emission_box_extents = Vector3(width * 0.8, 0.2, width * 0.8)
+	p.direction = Vector3.UP
+	p.spread = 35.0
+	p.initial_velocity_min = 0.4
+	p.initial_velocity_max = 1.2
+	p.gravity = Vector3(0.1, -0.1, 0.05)
+	p.damping_min = 0.4
+	p.damping_max = 0.8
+	p.angle_min = 0.0
+	p.angle_max = 360.0
+	p.scale_amount_min = 0.8
+	p.scale_amount_max = 1.6
+	p.scale_amount_curve = _curve([Vector2(0, 0.4), Vector2(1, 1.5)])
+	var g := Gradient.new()
+	g.set_color(0, Color(0.95, 0.98, 1.0, 0.0))
+	g.set_color(1, Color(0.95, 0.98, 1.0, 0.0))
+	g.add_point(0.2, Color(0.95, 0.98, 1.0, 0.3))
+	p.color_ramp = g
+	p.emitting = false
+	p.visibility_range_end = 90.0
+	return p
+
+
 ## Mist: big soft pale puffs drifting slowly along low over the ground (the jungle's damp air).
 static func mist() -> CPUParticles3D:
 	_setup()   # (before _puff is read: it's made there)

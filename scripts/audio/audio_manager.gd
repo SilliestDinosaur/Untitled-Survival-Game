@@ -13,6 +13,7 @@ var _cave: AudioStreamPlayer
 var _ocean: AudioStreamPlayer
 var _river: AudioStreamPlayer
 var _jungle: AudioStreamPlayer
+var _rush: Array = []   ## cascades' rush players (started once the river loop is made)
 var _rng := RandomNumberGenerator.new()
 var _build_task := -1
 
@@ -90,6 +91,10 @@ func _finish_build(made: Dictionary, fire: AudioStreamWAV, river: AudioStreamWAV
 	sfx.fire = fire
 	_river.stream = river
 	_river.play()
+	for p: AudioStreamPlayer3D in _rush:
+		if is_instance_valid(p) and p.stream == null:
+			p.stream = river
+			p.play(_rng.randf() * 5.0)
 	WorkerThreadPool.wait_for_task_completion(_build_task)
 	_build_task = -1
 
@@ -221,6 +226,22 @@ func fire_loop(parent: Node3D) -> AudioStreamPlayer3D:
 	p.autoplay = true
 	parent.add_child(p)
 	if p.is_inside_tree():
+		p.play(_rng.randf() * 5.0)
+	return p
+
+
+## The rush of white water at a cascade, as a positional loop under `parent` (lower and louder than the babble).
+func rush_loop(parent: Node3D) -> AudioStreamPlayer3D:
+	var p := AudioStreamPlayer3D.new()
+	p.unit_size = 5.0
+	p.max_distance = 60.0
+	p.volume_db = 2.0
+	p.pitch_scale = 0.7
+	p.bus = "SFX"
+	parent.add_child(p)
+	_rush.append(p)
+	if _river and _river.stream:
+		p.stream = _river.stream
 		p.play(_rng.randf() * 5.0)
 	return p
 

@@ -168,6 +168,8 @@ func _build_resource_colliders(flora: FloraLibrary) -> void:
 		var rot := Basis(Vector3.UP, t.basis.get_euler().y) if info.shape == "log" else Basis()
 		if r.kind == "boulder":
 			s *= 1.6
+		elif r.kind == "mossy_log":
+			s *= 1.8   # a fallen giant: about twice an ordinary log
 		col.transform = Transform3D(rot * Basis.from_scale(Vector3.ONE * s), local + Vector3.UP * lift * s)
 		(solid if FloraLibrary.KINDS[r.kind].solid else soft).add_child(col)
 	add_child(solid)

@@ -42,6 +42,10 @@ var _stream_timer := 0.0
 
 
 func _process(delta: float) -> void:
+	if is_instance_valid(_rivers) and Engine.get_process_frames() % 20 == 0:
+		var cam := get_viewport().get_camera_3d()
+		if cam:
+			Rivers.update_cascades(_rivers, cam.global_position)
 	_collect_jobs()
 	if focus:
 		# Streaming only needs a look when the player enters another chunk, or now and then (for finished
