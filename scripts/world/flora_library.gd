@@ -413,27 +413,40 @@ func _branches(kit: MeshKit, rng: RandomNumberGenerator, bark: Color, trunk_r: f
 func _birch(kit: MeshKit, rng: RandomNumberGenerator) -> void:
 	TreeModels.birch(kit, rng, _pal.birch_bark, _vary(_pal.birch_leaves, rng), rng.randf_range(6.0, 8.5), rng.randf_range(0.15, 0.2))
 
-## Weeping willow: a dome with long curtains of leaves hanging around it.
+## Weeping willow: a stout, leaning, gnarled trunk; limbs arching up and out; and from them long curtains of leafy
+## strands falling nearly to the ground, under a soft dome of leaves.
 func _willow(kit: MeshKit, rng: RandomNumberGenerator) -> void:
-	# A willow: a slim, leaning trunk with forks under a low crown of leafy lumps.
-	var h := rng.randf_range(3.6, 4.6)
-	var trunk_r := rng.randf_range(0.26, 0.34)
+	var h := rng.randf_range(4.2, 5.4)
+	var trunk_r := rng.randf_range(0.3, 0.4)
 	var bark := _vary(_pal.bark, rng).darkened(0.1)
-	var lean := Basis(Vector3.FORWARD, rng.randf_range(-0.1, 0.1))
-	kit.add_primitive(MeshKit.cylinder(trunk_r * 0.55, trunk_r, h, 8), Transform3D(lean, Vector3(0, h * 0.5, 0)), bark, 0.08)
-	# Two forks near the top, so the crown spreads from a few branches.
-	for side in [-1.0, 1.0]:
-		var fork_dir := Vector3(side * 0.55, 0.8, rng.randf_range(-0.2, 0.2)).normalized()
-		var fork_basis := Basis(Vector3.UP.cross(fork_dir).normalized(), Vector3.UP.angle_to(fork_dir))   # turns the cylinder's up onto the fork
-		kit.add_primitive(MeshKit.cylinder(trunk_r * 0.35, trunk_r * 0.6, 1.4, 6), Transform3D(fork_basis, Vector3(0, h * 0.82, 0) + fork_dir * 0.6), bark, 0.08)
 	var leaf := _vary(_pal.willow_leaves, rng)
-	var crown := Vector3(0, h + 0.2, 0)
-	# Crown: a few lumps, not one blob.
-	for i in 6:
-		var a := TAU * i / 6.0 + rng.randf_range(-0.3, 0.3)
-		var d := rng.randf_range(0.4, 1.2)
-		var at := crown + Vector3(cos(a) * d, rng.randf_range(-0.2, 0.5), sin(a) * d)
-		kit.add_primitive(MeshKit.sphere(rng.randf_range(0.9, 1.25), 9, 6), Transform3D(Basis().scaled(Vector3(1, 0.7, 1)), at), leaf.lightened(rng.randf_range(-0.04, 0.06)), 0.3, 0.07, crown)
+	var top := TreeModels.trunk(kit, rng, Vector3.ZERO, h, trunk_r, bark, Vector3(rng.randf_range(-0.35, 0.35), 0, rng.randf_range(-0.35, 0.35)), 9, 0.9)
+	var tips: Array = []
+	for i in rng.randi_range(5, 7):
+		var yaw := TAU * i / 6.0 + rng.randf_range(-0.35, 0.35)
+		var dir := Vector3(cos(yaw), rng.randf_range(0.45, 0.8), sin(yaw)).normalized()
+		TreeModels.branch(kit, rng, top - Vector3(0, h * rng.randf_range(0.05, 0.25), 0), dir, h * rng.randf_range(0.35, 0.5), trunk_r * 0.5, 1, bark, tips, 6)
+	tips.append(top + Vector3(0, 0.4, 0))
+	# The dome: soft lumps over the limbs.
+	for tip: Vector3 in tips:
+		TreeModels.blob(kit, rng, tip + Vector3(0, 0.25, 0), rng.randf_range(0.9, 1.3), 0.6, leaf.lightened(rng.randf_range(-0.04, 0.05)), 0.45)
+	# The curtains: from each limb's end, strands arcing out a little and falling straight, flat leafy ribbons.
+	for tip: Vector3 in tips:
+		var out := Vector3(tip.x, 0, tip.z)
+		out = out.normalized() if out.length() > 0.05 else Vector3(1, 0, 0)
+		for k in rng.randi_range(7, 11):
+			var a := rng.randf() * TAU
+			var start: Vector3 = tip + Vector3(cos(a), 0, sin(a)) * rng.randf_range(0.5, 1.3) + Vector3(0, rng.randf_range(-0.2, 0.3), 0)
+			var drop := rng.randf_range(0.65, 0.92) * start.y
+			var path: Array = []
+			var radii: Array = []
+			for j in 6:
+				var t := j / 5.0
+				path.append(start + out * 0.5 * sin(t * PI * 0.5) * (1.0 - t * 0.4) + Vector3(0, -drop * t, 0) + Vector3(sin(t * 3.0 + a), 0, cos(t * 3.0 + a)) * 0.06)
+				radii.append(lerpf(0.13, 0.05, t))
+			var c := leaf.lightened(rng.randf_range(-0.06, 0.08))
+			kit.loft(path, radii, 4, c, func(t: float, _ang: float) -> Color: return c.lightened(0.08 * t), func(_t: float, _ang: float) -> Vector2: return Vector2(1.0, 0.3), false, true, 0.02)
+
 
 ## Savanna tree: leaning trunk splitting into branches with flat, wide canopy layers.
 func _acacia(kit: MeshKit, rng: RandomNumberGenerator) -> void:

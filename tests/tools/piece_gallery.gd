@@ -74,7 +74,7 @@ func _build() -> void:
 		mi.scale = Vector3.ONE * item_scale
 		gal.add_child(mi)
 		var parts = sm.get_model(kinds[i], mat, glow)
-		if parts.door != null:   # a door's panel hangs from its hinge; OPEN=1 swings it open
+		if parts.get("door") != null:   # a door's panel hangs from its hinge; OPEN=1 swings it open
 			var hinge := Node3D.new()
 			hinge.position = mi.position + Vector3(-0.7 * item_scale, 0.0, 0.0)
 			hinge.rotation.y = -PI * 0.5 if OS.get_environment("OPEN") != "" else 0.0
