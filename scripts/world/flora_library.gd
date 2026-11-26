@@ -750,54 +750,6 @@ func _boulder(kit: MeshKit, rng: RandomNumberGenerator) -> void:
 
 
 ## Fallen log: a gnarled lofted trunk with bark ridges, a broken end, moss and shelf fungi.
-## A fallen rainforest giant: long and thick, half sunk in the ground, grown over with moss nearly all over, ferns and
-## seedlings sprouting from it, and a buttress root reaching up from the end it fell from.
-func _mossy_log(kit: MeshKit, rng: RandomNumberGenerator) -> void:
-	var length := rng.randf_range(5.0, 7.5)
-	var r := rng.randf_range(0.45, 0.6)
-	var bark := _vary(_pal.bark, rng).darkened(0.1)
-	var moss := _vary(_pal.moss, rng).lerp(_pal.jungle_leaves, 0.3).darkened(0.25)
-	var path: Array = []
-	var radii: Array = []
-	var steps := 12
-	for i in steps + 1:
-		var t := float(i) / steps
-		path.append(Vector3(lerpf(-length * 0.5, length * 0.5, t), r * 0.55 + sin(t * 2.6) * 0.06, sin(t * 2.0 + 0.5) * 0.18))
-		radii.append(r * lerpf(1.1, 0.8, t) * (1.0 + 0.05 * sin(t * 11.0)))
-	# Moss over the top and down the sides, bark showing low along the ground.
-	kit.loft(path, radii, 14, moss, func(t: float, a: float) -> Color:
-		# Moss in patches over the top, bark (ridged) showing between them and all down the sides.
-		var patch := sin(t * 17.0 + a * 2.0) * 0.5 + sin(t * 41.0 - a * 5.0) * 0.3 + cos(a) * 0.9
-		if patch > 0.55:
-			return moss.lightened(0.07 * sin(t * 29.0 + a * 3.0))
-		return bark.darkened(0.15) if fposmod(a * 2.0 + t * 3.0, 1.0) < 0.3 else bark, Callable(), true, true, 0.04)
-	# Soft cushions of moss heaped along the top.
-	for i in rng.randi_range(8, 12):
-		var t := rng.randf_range(0.05, 0.95)
-		var k := int(t * steps)
-		var at: Vector3 = (path[k] as Vector3).lerp(path[mini(k + 1, steps)], t * steps - k)
-		var a := rng.randf_range(-0.9, 0.9)
-		var on: Vector3 = Vector3(0, cos(a), sin(a)) * float(radii[k]) * 0.95
-		kit.add_primitive(MeshKit.sphere(rng.randf_range(0.14, 0.26), 7, 4), Transform3D(Basis(Quaternion(Vector3.UP, on.normalized())).scaled(Vector3(1.5, 0.4, 1.2)), at + on), moss.lightened(rng.randf_range(-0.06, 0.12)), 0.03, 0.06)
-	# Ferns and seedlings growing out of it.
-	var fern := _vary(_pal.fern, rng)
-	for i in rng.randi_range(3, 5):
-		var t := rng.randf_range(0.15, 0.85)
-		var k := int(t * steps)
-		var at: Vector3 = (path[k] as Vector3) + Vector3(0, float(radii[k]) * 0.9, 0)
-		for j in 5:
-			var a := TAU * j / 5.0 + rng.randf_range(-0.3, 0.3)
-			var d := Vector3(cos(a), rng.randf_range(0.6, 1.0), sin(a)).normalized()
-			kit.add_primitive(MeshKit.sphere(0.5, 5, 3), Transform3D(Basis.looking_at(d, Vector3.FORWARD if absf(d.y) > 0.95 else Vector3.UP).scaled(Vector3(0.14, 0.03, 0.7)), at + d * 0.35), fern.lightened(rng.randf_range(-0.05, 0.08)), 0.0, 0.05)
-	# The root plate it tore up as it fell, standing on end.
-	var root_c: Vector3 = path[0] - Vector3(r * 0.15, r * 0.05, 0)
-	kit.add_primitive(MeshKit.cylinder(r * 1.5, r * 1.8, r * 0.5, 9), Transform3D(Basis(Vector3.FORWARD, PI * 0.5), root_c + Vector3(0, r * 0.6, 0)), bark.lerp(Color(0.32, 0.24, 0.17), 0.5), 0.25, 0.06)
-	for i in 6:
-		var a := TAU * i / 6.0
-		var d := Vector3(-0.3, cos(a), sin(a)).normalized()
-		kit.loft([root_c + Vector3(0, r * 0.6, 0), root_c + Vector3(0, r * 0.6, 0) + d * r * 2.2], [r * 0.18, r * 0.04], 5, bark.darkened(0.15))
-
-
 ## A patch of wet mud: a flat dark sheen on the ground with a few puddles in it.
 func _mud(kit: MeshKit, rng: RandomNumberGenerator) -> void:
 	var mud := Color(0.24, 0.18, 0.12).lerp(_pal.ground[WorldGen.Biome.JUNGLE], 0.15)
@@ -810,64 +762,171 @@ func _mud(kit: MeshKit, rng: RandomNumberGenerator) -> void:
 
 
 func _log(kit: MeshKit, rng: RandomNumberGenerator) -> void:
-	var length := rng.randf_range(2.6, 3.6)
-	var r := rng.randf_range(0.26, 0.36)
-	var bark := _vary(_pal.bark, rng)
-	var wood := Color(0.72, 0.58, 0.42).lerp(bark, 0.25)
+	_fallen_log(kit, rng, false)
+
+
+func _mossy_log(kit: MeshKit, rng: RandomNumberGenerator) -> void:
+	_fallen_log(kit, rng, true)
+
+
+## A fallen tree trunk lying on the ground (along X, settled a little into it). Ridged, fissured bark, thick and
+## gently bent, tapering from the end it stood on to the end where it snapped off. That end is a jagged break
+## bristling with pale splinters; the other is old weathered wood showing its rings (or, for a fallen jungle
+## giant, the flare of its foot with roots reaching out into the ground). A few broken branch stubs, bracket fungi
+## and lichen; the jungle giant is half grown over with moss, ferns arching up out of it.
+func _fallen_log(kit: MeshKit, rng: RandomNumberGenerator, giant: bool) -> void:
+	var length := rng.randf_range(5.2, 6.4) if giant else rng.randf_range(3.0, 3.6)
+	var r := rng.randf_range(0.56, 0.66) if giant else rng.randf_range(0.31, 0.37)
+	var bark := _vary(_pal.bark, rng).darkened(0.12 if giant else 0.0)
+	var deep := bark.darkened(0.55)            # down in the fissures
+	var weathered := bark.lerp(Color(0.62, 0.58, 0.52), 0.35)   # sun-bleached on top
+	var wood := Color(0.78, 0.64, 0.46)
+	var moss := _vary(_pal.moss, rng).lerp(_pal.jungle_leaves, 0.25).darkened(0.22)
+	var mn := FastNoiseLite.new()
+	mn.seed = rng.randi()
+	mn.frequency = 2.2
+	mn.fractal_octaves = 3
+	var steps := 16
+	var bend := Vector3(0, rng.randf_range(-0.04, 0.06), rng.randf_range(-0.25, 0.25)) * length / 3.0
 	var path: Array = []
 	var radii: Array = []
-	var steps := 10
 	for i in steps + 1:
 		var t := float(i) / steps
-		path.append(Vector3(lerpf(-length * 0.5, length * 0.5, t), r * 0.85 + sin(t * 3.0) * 0.03, sin(t * 2.3 + 1.0) * 0.08))
-		radii.append(r * lerpf(1.05, 0.88, t) * (1.0 + 0.04 * sin(t * 13.0)))
-	# Bark with deep ridges, and here and there peeled away to the pale weathered wood beneath.
-	var peel_at := rng.randf_range(0.3, 0.7)
-	var ridges := func(t: float, a: float) -> Color:
-		if absf(t - peel_at) < 0.12 and fposmod(a / TAU + 0.15, 1.0) < 0.35:
-			return wood.lightened(0.08) if fposmod(t * 40.0, 1.0) < 0.5 else wood   # bare wood, its grain showing
-		return bark.darkened(0.18) if fposmod(a * 2.2 + t * 1.5, 1.0) < 0.28 else bark
-	kit.loft(path, radii, 14, bark, ridges, Callable(), false, false, 0.012)
-	# The sawn-off end: rings. The broken end: hollow, a dark rotted heart inside a ragged rim.
-	var rings := func(t: float, _a: float) -> Color:
-		return Color(0.8, 0.66, 0.46).darkened(0.1 * (int(t * 5.0) % 2))
-	kit.loft([path[0] - Vector3(0.015, 0, 0), path[0]], [r * 0.92, r * 1.05], 12, Color(0.8, 0.66, 0.46), rings, Callable(), true, false)
+		var x := lerpf(-length * 0.5, length * 0.5, t)
+		var rr := r * lerpf(1.06, 0.82, t)
+		if giant:
+			rr *= 1.0 + 0.45 * pow(1.0 - smoothstep(0.0, 0.14, t), 2.0)   # the foot flares out
+		path.append(Vector3(x, 0.0, 0.0) + bend * sin(t * PI) + Vector3(0, rr * 0.78, 0))   # settled a fifth into the ground
+		radii.append(rr)
+	# Bark: deep fissures running along the trunk, wandering a little, and broad plates between them.
+	var fissure := func(t: float, ang: float) -> float:
+		return pow(maxf(sin(ang * 11.0 + sin(t * 9.0 + ang * 2.0) * 0.9), 0.0), 5.0)
+	var shape := func(t: float, ang: float) -> Vector2:
+		var k: float = 1.0 - 0.13 * float(fissure.call(t, ang)) + 0.03 * sin(ang * 3.0 + t * 4.0)
+		return Vector2(k, k * 0.96)
+	var colour := func(t: float, ang: float) -> Color:
+		var up := cos(ang)   # (ang 0 is straight up along the log)
+		# Long streaks of lighter and darker bark down the length, bleached grey on top where the sun gets it.
+		var streak := sin(ang * 5.0 + t * 2.0) * 0.5 + sin(ang * 13.0 - t * 5.0) * 0.5
+		var c: Color = bark.lightened(0.07 * streak).lerp(weathered, smoothstep(0.3, 0.95, up) * (0.35 if giant else 0.55))
+		c = c.lerp(deep, float(fissure.call(t, ang)))
+		if giant:
+			# Moss in ragged patches, most of them over the top, a few creeping down the sides; bark between.
+			var p3 := Vector3(t * length, cos(ang) * r, sin(ang) * r)
+			var cover := mn.get_noise_3dv(p3) * 0.9 + up * 0.45 - 0.05
+			var m := smoothstep(0.05, 0.3, cover)
+			c = c.lerp(moss.lightened(0.1 * mn.get_noise_3dv(p3 * 4.0)), m)
+			c = c.lerp(moss.darkened(0.35), smoothstep(0.0, 0.1, cover) * (1.0 - m) * 0.5)   # a dark damp rim round each patch
+		return c
+	kit.loft(path, radii, 26, bark, colour, shape, false, false, r * 0.06)
+
+	# The snapped end: the broken face, then splinters standing out of it, longest round the rim.
 	var tip: Vector3 = path[steps]
 	var tr: float = radii[steps]
-	kit.loft([tip - Vector3(r * 0.9, 0, 0), tip + Vector3(0.01, 0, 0)], [tr * 0.55, tr * 0.72], 10, Color(0.2, 0.14, 0.1), Callable(), Callable(), true, false)   # the hollow
-	for i in 7:   # splinters round the rim
-		var a := TAU * i / 7.0 + rng.randf_range(-0.2, 0.2)
-		var off: Vector3 = Vector3(0, cos(a), sin(a)) * tr * 0.85
-		kit.loft([tip + off - Vector3(0.02, 0, 0), tip + off + Vector3(rng.randf_range(0.06, 0.2), 0, 0) + off * 0.1], [tr * 0.22, 0.008], 4, wood)
-	# A broken branch or two.
-	for i in rng.randi_range(1, 2):
-		var at: Vector3 = path[rng.randi_range(2, steps - 2)]
-		var dir := Vector3(rng.randf_range(-0.3, 0.3), rng.randf_range(0.3, 0.9), (1.0 if rng.randf() < 0.5 else -1.0)).normalized()
-		var bl := rng.randf_range(0.2, 0.45)
-		kit.loft([at + dir * r * 0.7, at + dir * (r + bl)], [r * 0.3, r * 0.18], 7, bark, Callable(), Callable(), false, true)
-		kit.add_primitive(MeshKit.sphere(r * 0.18, 6, 4), Transform3D(Basis(), at + dir * (r + bl)), wood, 0.0, 0.03)
-	# Moss in soft clumps along the top, and a creeping strip down one side.
-	var moss := _vary(_pal.moss, rng)
-	for i in rng.randi_range(5, 9):
-		var t := rng.randf_range(0.1, 0.85)
-		var k := int(t * steps)
-		var at: Vector3 = (path[k] as Vector3).lerp(path[k + 1], t * steps - k)
-		var a := rng.randf_range(-0.7, 0.7)
-		var on: Vector3 = Vector3(0, cos(a), sin(a)) * float(radii[k]) * 0.92
-		kit.add_primitive(MeshKit.sphere(rng.randf_range(0.08, 0.16), 7, 4), Transform3D(Basis(Quaternion(Vector3.UP, on.normalized())).scaled(Vector3(1.4, 0.35, 1.1)), at + on), moss.lightened(rng.randf_range(-0.08, 0.1)), 0.02, 0.06)
-	# Shelf fungi stepping up the side, and a few small mushrooms by the hollow end.
+	var ax := ((path[steps] as Vector3) - (path[steps - 1] as Vector3)).normalized()
+	var side := ax.cross(Vector3.UP).normalized()
+	kit.loft([tip - ax * 0.02, tip + ax * tr * 0.25], [tr * 0.98, tr * 0.35], 14, wood.darkened(0.15), func(t: float, _a: float) -> Color:
+		return wood.darkened(0.25).lerp(wood, t), Callable(), false, true, tr * 0.08)
+	for i in rng.randi_range(10, 14):
+		var a := rng.randf() * TAU
+		var d := sqrt(rng.randf())   # spread over the face, more of them out at the rim
+		var at := tip + (Vector3.UP * cos(a) + side * sin(a)) * tr * 0.92 * d
+		var reach := lerpf(0.08, 0.42, d) * rng.randf_range(0.6, 1.2) * (r / 0.34)
+		var dir := (ax + (Vector3.UP * cos(a) + side * sin(a)) * rng.randf_range(0.05, 0.35)).normalized()
+		var w := tr * rng.randf_range(0.07, 0.13)
+		kit.loft([at - ax * 0.03, at + dir * reach * 0.5, at + dir * reach], [w, w * 0.6, 0.004], 4,
+			wood.lightened(rng.randf_range(0.0, 0.12)), Callable(), func(_t: float, _a: float) -> Vector2: return Vector2(1.0, 0.45), true, true)
+
+	# The other end.
+	var foot: Vector3 = path[0]
+	var fr: float = radii[0]
+	if giant:
+		# The foot it was torn up by: a clod of earth and root bound together on the end, and roots twisting out of it
+		# and down into the ground, thick ones and thin.
+		var soil := Color(0.27, 0.2, 0.14)
+		kit.loft([foot + Vector3(0.05, 0, 0), foot - Vector3(fr * 0.22, 0, 0)], [fr * 1.0, fr * 0.55], 14, soil, func(t: float, ang: float) -> Color:
+			return soil.lerp(bark.darkened(0.2), 0.4 * absf(sin(ang * 5.0))).lerp(moss.darkened(0.3), smoothstep(0.5, 1.0, cos(ang)) * 0.5), Callable(), false, true, fr * 0.12)
+		for i in rng.randi_range(9, 13):
+			var a := rng.randf() * TAU
+			var out := (Vector3.UP * cos(a) + Vector3.BACK * sin(a)).normalized()
+			var thick := rng.randf() < 0.4
+			var start := foot + out * fr * rng.randf_range(0.3, 0.85) - Vector3(fr * 0.1, 0, 0)
+			var span := rng.randf_range(0.8, 1.6) * fr * (1.3 if thick else 1.0)
+			var reach := start - Vector3(span * 0.55, 0, 0) + Vector3(0, 0, out.z) * span * 0.8
+			var end := Vector3(reach.x, -0.12, reach.z) if (thick or out.y < 0.3) else reach + out * span * 0.3   # thick ones dive into the ground; thin ones hang in the air
+			var mid := start.lerp(end, 0.45) + out * span * 0.25 + Vector3(rng.randf_range(-0.1, 0.1), 0, rng.randf_range(-0.1, 0.1))
+			var rr0 := fr * (0.2 if thick else 0.07)
+			kit.loft([start, mid, end], [rr0, rr0 * 0.65, rr0 * 0.2], 6, bark.darkened(0.1), Callable(), Callable(), true, true, rr0 * 0.15)
+	else:
+		# Old weathered end: grey wood, rings, cracks running in from the edge.
+		var rings := func(t: float, _a: float) -> Color:
+			return wood.lerp(Color(0.6, 0.57, 0.52), 0.55).darkened(0.12 * float(int(t * 6.0) % 2))
+		kit.loft([foot + Vector3(0.01, 0, 0), foot - Vector3(fr * 0.05, 0, 0)], [fr * 0.99, 0.0], 16, wood, rings, Callable(), false, false, 0.008)
+
+	# Broken branch stubs.
+	for i in rng.randi_range(2, 3):
+		var k := rng.randi_range(4, steps - 3)
+		var at: Vector3 = path[k]
+		var a := rng.randf_range(-1.6, 1.6)   # anywhere but underneath
+		var out := (Vector3.UP * cos(a) + Vector3.BACK * sin(a)).normalized()
+		var dir := (out + Vector3(rng.randf_range(0.1, 0.5), 0, 0)).normalized()
+		var bl := rng.randf_range(0.1, 0.28) * (1.8 if giant else 1.0)
+		var br := float(radii[k]) * rng.randf_range(0.18, 0.26)
+		var base := at + out * float(radii[k]) * 0.8
+		kit.loft([base, base + dir * bl * 0.6, base + dir * bl], [br * 1.3, br, br * 0.8], 7, bark, func(_t: float, ang: float) -> Color:
+			return bark.lerp(deep, 0.3 * absf(sin(ang * 3.0))), Callable(), false, true, 0.006)
+		kit.add_primitive(MeshKit.sphere(br * 0.85, 7, 4), Transform3D(Basis(Quaternion(Vector3.UP, dir)).scaled(Vector3(1, 0.35, 1)), base + dir * bl), wood.lightened(0.05), 0.15, 0.03)
+
+	# Bracket fungi in a little stepped run up one side.
+	var fside := 1.0 if rng.randf() < 0.5 else -1.0
+	var fx := rng.randf_range(0.25, 0.6)
+	var fcol := Color(0.86, 0.78, 0.62) if rng.randf() < 0.6 else Color(0.72, 0.48, 0.3)
 	for i in rng.randi_range(2, 4):
-		var at: Vector3 = path[rng.randi_range(2, steps - 2)]
-		var shelf := PackedVector2Array()
-		for j in 9:
-			var a := PI * j / 8.0
-			shelf.append(Vector2(cos(a) * 0.11, sin(a) * 0.08))
-		kit.extrude(shelf, Transform3D(Basis(Vector3.RIGHT, -PI * 0.5), at + Vector3(0, -r * 0.1 + i * 0.05, r * 0.95)), 0.03, 0.012, Color(0.85, 0.72, 0.5), Color(0.95, 0.88, 0.7), 0.4)
-	for i in rng.randi_range(2, 4):
-		var p := tip + Vector3(rng.randf_range(-0.4, -0.05), -r * 0.85, rng.randf_range(-0.3, 0.3))
-		var mh := rng.randf_range(0.05, 0.1)
-		kit.loft([p, p + Vector3(0, mh, 0)], [0.012, 0.01], 5, Color(0.9, 0.86, 0.78))
-		kit.add_primitive(MeshKit.sphere(0.035, 7, 4), Transform3D(Basis.from_scale(Vector3(1, 0.55, 1)), p + Vector3(0, mh, 0)), Color(0.75, 0.5, 0.3), 0.0, 0.04)
+		var k := clampi(int((fx + i * 0.05) * steps), 1, steps - 1)
+		var at: Vector3 = path[k]
+		var a := fside * rng.randf_range(1.1, 1.6) - 0.15 * i * fside
+		var out := (Vector3.UP * cos(a) + Vector3.BACK * sin(a)).normalized()
+		var fr2 := rng.randf_range(0.07, 0.13) * (1.4 if giant else 1.0)
+		kit.add_primitive(MeshKit.cylinder(fr2 * 0.85, fr2, fr2 * 0.3, 10), Transform3D(Basis(), at + out * (float(radii[k]) + fr2 * 0.5) + Vector3(0, 0.0, 0)), fcol.darkened(0.05 * i), 0.1, 0.04)
+
+	if not giant:
+		# Lichen: small pale grey-green crusts on the upper side.
+		for i in rng.randi_range(4, 7):
+			var k := rng.randi_range(1, steps - 1)
+			var a := rng.randf_range(-0.9, 0.9)
+			var out := (Vector3.UP * cos(a) + Vector3.BACK * sin(a)).normalized()
+			var at: Vector3 = (path[k] as Vector3) + out * float(radii[k]) * 0.97
+			kit.add_primitive(MeshKit.sphere(rng.randf_range(0.035, 0.06), 6, 3), Transform3D(Basis(Quaternion(Vector3.UP, out)).scaled(Vector3(1.3, 0.1, 1.0)), at), Color(0.55, 0.6, 0.45).lerp(weathered, rng.randf_range(0.2, 0.5)), 0.2, 0.05)
+		return
+
+	# The jungle giant: soft low cushions of moss along the top, and ferns arching up out of it.
+	for i in rng.randi_range(8, 12):
+		var k := rng.randi_range(1, steps - 1)
+		var a := rng.randf_range(-0.8, 0.8)
+		var out := (Vector3.UP * cos(a) + Vector3.BACK * sin(a)).normalized()
+		var at: Vector3 = (path[k] as Vector3) + out * float(radii[k]) * 0.9
+		var cr := rng.randf_range(0.14, 0.28)
+		kit.add_primitive(MeshKit.sphere(cr, 8, 4), Transform3D(Basis(Quaternion(Vector3.UP, out)).scaled(Vector3(1.6, 0.32, 1.2)), at), moss.lightened(rng.randf_range(-0.05, 0.1)), 0.15, 0.06)
+	var fern := _vary(_pal.fern, rng)
+	for i in rng.randi_range(3, 4):
+		var k := rng.randi_range(3, steps - 3)
+		var root: Vector3 = (path[k] as Vector3) + Vector3.UP * float(radii[k]) * 0.92
+		var turn := rng.randf() * TAU
+		for j in rng.randi_range(6, 9):
+			var a := turn + TAU * j / 7.0 + rng.randf_range(-0.25, 0.25)
+			var out := Vector3(cos(a), 0, sin(a))
+			var fl := rng.randf_range(0.45, 0.8)
+			var rise := rng.randf_range(0.35, 0.6)
+			var fpath: Array = []
+			var fw: Array = []
+			for q in 6:
+				var t := q / 5.0
+				# Up and out, then arching over and down at the tip.
+				fpath.append(root + out * fl * t + Vector3.UP * fl * (rise * sin(t * PI * 0.8) - 0.15 * t * t))
+				fw.append(fl * 0.09 * sin(PI * (0.15 + t * 0.85)) + 0.005)
+			var fc := fern.lightened(rng.randf_range(-0.06, 0.08))
+			kit.loft(fpath, fw, 4, fc, func(t: float, _ang: float) -> Color: return fc.darkened(0.25 * (1.0 - t)),
+				func(_t: float, _ang: float) -> Vector2: return Vector2(0.18, 1.0), true, true)
 
 
 ## Stump: flaring base, pale cut top with rings, roots curving into the ground.
