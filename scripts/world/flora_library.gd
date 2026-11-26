@@ -770,8 +770,8 @@ func _mossy_log(kit: MeshKit, rng: RandomNumberGenerator) -> void:
 
 
 ## A fallen tree trunk lying on the ground (along X, settled a little into it). Ridged, fissured bark, thick and
-## gently bent, tapering from the end it stood on to the end where it snapped off. That end is a jagged break
-## bristling with pale splinters; the other is old weathered wood showing its rings (or, for a fallen jungle
+## gently bent, tapering from the end it stood on to the end where it snapped off. That end is a break of pale
+## wood; the other is old weathered wood showing its rings (or, for a fallen jungle
 ## giant, the flare of its foot with roots reaching out into the ground). A few broken branch stubs, bracket fungi
 ## and lichen; the jungle giant is half grown over with moss, ferns arching up out of it.
 func _fallen_log(kit: MeshKit, rng: RandomNumberGenerator, giant: bool) -> void:
@@ -820,22 +820,13 @@ func _fallen_log(kit: MeshKit, rng: RandomNumberGenerator, giant: bool) -> void:
 		return c
 	kit.loft(path, radii, 26, bark, colour, shape, false, false, r * 0.06)
 
-	# The snapped end: the broken face, then splinters standing out of it, longest round the rim.
+	# The snapped end: the broken face of pale wood.
 	var tip: Vector3 = path[steps]
 	var tr: float = radii[steps]
 	var ax := ((path[steps] as Vector3) - (path[steps - 1] as Vector3)).normalized()
 	var side := ax.cross(Vector3.UP).normalized()
 	kit.loft([tip - ax * 0.02, tip + ax * tr * 0.25], [tr * 0.98, tr * 0.35], 14, wood.darkened(0.15), func(t: float, _a: float) -> Color:
 		return wood.darkened(0.25).lerp(wood, t), Callable(), false, true, tr * 0.08)
-	for i in rng.randi_range(10, 14):
-		var a := rng.randf() * TAU
-		var d := sqrt(rng.randf())   # spread over the face, more of them out at the rim
-		var at := tip + (Vector3.UP * cos(a) + side * sin(a)) * tr * 0.92 * d
-		var reach := lerpf(0.08, 0.42, d) * rng.randf_range(0.6, 1.2) * (r / 0.34)
-		var dir := (ax + (Vector3.UP * cos(a) + side * sin(a)) * rng.randf_range(0.05, 0.35)).normalized()
-		var w := tr * rng.randf_range(0.07, 0.13)
-		kit.loft([at - ax * 0.03, at + dir * reach * 0.5, at + dir * reach], [w, w * 0.6, 0.004], 4,
-			wood.lightened(rng.randf_range(0.0, 0.12)), Callable(), func(_t: float, _a: float) -> Vector2: return Vector2(1.0, 0.45), true, true)
 
 	# The other end.
 	var foot: Vector3 = path[0]
