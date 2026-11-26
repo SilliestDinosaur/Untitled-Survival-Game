@@ -996,7 +996,7 @@ func _update_placement() -> void:
 		get_parent().add_child(_ghost)
 	if _ghost_kind != kind:
 		_ghost_kind = kind
-		_ghost.mesh = StructureModels.get_model(kind, _ghost_ok_mat, _ghost_ok_mat).body
+		_ghost.mesh = StructureModels.shared_model(kind, _ghost_ok_mat).body   # (its colour comes from material_override)
 	_ghost.visible = true
 	# Green: fine. Amber: only where you're standing is in the way (step back). Red: it can't go there.
 	if not _ghost_wait_mat:

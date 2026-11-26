@@ -28,6 +28,8 @@ const DUST := Effects.MAT_DUST
 func _ready() -> void:
 	_mat = ArtStyle.painted({"brush_strength": 0.22, "rim_amount": 0.3})
 	_glow_mat = StandardMaterial3D.new()
+	StructureModels.shared_material = _mat
+	StructureModels.shared_glow = _glow_mat
 	_glow_mat.vertex_color_use_as_albedo = true
 	_glow_mat.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
 	_glow_mat.emission_enabled = true
@@ -45,7 +47,7 @@ func _ready() -> void:
 	_build_mat = ArtStyle.material(preload("res://shaders/painted_build.gdshader"), {"brush_strength": 0.22, "rim_amount": 0.3})
 	# The first world was built before this node existed, so its models are built here too.
 	_prewarm()
-	Game.structures_changed.connect(_sync)
+	Game.structures_changed.connect(_queue_sync)
 	Game.world_changed.connect(func() -> void:
 		_settled = false
 		StructureModels.clear_cache()
@@ -90,6 +92,22 @@ func _build_flame() -> ArrayMesh:
 
 
 var _settled := false   ## the world's pieces have been drawn once (after that, new ones pop in as they're placed)
+
+
+var _sync_queued := false
+
+## Changes are gathered up and the pieces brought up to date once, at the end of the frame: several changes in one
+## frame (hammering, a friend's update, a load) cost one pass over the base, not one each.
+func _queue_sync() -> void:
+	if _sync_queued:
+		return
+	_sync_queued = true
+	_flush_sync.call_deferred()
+
+
+func _flush_sync() -> void:
+	_sync_queued = false
+	_sync()
 
 
 func _sync() -> void:

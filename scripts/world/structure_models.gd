@@ -12,6 +12,17 @@ const IRON := Color(0.32, 0.32, 0.36)
 const ASH := Color(0.28, 0.26, 0.25)
 
 static var _cache := {}
+## The placed pieces' own materials (set by Structures): the build ghost and the wheel's preview use the very same
+## (prebuilt) meshes with a material of their own laid over them, instead of building every model a second time.
+static var shared_material: Material
+static var shared_glow: Material
+
+
+## A piece's model for showing with a material of its own over it (the ghost, the preview): the shared one.
+static func shared_model(kind: String, fallback: Material) -> Dictionary:
+	if shared_material:
+		return get_model(kind, shared_material, shared_glow)
+	return get_model(kind, fallback, fallback)
 
 
 static func clear_cache() -> void:

@@ -37,6 +37,7 @@ var _beams: Array[MeshInstance3D] = []
 var _beam_mat: ShaderMaterial
 var _beam_anchor := Vector3(1e9, 0, 0)
 var _beam_on := 0.0
+var _sun: DirectionalLight3D
 
 
 func _make_beams() -> void:
@@ -68,16 +69,23 @@ func _make_beams() -> void:
 
 func _update_beams(eye: Vector3, delta: float) -> void:
 	var want: float = _want.get("beams", 0.0)
+	var was := _beam_on
 	_beam_on = move_toward(_beam_on, want, delta * 0.3)
-	_beam_mat.set_shader_parameter("strength", 0.22 * _beam_on)
-	for b in _beams:
-		b.visible = _beam_on > 0.01
-	if _beam_on <= 0.01:
-		return
+	if _beam_on == was and (was <= 0.01 or was >= want):
+		if _beam_on <= 0.01:
+			return
+	else:
+		_beam_mat.set_shader_parameter("strength", 0.22 * _beam_on)
+		for b in _beams:
+			b.visible = _beam_on > 0.01
+		if _beam_on <= 0.01:
+			return
 	if Vector2(eye.x - _beam_anchor.x, eye.z - _beam_anchor.z).length() < 18.0:
 		return
 	_beam_anchor = eye
-	var sun := get_tree().root.find_child("Sun", true, false) as DirectionalLight3D
+	if not is_instance_valid(_sun):
+		_sun = get_tree().root.find_child("Sun", true, false) as DirectionalLight3D   # looked up once, not per move
+	var sun := _sun
 	var down := (sun.global_transform.basis.z * -1.0) if sun else Vector3(0.3, -1, 0.2).normalized()
 	if down.y > -0.35:
 		down = Vector3(down.x, -0.35, down.z).normalized()

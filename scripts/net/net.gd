@@ -82,6 +82,7 @@ var _requests := {}          ## request id -> Callable
 var _next_request := 1
 var _pose_timer := 0.0
 var _animal_timer := 0.0
+var _structures_queued := false
 var _time_timer := 0.0
 var _report_timer := 0.0
 var _swings := 0
@@ -107,9 +108,14 @@ func _ready() -> void:
 	Game.pickups_changed.connect(func() -> void:
 		if is_host():
 			_set_pickups.rpc(Game.pickups))
+	# The host sends the buildings to everyone once per frame at most (a burst of hammer hits is one update).
 	Game.structures_changed.connect(func() -> void:
-		if is_host():
-			_set_structures.rpc(Game.structures))
+		if is_host() and not _structures_queued:
+			_structures_queued = true
+			(func() -> void:
+				_structures_queued = false
+				if is_host():
+					_set_structures.rpc(Game.structures)).call_deferred())
 
 
 func is_online() -> bool:

@@ -27,11 +27,13 @@ NET_RELAY="${RELAY:-off}" NET_FORCE_RELAY="$FORCE_RELAY" NET_JOIN="$join" timeou
 wait "$host_pid"
 [ -n "$relay_pid" ] && kill "$relay_pid" 2>/dev/null
 grep -a -E "^\s+(ok|FAIL) |joined by route" "$client_log" | sed 's/^/  guest /'
+grep -a -E "^  tree .*hits sent" "$client_log" | sed "s/^/  guest /"
 grep -a -E "^\s+(ok|FAIL) " "$host_log" | sed 's/^/  host  /'
 [ -n "$LAG" ] && grep -a "RELAY" "$relay_log" | tail -2
 grep -a -E "CLIENT RESULT" "$client_log"
 grep -a -E "HOST RESULT" "$host_log"
 ok=0
 grep -aq "CLIENT RESULT: PASS" "$client_log" && grep -aq "HOST RESULT: PASS" "$host_log" && ok=1
+[ -n "$KEEP_LOGS" ] && cp "$host_log" "$KEEP_LOGS.host" && cp "$client_log" "$KEEP_LOGS.client"
 rm -f "$host_log" "$client_log" "$relay_log"
 [ "$ok" = 1 ]

@@ -192,7 +192,8 @@ func _refresh() -> void:
 	var kind := _kind()
 	if kind != _preview_kind:
 		_preview_kind = kind
-		_preview.mesh = StructureModels.get_model(kind, _preview_mat, _preview_mat).body
+		_preview.mesh = StructureModels.shared_model(kind, _preview_mat).body
+		_preview.material_override = _preview_mat
 		# Floors and roofs are low and wide, stairs climb a full storey, a flower pot is small: centre each on the
 		# stage, and scale the small ones up so they read.
 		var aabb: AABB = _preview.mesh.get_aabb()

@@ -116,6 +116,7 @@ func apply_palette() -> void:
 
 var _humid := 0.0         ## how deep in the jungle the camera is (0..1), eased
 var _humid_cd := 0.0
+var _humid_far := -1
 
 
 func _process(delta: float) -> void:
@@ -134,10 +135,13 @@ func _process(delta: float) -> void:
 			var w := Game.world_gen.biome_weights_at(p.x, p.z, p.y)
 			want = smoothstep(0.25, 0.7, float(w.get(WorldGen.Biome.JUNGLE, 0.0)) + float(w.get(WorldGen.Biome.MARSH, 0.0)) * 0.5)
 		set_meta("humid_want", want)
+	var h0 := _humid
 	_humid = move_toward(_humid, float(get_meta("humid_want", 0.0)), delta * 0.25)
-	var far := Settings.view_radius() * Game.CHUNK_SIZE
-	environment.fog_depth_begin = lerpf(far * 0.42, 14.0, _humid)
-	environment.fog_depth_end = lerpf(far * 0.95, far * 0.6, _humid)
+	if _humid != h0 or _humid_far != Settings.view_radius():   # only when it changes (each set is a call into the renderer)
+		_humid_far = Settings.view_radius()
+		var far := Settings.view_radius() * Game.CHUNK_SIZE
+		environment.fog_depth_begin = lerpf(far * 0.42, 14.0, _humid)
+		environment.fog_depth_end = lerpf(far * 0.95, far * 0.6, _humid)
 
 
 ## 0..1 values describing the light right now.

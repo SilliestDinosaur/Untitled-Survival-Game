@@ -19,7 +19,10 @@ static func plan(gen: WorldGen) -> Array:
 	var size := Game.WORLD_SIZE
 	var counts := {}
 	var tries := 0
-	while tries < 2600:
+	var wanted := 0
+	for k: String in MAX:
+		wanted += int(MAX[k])
+	while tries < 2600 and out.size() < wanted:   # (stops as soon as every kind has its share)
 		tries += 1
 		var x := rng.randf_range(80.0, size - 80.0)
 		var z := rng.randf_range(80.0, size - 80.0)
@@ -51,7 +54,7 @@ static func plan(gen: WorldGen) -> Array:
 				r = 10.0
 		if kind == "" or int(counts.get(kind, 0)) >= int(MAX[kind]):
 			continue
-		# Apart from each other (and the spawn's area stays plain).
+		# Apart from each other.
 		var p := Vector3(x, h, z)
 		var ok := true
 		for o: Dictionary in out:

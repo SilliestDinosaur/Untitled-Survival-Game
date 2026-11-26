@@ -22,7 +22,12 @@ var _rivers: Node3D
 
 func _ready() -> void:
 	Game.terrain_changed.connect(_on_terrain_changed)
-	Game.structures_changed.connect(_on_structures_changed)
+	Game.structures_changed.connect(func() -> void:
+		if not _structs_queued:   # (once per frame, however many changes came in it)
+			_structs_queued = true
+			(func() -> void:
+				_structs_queued = false
+				_on_structures_changed()).call_deferred())
 	view_radius = Settings.view_radius()
 	_build_water()
 	Game.assets_rebuilt.connect(func() -> void:
@@ -177,6 +182,10 @@ func _removed_snapshot() -> Dictionary:
 	return out
 
 
+var _structs_queued := false
+static var _timing := OS.get_environment("CHUNK_TIMING") != ""
+
+
 func _collect_jobs() -> void:
 	var applied := 0
 	var start := Time.get_ticks_usec()
@@ -194,13 +203,17 @@ func _collect_jobs() -> void:
 			continue
 		if focus and _cheb(c, world_to_chunk(focus.global_position)) > view_radius + 1:
 			continue
+		var t0 := Time.get_ticks_usec()
 		var chunk := TerrainChunk.new()
 		chunk.apply(c, job.tier, job.result, Game.flora)
+		var t1 := Time.get_ticks_usec()
 		_dirty.erase(c)
 		if _chunks.has(c):
 			_chunks[c].queue_free()   # swap in the new detail level only once it's ready
 		_chunks[c] = chunk
 		add_child(chunk)
+		if _timing:
+			print("CHUNK %s tier %d apply %.1f ms add %.1f ms" % [c, job.tier, (t1 - t0) / 1000.0, (Time.get_ticks_usec() - t1) / 1000.0])
 		applied += 1
 
 

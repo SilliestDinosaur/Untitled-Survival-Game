@@ -530,8 +530,19 @@ static func update_cascades(parent: Node3D, eye: Vector3) -> void:
 		if c.has_meta("spray"):
 			var p := c.get_meta("spray") as CPUParticles3D
 			var on := (c as Node3D).global_position.distance_squared_to(eye) < 70.0 * 70.0
-			if p.emitting != on:
+			var rush_off := false
+			for a in c.get_children():
+				if a is AudioStreamPlayer3D and on and (a as AudioStreamPlayer3D).stream and not a.playing:
+					rush_off = true   # (its sound was made after the spray came on)
+			if p.emitting != on or rush_off:
 				p.emitting = on
+				# The rush too: nothing to mix while it's out of earshot.
+				for a in c.get_children():
+					if a is AudioStreamPlayer3D and (a as AudioStreamPlayer3D).stream:
+						if on and not a.playing:
+							a.play(randf() * 5.0)
+						elif not on:
+							a.stop()
 
 
 ## How far the river water is drawn: never past the terrain that's loaded (with a low view distance it would

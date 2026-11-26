@@ -29,6 +29,7 @@ var _floors: Array = []
 var _stations: Array = []
 var _reasons := {}
 var _frame_builds: Array[int] = []
+var _frame_split: Array = []
 var _last_built := 0
 
 
@@ -55,6 +56,9 @@ func _process(_d: float) -> bool:
 		_frame_ms.append((now - _last_us) / 1000.0)
 		var built: int = _game.flora.meshes.size() if _game.flora else 0
 		_frame_builds.append(built - _last_built)
+		# Where the frame went (the engine's own measures of the last frame): scripts' _process, and physics
+		# (with the scripts' _physics_process), so a spike can be traced.
+		_frame_split.append(Vector2(Performance.get_monitor(Performance.TIME_PROCESS), Performance.get_monitor(Performance.TIME_PHYSICS_PROCESS)) * 1000.0)
 		_last_built = built
 	_last_us = now
 	match _state:
@@ -194,7 +198,8 @@ func _finish() -> bool:
 	print("SOAK teleports %d  placed %d  door toggles %d  snapshot round trips %d  max chunks %d" % [_teleports, _placed, _toggled, _roundtrips, _max_chunks])
 	for i in _frame_ms.size():
 		if _frame_ms[i] > 50.0:
-			print("SOAK spike play-frame %d: %.1f ms, flora builds %d, teleport frame %s" % [i, _frame_ms[i], _frame_builds[i], str(i % 90 == 0)])
+			var sp: Vector2 = _frame_split[i] if i < _frame_split.size() else Vector2.ZERO
+			print("SOAK spike play-frame %d: %.1f ms (process %.1f, physics %.1f), flora builds %d, teleport frame %s" % [i, _frame_ms[i], sp.x, sp.y, _frame_builds[i], str(i % 90 == 0)])
 	var spike_build := 0
 	var spike_plain := 0
 	var build_frames := 0

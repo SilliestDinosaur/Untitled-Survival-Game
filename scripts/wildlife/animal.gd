@@ -207,6 +207,7 @@ func _enter(s: State) -> void:
 		State.REST:
 			_timer = _rng.randf_range(25.0, 60.0) if _asleep else _rng.randf_range(10.0, 25.0)
 		State.DRINK:
+			_drinking = false
 			_timer = 25.0   # (to get to the water; the drink itself is timed when it arrives)
 	# Climbers run for a tree when frightened.
 	if s == State.FLEE and species.climbs and not in_tree:
@@ -380,13 +381,17 @@ func _physics_process(delta: float) -> void:
 			if d.length() > 1.0 and _timer > 12.0:
 				want_dir = d.normalized()
 				want_speed = species.walk_speed
+			elif d.length() > 2.5 and not _drinking:
+				_enter(State.IDLE)   # never got there (the way was blocked): no drinking in the middle of a field
 			else:
-				if _timer > 12.0:
+				if not _drinking:
+					_drinking = true
 					_timer = _rng.randf_range(5.0, 9.0)   # at the water: head down, drinking
 					var w := _drink_at - position
 					_desired_yaw = atan2(-w.x, -w.z)
 				graze = 1.3
 				if _timer <= 0.0:
+					_drinking = false
 					_enter(State.IDLE)
 		State.WANDER:
 			var d := _target - position
@@ -485,6 +490,7 @@ func _can_lie() -> bool:
 
 
 var _drink_at := Vector3.ZERO
+var _drinking := false
 ## Water within a short walk (a river, a lake, a pond): heads for the dry bank beside it. False if none near.
 func _find_water() -> bool:
 	if _cave or species.swims:

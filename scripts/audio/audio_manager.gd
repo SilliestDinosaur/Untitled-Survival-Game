@@ -94,7 +94,6 @@ func _finish_build(made: Dictionary, fire: AudioStreamWAV, river: AudioStreamWAV
 	for p: AudioStreamPlayer3D in _rush:
 		if is_instance_valid(p) and p.stream == null:
 			p.stream = river
-			p.play(_rng.randf() * 5.0)
 	WorkerThreadPool.wait_for_task_completion(_build_task)
 	_build_task = -1
 
@@ -241,8 +240,7 @@ func rush_loop(parent: Node3D) -> AudioStreamPlayer3D:
 	parent.add_child(p)
 	_rush.append(p)
 	if _river and _river.stream:
-		p.stream = _river.stream
-		p.play(_rng.randf() * 5.0)
+		p.stream = _river.stream   # (started and stopped by distance: see Rivers.update_cascades)
 	return p
 
 
