@@ -8,6 +8,7 @@ var started := false
 var last_us := 0
 var times: Array = []
 var notes: Array = []
+var all_frames: Array = []
 var pos := Vector3.ZERO
 var dir := Vector3.ZERO
 var turn := 0.0
@@ -27,7 +28,7 @@ func _process(_d: float) -> bool:
 			started = true
 			f = 0
 			var p: Node3D = main.player
-			p.set_physics_process(false)
+			p.set_physics_process(OS.get_environment("PHYS") != "")
 			pos = p.global_position
 			dir = (Vector3(1024, 0, 1024) - pos)
 			dir.y = 0.0
@@ -40,10 +41,17 @@ func _process(_d: float) -> bool:
 	if last_us > 0 and f > 60:
 		var ms := (now - last_us) / 1000.0
 		times.append(ms)
+		var gw = root.get_node("Game").world_gen
+		all_frames.append([ms, f, Vector2i(int(pos.x), int(pos.z)), gw.BIOME_NAMES[gw.get_biome(pos.x, pos.z)]])
 		if ms > 33.0:
 			var g = root.get_node("Game").world_gen
 			notes.append("frame %d: %.1f ms at %s (%s%s)" % [f, ms, Vector2i(int(pos.x), int(pos.z)), g.BIOME_NAMES[g.get_biome(pos.x, pos.z)], ", in a cave" if root.get_node("Game").in_cave else ""])
 	last_us = now
+	if f == 600:
+		var t0 := Time.get_ticks_usec()
+		main.save_now()
+		print("WALK save took %.1f ms" % ((Time.get_ticks_usec() - t0) / 1000.0))
+		last_us = Time.get_ticks_usec()
 	# Walk on, wandering a little; turn back in from the coast.
 	var speed := float(OS.get_environment("SPEED")) if OS.get_environment("SPEED") != "" else 9.0
 	var g2 = root.get_node("Game").world_gen
@@ -67,6 +75,9 @@ func _process(_d: float) -> bool:
 		print("WALK frames %d  mean %.2f ms  p50 %.2f  p95 %.2f  p99 %.2f  worst %.2f  over 33 ms: %d  over 50 ms: %d" % [n, mean, s[n / 2], s[int(n * 0.95)], s[int(n * 0.99)], s[n - 1], s.filter(func(t: float) -> bool: return t > 33.0).size(), s.filter(func(t: float) -> bool: return t > 50.0).size()])
 		for line: String in notes:
 			print("WALK slow ", line)
+		all_frames.sort_custom(func(a: Array, b: Array) -> bool: return a[0] > b[0])
+		for i in mini(15, all_frames.size()):
+			print("WALK top %.1f ms frame %d at %s (%s)" % all_frames[i])
 		quit()
 		return true
 	return false

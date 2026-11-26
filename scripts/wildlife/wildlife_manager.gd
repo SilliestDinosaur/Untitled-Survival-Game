@@ -3,7 +3,7 @@ extends Node3D
 ## herds of grazers and beasts, critters in the grass, and bird flocks overhead.
 ## Animals far away are removed and new ones appear out of sight.
 
-@export var max_animals := 14
+@export var max_animals := 24   ## herd animals (grazers and beasts); the small ones have their own count
 @export var max_critters := 8
 @export var max_flocks := 2
 @export var max_perchers := 2   ## groups of birds sitting about in the trees and on logs
@@ -79,16 +79,16 @@ func _physics_process(delta: float) -> void:
 		for a in _animals:
 			if is_instance_valid(a):
 				a.targets = targets
-		if _animals.size() < max_animals + (centers.size() - 1) * 8:
+		var small := 0
+		for a in _animals:
+			if is_instance_valid(a) and (a as Animal).species.role == "small":
+				small += 1
+		if _animals.size() - small < max_animals + (centers.size() - 1) * 10:
 			var c: Vector3 = centers[_rng.randi() % centers.size()]
 			if _rng.randf() < 0.3:
 				_spawn_shore(c)
 			else:
 				_spawn_herd(c)
-		var small := 0
-		for a in _animals:
-			if is_instance_valid(a) and (a as Animal).species.role == "small":
-				small += 1
 		if small < max_small:
 			_spawn_small(centers[_rng.randi() % centers.size()])
 		_tend_lairs(centers)
@@ -196,8 +196,22 @@ func _ring_spot(center: Vector3, near: float, far: float) -> Variant:
 			continue
 		var h: float = Game.world_gen.get_height(x, z)
 		if h > 2.5 and h < 50.0 and Game.world_gen.get_normal(x, z).y > 0.82 and not Game.world_gen.near_river(x, z, 1.0):
+			if d < 110.0 and _in_view(Vector3(x, h, z)):
+				continue   # nearer ones only where nobody is looking (they'd pop into sight)
 			return Vector3(x, h, z)
 	return null
+
+
+## Whether p is in front of this machine's camera (roughly within its view).
+func _in_view(p: Vector3) -> bool:
+	var cam := get_viewport().get_camera_3d() if is_inside_tree() else null
+	if not cam:
+		return false
+	var to := p - cam.global_position
+	to.y = 0.0
+	var fwd := -cam.global_transform.basis.z
+	fwd.y = 0.0
+	return to.normalized().dot(fwd.normalized()) > 0.35
 
 
 ## Pick a species that likes the biome at this spot.
@@ -231,7 +245,7 @@ func _pick_species(roles: Array, pos: Vector3) -> FaunaLibrary.Species:
 
 
 func _spawn_herd(center: Vector3, at: Variant = null, sp: FaunaLibrary.Species = null) -> void:
-	var spot: Variant = at if at != null else _ring_spot(center, 70.0, 150.0)
+	var spot: Variant = at if at != null else _ring_spot(center, 55.0, 140.0)
 	if spot == null:
 		return
 	# Territorial beasts are rarer than grazers.

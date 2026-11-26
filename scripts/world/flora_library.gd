@@ -424,43 +424,7 @@ func _birch(kit: MeshKit, rng: RandomNumberGenerator) -> void:
 ## Weeping willow: a stout, leaning, gnarled trunk; limbs arching up and out; and from them long curtains of leafy
 ## strands falling nearly to the ground, under a soft dome of leaves.
 func _willow(kit: MeshKit, rng: RandomNumberGenerator) -> void:
-	var h := rng.randf_range(4.2, 5.4)
-	var trunk_r := rng.randf_range(0.3, 0.4)
-	var bark := _vary(_pal.bark, rng).darkened(0.1)
-	var leaf := _vary(_pal.willow_leaves, rng)
-	var top := TreeModels.trunk(kit, rng, Vector3.ZERO, h, trunk_r, bark, Vector3(rng.randf_range(-0.35, 0.35), 0, rng.randf_range(-0.35, 0.35)), 9, 0.9)
-	var tips: Array = []
-	for i in rng.randi_range(5, 7):
-		var yaw := TAU * i / 6.0 + rng.randf_range(-0.35, 0.35)
-		var dir := Vector3(cos(yaw), rng.randf_range(0.45, 0.8), sin(yaw)).normalized()
-		TreeModels.branch(kit, rng, top - Vector3(0, h * rng.randf_range(0.05, 0.25), 0), dir, h * rng.randf_range(0.35, 0.5), trunk_r * 0.5, 1, bark, tips, 6)
-	tips.append(top + Vector3(0, 0.4, 0))
-	# The dome: soft lumps over the limbs.
-	for tip: Vector3 in tips:
-		TreeModels.blob(kit, rng, tip + Vector3(0, 0.25, 0), rng.randf_range(0.9, 1.3), 0.6, leaf.lightened(rng.randf_range(-0.04, 0.05)), 0.45)
-	# The curtains: from each limb's end, slim strands arcing out a little and falling, with gaps between them so the
-	# light comes through (a curtain, not a wall). Far away: a few wider, simpler strands in the same places.
-	# (The strand rng draws are the same near and far, so the far twin keeps the near one's shape.)
-	for tip: Vector3 in tips:
-		var out := Vector3(tip.x, 0, tip.z)
-		out = out.normalized() if out.length() > 0.05 else Vector3(1, 0, 0)
-		var count := rng.randi_range(6, 9)
-		for k in count:
-			var a := rng.randf() * TAU
-			var start: Vector3 = tip + Vector3(cos(a), 0, sin(a)) * rng.randf_range(0.5, 1.4) + Vector3(0, rng.randf_range(-0.2, 0.3), 0)
-			var drop := rng.randf_range(0.6, 0.93) * start.y
-			var c := leaf.lightened(rng.randf_range(-0.06, 0.08))
-			if _lod and k % 2 == 1:
-				continue
-			var segs := 3 if _lod else 6
-			var wide := 1.7 if _lod else 1.0
-			var path: Array = []
-			var radii: Array = []
-			for j in segs + 1:
-				var t := float(j) / segs
-				path.append(start + out * 0.5 * sin(t * PI * 0.5) * (1.0 - t * 0.4) + Vector3(0, -drop * t, 0) + Vector3(sin(t * 3.0 + a), 0, cos(t * 3.0 + a)) * 0.07)
-				radii.append(lerpf(0.09, 0.03, t) * wide)
-			kit.loft(path, radii, 3 if _lod else 4, c, func(t: float, _ang: float) -> Color: return c.lightened(0.1 * t), func(_t: float, _ang: float) -> Vector2: return Vector2(1.0, 0.3), false, true, 0.0 if _lod else 0.015)
+	TreeModels.weeping_willow(kit, rng, _vary(_pal.bark, rng).darkened(0.12), _vary(_pal.willow_leaves, rng), rng.randf_range(4.6, 5.8), rng.randf_range(0.34, 0.44), _lod)
 
 
 ## Savanna tree: leaning trunk splitting into branches with flat, wide canopy layers.
@@ -1259,7 +1223,7 @@ func _fern(kit: MeshKit, rng: RandomNumberGenerator) -> void:
 
 ## Tall rainforest tree: buttress roots, a straight pale trunk, a broad layered crown and vines.
 func _jungle_tree(kit: MeshKit, rng: RandomNumberGenerator) -> void:
-	TreeModels.jungle(kit, rng, _vary(_pal.bark, rng).lightened(0.18), _vary(_pal.jungle_leaves, rng), rng.randf_range(11.0, 16.0), rng.randf_range(0.32, 0.42))
+	TreeModels.rainforest(kit, rng, _vary(_pal.bark, rng).lightened(0.18), _vary(_pal.jungle_leaves, rng), _vary(_pal.jungle_leaves_2, rng), rng.randf_range(12.0, 17.0), rng.randf_range(0.34, 0.44), _lod)
 
 ## A mushroom the size of a tree: a pale swollen stem and a broad domed cap with spots and gills.
 func _giant_mushroom(kit: MeshKit, rng: RandomNumberGenerator, index: int) -> void:

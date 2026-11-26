@@ -67,7 +67,7 @@ static func generate(job: Dictionary) -> void:
 			"step": FINE,
 		}
 	var covered: Array = job.get("covered", [])
-	var resources := _place_resources(coord, origin, gen, flora, job.removed, covered)
+	var resources := _place_resources(coord, origin, gen, flora, job.removed, covered, tier == 0)
 	result.resources = resources
 	result.multimesh = _resource_buffers(resources, origin, tier)
 	if tier == 0 and job.grass_density > 0.0:
@@ -240,7 +240,7 @@ static func _clear_covered(buffers: Dictionary, origin: Vector3, covered: Array)
 			buffers[key] = kept
 
 
-static func _place_resources(coord: Vector2i, origin: Vector3, gen: WorldGen, flora: FloraLibrary, removed: Dictionary, covered := []) -> Array[Dictionary]:
+static func _place_resources(coord: Vector2i, origin: Vector3, gen: WorldGen, flora: FloraLibrary, removed: Dictionary, covered := [], contour_vines := false) -> Array[Dictionary]:
 	var out: Array[Dictionary] = []
 	var rng := RandomNumberGenerator.new()
 	rng.seed = hash([Game.world_seed, coord.x, coord.y, "res"])
@@ -419,6 +419,9 @@ static func _place_resources(coord: Vector2i, origin: Vector3, gen: WorldGen, fl
 		add.call("cliff_vine", a.variant, face.top, 0.0, Vector3.ONE)
 		if out.size() > before:
 			out[-1].transform = Transform3D(face.basis, face.top)
+			# Close by, each vine is built to the rock it hangs on: its strands follow the face's bulges and hollows.
+			if contour_vines:
+				out[-1].vine_arrays = _contour_vine(gen, flora, out[-1].transform, hash(out[-1].id))
 	_place_cave_resources(coord, origin, gen, flora, removed, out)
 	# A landmark's giant tree: an old tree of the country round it, two and a half times the size, in its clearing.
 	for lm: Dictionary in marks:
@@ -510,6 +513,72 @@ static func _rock_face(gen: WorldGen, x: float, z: float) -> Variant:
 	return {"top": top + out_face * 0.04, "basis": Basis(across * 1.0, up_face * (length / FloraLibrary.VINE_LENGTH), out_face)}
 
 
+## A cliff vine built to the face it hangs on (worker thread): strands hang from the top of the face and run down
+## over it, each point pressed onto the rock along the face's outward direction, with leaves along them. Built in the
+## world and handed back in the vine's own frame (its resource transform), so it's drawn, shaken and hidden like any
+## other plant. Returns [verts, normals, colors].
+static func _contour_vine(gen: WorldGen, flora: FloraLibrary, xf: Transform3D, seed_v: int) -> Array:
+	var rng := RandomNumberGenerator.new()
+	rng.seed = seed_v
+	var kit := MeshKit.new(seed_v)
+	var pal: WorldPalette = flora._pal
+	var stem := pal.vine.darkened(0.2 + rng.randf_range(-0.05, 0.05))
+	var leaf := pal.vine.lightened(rng.randf_range(-0.06, 0.06))
+	var across := xf.basis.x.normalized()
+	var down := -xf.basis.y.normalized()
+	var out := xf.basis.z.normalized()
+	var length := xf.basis.y.length() * FloraLibrary.VINE_LENGTH
+	# A point on the rock: from p, along the outward direction, to where it meets the ground (a few halvings).
+	var on_rock := func(p: Vector3) -> Vector3:
+		var lo := -1.4
+		var hi := 1.4
+		for k in 8:
+			var mid := (lo + hi) * 0.5
+			var q := p + out * mid
+			if q.y > gen.get_height(q.x, q.z):
+				hi = mid   # in the air: come in
+			else:
+				lo = mid
+		return p + out * hi
+	for i in rng.randi_range(9, 13):
+		var x := rng.randf_range(-1.2, 1.2)
+		var l := length * rng.randf_range(0.55, 1.0)
+		var path: Array = []
+		var radii: Array = []
+		var rows := clampi(int(l / 0.35), 6, 18)
+		var lean := rng.randf_range(-0.12, 0.12)
+		for k in rows + 1:
+			var t := float(k) / rows
+			var p: Vector3 = xf.origin + across * (x + sin(t * 5.0 + x * 3.0) * 0.1 + lean * t) + down * l * t
+			var g: Vector3 = on_rock.call(p)
+			path.append(g + out * (0.05 + 0.025 * sin(t * 7.0 + x)))
+			radii.append(lerpf(0.024, 0.011, t))
+		kit.loft(path, radii, 4, stem, Callable(), Callable(), false, true)
+		# Leaves along it, lying against the rock: thickest near the top, where the vine has grown longest.
+		for k in rng.randi_range(18, 28):
+			var t := pow(rng.randf(), 1.4)
+			var seg := mini(int(t * rows), rows - 1)
+			var c: Vector3 = (path[seg] as Vector3).lerp(path[seg + 1], t * rows - seg)
+			var d: Vector3 = ((path[seg + 1] as Vector3) - (path[seg] as Vector3)).normalized()
+			var side := d.cross(out).normalized() * (1.0 if rng.randf() < 0.5 else -1.0)
+			var sz := rng.randf_range(0.09, 0.16) * lerpf(1.15, 0.8, t)
+			var tip := c + (side * 0.8 + d * 0.5).normalized() * sz * 1.6 + out * 0.03
+			var w := d * sz * 0.55
+			var col := leaf.lightened(rng.randf_range(-0.12, 0.1))
+			var lift := out * 0.025
+			kit.add_tri(c, c + w + side * sz * 0.6 + lift, tip, col.darkened(0.15), col, col.lightened(0.1))
+			kit.add_tri(c, tip, c - w + side * sz * 0.6 + lift, col.darkened(0.15), col.lightened(0.1), col)
+	# Into the vine's own frame (normals by the transpose of its basis: the inverse-transpose of the frame's inverse).
+	var inv := xf.affine_inverse()
+	var bt := xf.basis.transposed()
+	var verts := kit.verts
+	var normals := kit.normals
+	for k in verts.size():
+		verts[k] = inv * verts[k]
+		normals[k] = (bt * normals[k]).normalized()
+	return [verts, normals, kit.colors]
+
+
 ## A vine's length on a long face (from its place, so it's the same on every machine).
 static func rng_len(x: float, z: float) -> float:
 	return 5.0 + float(absi(hash(Vector2i(int(x * 10.0), int(z * 10.0)))) % 400) / 100.0
@@ -536,6 +605,8 @@ static func _resource_buffers(resources: Array[Dictionary], origin: Vector3, tie
 		var cat := FloraLibrary.category_of(r.kind)
 		if tier == 2 and cat != "tree":
 			continue
+		if r.has("vine_arrays"):
+			continue   # drawn from its own mesh (see TerrainChunk)
 		if tier == 1 and cat == "clutter" and r.kind != "boulder" and r.kind != "log":
 			continue
 		# Trees beyond the nearest ring draw their species' first low-poly twin: they are most of the triangles in

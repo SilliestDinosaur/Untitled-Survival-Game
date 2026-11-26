@@ -19,6 +19,7 @@ var _wobbles := {}       # resource index -> time left
 var _bare := {}          # resource index -> MeshInstance3D showing the harvested look
 var _regrow_check := 0.0
 var _by_id := {}         # resource id -> index
+var _own := {}           # resource index -> MeshInstance3D: plants built to their own spot (vines on a rock face)
 
 
 func apply(c: Vector2i, t: int, data: Dictionary, flora: FloraLibrary) -> void:
@@ -39,6 +40,7 @@ func apply(c: Vector2i, t: int, data: Dictionary, flora: FloraLibrary) -> void:
 
 	_build_terrain(data, flora)
 	_build_multimeshes(data.multimesh, flora)
+	_build_own_meshes(flora)
 	if tier == 0:
 		_build_resource_colliders(flora)
 	# Plants that were hand-harvested recently show their bare look.
@@ -142,6 +144,33 @@ func _build_multimeshes(buffers: Dictionary, flora: FloraLibrary) -> void:
 			add_child(smmi)
 
 
+## Plants with a mesh of their own (made with the chunk, on its worker): each one drawn on its own.
+func _build_own_meshes(flora: FloraLibrary) -> void:
+	for k in resources.size():
+		var r := resources[k]
+		if not r.has("vine_arrays") or r.get("removed", false):
+			continue
+		var arr: Array = r.vine_arrays
+		r.erase("vine_arrays")
+		var arrays := []
+		arrays.resize(Mesh.ARRAY_MAX)
+		arrays[Mesh.ARRAY_VERTEX] = arr[0]
+		arrays[Mesh.ARRAY_NORMAL] = arr[1]
+		arrays[Mesh.ARRAY_COLOR] = arr[2]
+		var mesh := ArrayMesh.new()
+		mesh.add_surface_from_arrays(Mesh.PRIMITIVE_TRIANGLES, arrays)
+		mesh.surface_set_material(0, flora.mesh(String(r.key)).surface_get_material(0))
+		var mi := MeshInstance3D.new()
+		mi.mesh = mesh
+		var xf: Transform3D = r.transform
+		xf.origin -= position
+		mi.transform = xf
+		mi.visibility_range_end = FloraLibrary.VIS_RANGE[FloraLibrary.category_of(r.kind)]
+		mi.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+		add_child(mi)
+		_own[k] = mi
+
+
 func _build_resource_colliders(flora: FloraLibrary) -> void:
 	# Two bodies: solid things (trees, rocks) and walk-through things (bushes).
 	# Each shape remembers which resource it belongs to, so the crosshair / tools can find it.
@@ -243,6 +272,8 @@ func set_bare(index: int, on: bool) -> void:
 
 
 func get_resource_mesh(index: int) -> Mesh:
+	if _own.has(index):
+		return (_own[index] as MeshInstance3D).mesh
 	var key: String = resources[index].get("mm_key", resources[index].key)
 	return _mmis[key].multimesh.mesh if _mmis.has(key) else null
 
@@ -287,6 +318,12 @@ func _process(delta: float) -> void:
 
 
 func _set_instance(index: int, xf: Transform3D) -> void:
+	if _own.has(index):
+		var mi: MeshInstance3D = _own[index]
+		mi.visible = xf.basis.get_scale().length_squared() > 1e-8
+		if mi.visible:
+			mi.transform = xf
+		return
 	var r := resources[index]
 	if not r.has("mm_index") or not _mmis.has(r.mm_key):
 		return

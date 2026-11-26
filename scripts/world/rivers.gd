@@ -31,7 +31,7 @@ static var pond_material: ShaderMaterial
 static func plan(gen: WorldGen) -> Dictionary:
 	var rng := RandomNumberGenerator.new()
 	rng.seed = hash([Game.world_seed, "rivers"])
-	var out := {"lines": [], "segs": [], "buckets": {}, "ponds": []}
+	var out := {"lines": [], "segs": [], "buckets": {}, "ponds": [], "heads": []}
 	var taken: Array = []   # sources so far, kept apart
 	var big := _sources(gen, rng, 24.0, 1e9, 360.0, rng.randi_range(2, 4), taken)
 	var small := _sources(gen, rng, 9.0, 34.0, 150.0, rng.randi_range(5, 9), taken)
@@ -141,6 +141,28 @@ static func _add_river(gen: WorldGen, rng: RandomNumberGenerator, out: Dictionar
 		if r < 3.0:
 			return
 		pond = [c, r, surf[n - 1], dep[n - 1] + 0.4]
+	# Where it rises: a pool at its head, the river running out of it. Against a steep rise (the head cut into a
+	# hillside, a wall above it) the water comes out of the rock above the pool; on gentler ground it wells up into
+	# the pool itself. The pool sits a little below the ground round it, and the river never above the pool.
+	var head: Vector2 = pts[0]
+	var up: Vector2 = (head - (pts[1] as Vector2)).normalized()
+	var rise := 0.0
+	for d2 in [3.0, 6.0]:
+		var q: Vector2 = head + up * d2
+		rise = maxf(rise, gen.get_base_height(q.x, q.y) - surf[0])
+	var rock := rise > 4.0
+	var hr := wid[0] * 1.5 + (1.6 if rock else 1.2)
+	var hc := head + up * hr * 0.45
+	var rim := INF
+	for k in 12:
+		var a := TAU * k / 12.0
+		var q := hc + Vector2(cos(a), sin(a)) * (hr + 1.5)
+		rim = minf(rim, gen.get_base_height(q.x, q.y))
+	var hs := minf(surf[0], rim - 0.35)
+	for i in n:
+		surf[i] = minf(surf[i], hs)
+	var head_pond := [hc, hr, hs, dep[0] + 0.35, 5.0 if rock else 10.0]
+	out.heads.append({"c": hc, "up": up, "rock": rock, "r": hr, "surface": hs, "rise": rise, "big": big})
 	out.lines.append({"pts": pts, "surface": surf, "width": wid, "depth": dep, "big": big, "end": traced.end})
 	var segs: Array = out.segs
 	for i in n - 1:
@@ -151,6 +173,8 @@ static func _add_river(gen: WorldGen, rng: RandomNumberGenerator, out: Dictionar
 	if pond.is_empty() == false:
 		out.ponds.append(pond)
 		_bucket(out.buckets, pond[0], pond[0], float(pond[1]) + REACH, -1 - (out.ponds.size() - 1))
+	out.ponds.append(head_pond)
+	_bucket(out.buckets, head_pond[0], head_pond[0], float(head_pond[1]) + float(head_pond[4]), -1 - (out.ponds.size() - 1))
 
 
 static func _bucket(buckets: Dictionary, a: Vector2, b: Vector2, reach: float, idx: int) -> void:
@@ -303,13 +327,16 @@ static func carve(plan: Dictionary, x: float, z: float, land: float) -> float:
 			# its downstream end: the next stretch (as low or lower) carries on from there, and raising it would heap
 			# up the outside of every bend, a crease up the bank and a spit of land poking out of the water.
 			beyond = maxf(-raw_t, 0.0) * sqrt(len2)
-		else:
+		var reach := REACH
+		if si < 0:
 			var pd: Array = plan.ponds[-1 - si]
 			d = p.distance_to(pd[0])
 			w = pd[1]
 			sf = pd[2]
 			dep = pd[3]
-		if d > w + REACH:
+			if pd.size() > 4:
+				reach = pd[4]   # a spring's pool: a short bank, the rise behind it left standing
+		if d > w + reach:
 			continue
 		var prof: float
 		if d < w:
@@ -318,7 +345,7 @@ static func carve(plan: Dictionary, x: float, z: float, land: float) -> float:
 		else:
 			prof = sf + LIP * smoothstep(0.0, LIP_RUN, d - w) + BANK * (d - w)
 			# Far out the valley blends back into the land, so it never ends in a step.
-			prof = lerpf(prof, maxf(prof, land), smoothstep(w + REACH * 0.55, w + REACH, d))
+			prof = lerpf(prof, maxf(prof, land), smoothstep(w + reach * 0.55, w + reach, d))
 		if beyond > 0.0:
 			prof += beyond * END_RISE
 		out = minf(out, prof)
@@ -469,6 +496,8 @@ static func build_meshes(plan: Dictionary, parent: Node3D, sea_material: ShaderM
 		var deco := _dress_pond(gen, pd, rng, mat)
 		if deco:
 			parent.add_child(deco)
+	for hd: Dictionary in plan.get("heads", []):
+		_dress_head(gen, hd, rng, mat, parent)
 	for pd: Array in plan.ponds:
 		var c: Vector2 = pd[0]
 		var mi := MeshInstance3D.new()
@@ -726,6 +755,127 @@ static func _dress_pond(gen: WorldGen, pd: Array, rng: RandomNumberGenerator, ma
 	mi.position = centre
 	mi.visibility_range_end = 160.0
 	return mi
+
+
+## A river's source. Out of the rock: a heap of mossy boulders built into the rise above the pool, the water
+## spilling white from a cleft between them down into it, with spray and the rush of it. A spring: mossy stones
+## round the pool, ferny tufts, and bubbles welling up in the middle.
+static func _dress_head(gen: WorldGen, hd: Dictionary, rng: RandomNumberGenerator, mat: Material, parent: Node3D) -> void:
+	var c2: Vector2 = hd.c
+	var r: float = hd.r
+	var up2: Vector2 = hd.up
+	var surface: float = hd.surface
+	var centre := Vector3(c2.x, surface, c2.y)
+	var up := Vector3(up2.x, 0, up2.y)
+	var side := Vector3(-up.z, 0, up.x)
+	var kit := MeshKit.new(int(c2.x * 7.0))
+	var pal: WorldPalette = Game.palette
+	var moss: Color = pal.moss
+	var body := StaticBody3D.new()
+	body.collision_layer = TerrainChunk.LAYER_SOLID
+	body.collision_mask = 0
+	var solid := func(at: Vector3, rad: float) -> void:
+		var cs := CollisionShape3D.new()
+		var sph := SphereShape3D.new()
+		sph.radius = rad
+		cs.shape = sph
+		cs.position = at
+		body.add_child(cs)
+	if hd.rock:
+		var rise := clampf(float(hd.rise), 4.0, 12.0)
+		var lip := clampf(rise * 0.35, 1.2, 3.0)   # how high above the pool the water comes out
+		# The outcrop: a craggy heap of chipped stone round the upslope side of the pool, big blocks sunk into the rise
+		# and smaller ones tumbled at the water's edge, moss in patches on their tops. Left open in the middle, where
+		# the water comes out.
+		var rk := MeshKit.new(int(c2.y * 5.0))
+		rk.flat_shading = true
+		var big_rise := float(hd.rise) > 8.0
+		for k in rng.randi_range(9, 13):
+			var a := rng.randf_range(-1.4, 1.4)
+			if absf(a) < 0.2:
+				a = signf(a + 0.001) * rng.randf_range(0.25, 0.5)   # the cleft stays open
+			var high := rng.randf() < 0.45
+			var dir := (up * cos(a) + side * sin(a)).normalized()
+			var dist := r + rng.randf_range(-0.4, 0.6) + (rng.randf_range(0.8, 2.2) if high else 0.0)
+			var bs := rng.randf_range(0.9, 1.6) if high else rng.randf_range(0.45, 1.0)
+			bs *= 1.25 if big_rise else 1.0
+			var at := Vector3(c2.x, 0, c2.y) + dir * dist
+			var g := gen.get_height(at.x, at.z)
+			at.y = maxf(g, surface - 0.3) + bs * rng.randf_range(0.0, 0.25) + (lip * rng.randf_range(0.2, 0.6) if high else 0.0)
+			var col := pal.rock.darkened(rng.randf_range(0.0, 0.2)).lerp(Color(0.52, 0.5, 0.46), 0.25)
+			var mossy := rng.randf() < 0.55
+			var moss_top := moss.darkened(rng.randf_range(0.0, 0.15))
+			var sq := Vector3(bs * rng.randf_range(1.0, 1.5), bs * rng.randf_range(0.6, 0.95), bs * rng.randf_range(0.8, 1.2))
+			var cy := at.y - centre.y
+			var cf := func(pl: Vector3) -> Color:
+				var y := pl.y - cy
+				return moss_top if mossy and y > sq.y * 0.6 else (col.darkened(0.3) if y < -sq.y * 0.3 else col)
+			var tilt := Basis(Vector3(rng.randf() - 0.5, 0, rng.randf() - 0.5).normalized(), rng.randf_range(0.0, 0.35))
+			rk.add_primitive(MeshKit.sphere(1.0, 7, 4), Transform3D(tilt * Basis(Vector3.UP, rng.randf() * TAU).scaled(sq), at - centre), col, 0.35, 0.06, null, cf)
+			solid.call(at, minf(sq.x, minf(sq.y, sq.z)) * 0.9)
+		var rmi := MeshInstance3D.new()
+		rmi.mesh = rk.commit(mat)
+		rmi.position = centre
+		rmi.visibility_range_end = 300.0
+		parent.add_child(rmi)
+		# The fall: a sheet of white water from the cleft, curving out and down into the pool.
+		var spout := Vector3(c2.x, surface + lip, c2.y) + up * (r + 0.35)
+		var path: Array = []
+		var radii: Array = []
+		for k in 7:
+			var t := k / 6.0
+			path.append(spout - up * (0.15 + 0.9 * t) + Vector3(0, -lip * t * t - 0.05, 0) - centre)
+			radii.append(lerpf(0.32, 0.5, t) * (1.4 if hd.big else 1.0))
+		var foam := Color(0.86, 0.93, 0.96)
+		kit.loft(path, radii, 6, foam, func(t: float, ang: float) -> Color:
+			return foam.lerp(Color(0.55, 0.72, 0.8), 0.35 * absf(sin(ang * 2.0 + t * 9.0))),
+			func(_t: float, _ang: float) -> Vector2: return Vector2(1.0, 0.35), false, true, 0.02)
+		# Spray and the rush where it lands (only when someone is near, see update_cascades).
+		var node := Node3D.new()
+		node.name = "Spring"
+		node.position = Vector3(c2.x, surface + 0.2, c2.y) + up * (r - 0.4)
+		parent.add_child(node)
+		var spray := Effects.spray(0.9 if hd.big else 0.6)
+		node.add_child(spray)
+		node.set_meta("spray", spray)
+		Audio.rush_loop(node)
+	else:
+		# Mossy stones round the rim, half in the water.
+		for k in rng.randi_range(7, 11):
+			var a := rng.randf() * TAU
+			if absf(angle_difference(a, atan2(-up2.y, -up2.x))) < 0.5:
+				continue   # where the stream runs out
+			var at := Vector3(c2.x + cos(a) * (r + rng.randf_range(-0.2, 0.5)), 0, c2.y + sin(a) * (r + rng.randf_range(-0.2, 0.5)))
+			at.y = maxf(gen.get_height(at.x, at.z), surface - 0.15)
+			var sr := rng.randf_range(0.3, 0.6)
+			var col := pal.rock.lerp(Color(0.55, 0.53, 0.5), 0.3).darkened(rng.randf_range(0.0, 0.15))
+			var mt := moss.darkened(rng.randf_range(0.0, 0.12))
+			var hy := sr * 0.7
+			var cy := at.y - centre.y
+			var cf := func(pl: Vector3) -> Color:
+				return mt if pl.y - cy > hy * 0.55 else col
+			kit.add_primitive(MeshKit.sphere(1.0, 7, 5), Transform3D(Basis(Vector3.UP, rng.randf() * TAU).scaled(Vector3(sr * 1.3, sr * 0.7, sr)), at - centre), col, 0.2, 0.06, null, cf)
+		# Bubbles welling up in the middle (near the camera only, like the cascades' spray).
+		var node := Node3D.new()
+		node.name = "Spring"
+		node.position = centre + Vector3(0, 0.02, 0)
+		parent.add_child(node)
+		var bub := Effects.bubbles(r * 0.35, Color(0.8, 0.9, 0.95))
+		bub.amount = 10
+		bub.lifetime = 0.9
+		bub.scale_amount_min = 0.03
+		bub.scale_amount_max = 0.06   # (pot bubbles, a spring's are bigger)
+		node.add_child(bub)
+		node.set_meta("spray", bub)
+	if body.get_child_count() > 0:
+		parent.add_child(body)
+	else:
+		body.free()
+	var mi := MeshInstance3D.new()
+	mi.mesh = kit.commit(mat)
+	mi.position = centre
+	mi.visibility_range_end = 260.0
+	parent.add_child(mi)
 
 
 static func _stone(kit: MeshKit, at: Vector3, r: float, rng: RandomNumberGenerator) -> void:

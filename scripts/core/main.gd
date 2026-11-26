@@ -34,6 +34,7 @@ var _river_level := 0.0
 var _jungle_level := 0.0
 var _ocean_level := 0.0
 var _autosave := AUTOSAVE_SECONDS
+var _warmup: Node3D   ## (see shader_warmup.gd)
 var _cave_features: CaveFeatures
 var _landmarks: LandmarkModels
 var _cave_check := 0.0            ## counts down to the next look at whether the player is underground
@@ -358,6 +359,21 @@ func _start_loading(at: Vector3, heading := "Generating") -> void:
 	_set_focus(player)
 
 
+## Materials only made or used later in play, for the shader warm-up (the rest are found in the scene).
+func _warm_materials() -> Array:
+	var out: Array = []
+	for k: String in Game.flora.mesh_keys():
+		var m: Mesh = Game.flora.mesh(k)
+		for s in m.get_surface_count():
+			out.append(m.surface_get_material(s))
+	if Game.fauna:
+		out.append(Game.fauna.material)
+	Effects._setup()
+	out.append_array([Effects._lit_mat, Effects._puff_mat, Effects._glow_mat, Effects._leaf_mat, Effects._pop_mat])
+	out.append_array([StructureModels.shared_material, StructureModels.shared_glow, player.viewmodel.held_material()])
+	return out
+
+
 func _start_playing() -> void:
 	state = State.PLAYING
 	Game.time_paused = false
@@ -472,7 +488,15 @@ func _process(delta: float) -> void:
 			if world.is_area_ready(_load_pos, 1):
 				while not _models_ready:   # the rest now, still behind the loading screen
 					_models_ready = ItemModels.prewarm_some(player.viewmodel.held_material(), 1000000)
-				_start_playing()
+				# Last, every shader drawn once (still behind the loading screen), then play.
+				if not _warmup:
+					_warmup = preload("res://scripts/world/shader_warmup.gd").new()
+					add_child(_warmup)
+					_warmup.start(player.get_node("Head/Camera3D"), _warm_materials())
+				elif _warmup.done:
+					_warmup.queue_free()
+					_warmup = null
+					_start_playing()
 		State.PLAYING:
 			_autosave -= delta
 			if _autosave <= 0.0:

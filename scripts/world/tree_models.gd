@@ -338,6 +338,71 @@ static func jungle(kit: MeshKit, rng: RandomNumberGenerator, bark: Color, leaf: 
 	lianas(kit, rng, top, 2.2, height, bark.darkened(0.2).lerp(leaf, 0.35), rng.randi_range(4, 7))
 
 
+## Rainforest canopy tree: a tall straight trunk, green with moss low down, on buttress fins; it forks high up into a
+## few big limbs that spread up and out, and the crown is a broad, uneven mass of flattened leaf clumps in two greens,
+## layered (big clumps at the limb ends, smaller ones tucked under and between), with a couple of small clumps on
+## short shoots lower down the trunk. Bromeliads in the forks, aerial roots dropping from the limbs, lianas.
+static func rainforest(kit: MeshKit, rng: RandomNumberGenerator, bark: Color, leaf: Color, leaf2: Color, height: float, radius: float, lod: bool) -> void:
+	var moss := leaf.darkened(0.15).lerp(Color(0.3, 0.42, 0.2), 0.5)
+	var lean := Vector3(rng.randf_range(-0.35, 0.35), 0, rng.randf_range(-0.35, 0.35))
+	var fork_h := height * rng.randf_range(0.62, 0.72)
+	var fork := trunk(kit, rng, Vector3.ZERO, fork_h, radius, bark.lerp(moss, 0.3), lean, 9)
+	buttresses(kit, rng, radius, height * 0.12, bark.lerp(moss, 0.45), rng.randi_range(3, 5))
+	var tips: Array = []
+	var crooks: Array = [fork]
+	var limb_ends: Array = []
+	var limbs := rng.randi_range(3, 5)
+	var turn := rng.randf() * TAU
+	for i in limbs:
+		var yaw := turn + TAU * (float(i) + rng.randf_range(-0.25, 0.25)) / limbs
+		var dir := Vector3(cos(yaw), rng.randf_range(0.7, 1.25), sin(yaw)).normalized()
+		var length := height * rng.randf_range(0.26, 0.34)
+		branch(kit, rng, fork, dir, length, radius * 0.62, 2, bark, tips, 7)
+		var end := fork + dir * length
+		limb_ends.append(end)
+		if rng.randf() < 0.6:
+			crooks.append(fork + dir * length * 0.45)
+	# The crown: at each branch tip a broad flattened clump, with a smaller one or two tucked in under and outward.
+	var crown_mid := fork + Vector3(0, height * 0.2, 0)
+	for tip: Vector3 in tips:
+		var col := leaf.lerp(leaf2, rng.randf()).lightened(rng.randf_range(-0.05, 0.05))
+		var r := rng.randf_range(1.7, 2.4)
+		blob(kit, rng, tip + Vector3(0, r * 0.18, 0), r, rng.randf_range(0.42, 0.55), col, 0.55)
+		if lod:
+			continue
+		var outw := Vector3(tip.x - crown_mid.x, 0, tip.z - crown_mid.z)
+		outw = outw.normalized() if outw.length() > 0.1 else Vector3.RIGHT
+		for k in (1 if rng.randf() < 0.6 else 0):
+			var a := rng.randf_range(-1.0, 1.0)
+			var at := tip + outw.rotated(Vector3.UP, a) * r * rng.randf_range(0.55, 0.85) + Vector3(0, -r * rng.randf_range(0.25, 0.45), 0)
+			blob(kit, rng, at, r * rng.randf_range(0.5, 0.7), 0.5, col.darkened(rng.randf_range(0.04, 0.12)), 0.5)
+	# A filler clump over the middle so light doesn't show straight through the crown's centre.
+	blob(kit, rng, crown_mid + Vector3(0, height * 0.05, 0), height * 0.14, 0.45, leaf.darkened(0.06), 0.4)
+	# Short shoots lower down the trunk, each with a small clump (rainforest trees are leafy all the way up).
+	for k in rng.randi_range(1, 3):
+		var a := rng.randf() * TAU
+		var y := height * rng.randf_range(0.35, 0.55)
+		var base := Vector3(0, y, 0) + lean * pow(y / fork_h, 2.0)
+		var d := Vector3(cos(a), 0.55, sin(a)).normalized()
+		var l := rng.randf_range(1.0, 1.8)
+		if not _far():
+			kit.loft([base, base + d * l * 0.5, base + d * l], [radius * 0.22, radius * 0.16, radius * 0.1], 5, bark)
+		blob(kit, rng, base + d * l + Vector3(0, 0.3, 0), rng.randf_range(0.8, 1.1), 0.55, leaf.lerp(leaf2, 0.5), 0.5)
+	epiphytes(kit, rng, crooks, leaf)
+	# Aerial roots dropping straight from the limbs to the ground.
+	if not lod:
+		for k in rng.randi_range(1, 3):
+			var e: Vector3 = (limb_ends[rng.randi() % limb_ends.size()] as Vector3).lerp(fork, rng.randf_range(0.2, 0.6))
+			var path: Array = []
+			var radii: Array = []
+			for q in 6:
+				var u := q / 5.0
+				path.append(Vector3(e.x, e.y * (1.0 - u) - 0.1 * u, e.z) + Vector3(sin(u * 5.0 + k), 0, cos(u * 4.0 + k)) * 0.08)
+				radii.append(lerpf(0.035, 0.055, u))
+			kit.loft(path, radii, 4, bark.darkened(0.15), Callable(), Callable(), false, true)
+	lianas(kit, rng, fork + Vector3(0, height * 0.12, 0), 2.6, height, bark.darkened(0.2).lerp(leaf, 0.35), rng.randi_range(3, 6) if not lod else 2)
+
+
 ## Buttress roots: thin flared fins of wood running out from a rainforest trunk's foot, tall against the trunk and
 ## sinking into the ground a few metres out.
 static func buttresses(kit: MeshKit, rng: RandomNumberGenerator, radius: float, height: float, bark: Color, count: int) -> void:
@@ -415,6 +480,88 @@ static func emergent(kit: MeshKit, rng: RandomNumberGenerator, bark: Color, leaf
 		blob(kit, rng, tip + Vector3(0, r * 0.15, 0), r, rng.randf_range(0.42, 0.55), leaf.lightened(rng.randf_range(-0.06, 0.06)), 0.5)
 	epiphytes(kit, rng, crooks, leaf)
 	lianas(kit, rng, top - Vector3(0, height * 0.1, 0), height * 0.2, height, bark.darkened(0.25).lerp(leaf, 0.3), rng.randi_range(4, 7))
+
+
+## Weeping willow: a short stout trunk that splits low into a few big limbs, each sending long branches arching up
+## and out and then bowing down; from the arches hang the curtains of thin leafy streamers, the outer ones nearly to
+## the ground, the inner ones short, so the tree is a bell with room under it round the trunk. Leaf masses along
+## the tops of the arches make the crown. `lod`: the far twin (fewer, broader streamers, no leaf edges).
+static func weeping_willow(kit: MeshKit, rng: RandomNumberGenerator, bark: Color, leaf: Color, height: float, radius: float, lod: bool) -> void:
+	var fork_h := height * rng.randf_range(0.32, 0.42)
+	var lean := Vector3(rng.randf_range(-0.4, 0.4), 0, rng.randf_range(-0.4, 0.4))
+	var fork := trunk(kit, rng, Vector3.ZERO, fork_h, radius, bark, lean * 0.4, 9, 0.9)
+	var deep := leaf.darkened(0.22)
+	var tip_col := leaf.lightened(0.16).lerp(Color(0.85, 0.9, 0.45), 0.12)
+	var limbs := rng.randi_range(3, 4)
+	var turn := rng.randf() * TAU
+	var arches: Array = []   # each: the points along a drooping branch, out to its tip
+	for i in limbs:
+		var yaw := turn + TAU * (float(i) + rng.randf_range(-0.2, 0.2)) / limbs
+		var out := Vector3(cos(yaw), 0, sin(yaw))
+		# The limb: up and out from the fork.
+		var limb_len := height * rng.randf_range(0.42, 0.55)
+		var limb_end := fork + (out * 0.55 + Vector3(0, 0.85, 0)).normalized() * limb_len
+		var lp: Array = []
+		var lr: Array = []
+		for k in 5:
+			var t := k / 4.0
+			lp.append(fork.lerp(limb_end, t) + out * sin(t * PI) * 0.25)
+			lr.append(radius * lerpf(0.68, 0.28, t))
+		kit.loft(lp, lr, _sides(7), bark, bark_fn(bark, rng.randf() * 10.0), Callable(), true, true, 0.03)
+		# The arching branches from the limb's upper part: up and out in a high bow, then bending down.
+		for j in rng.randi_range(3, 4):
+			var from: Vector3 = (lp[rng.randi_range(2, 4)] as Vector3)
+			var ay := yaw + rng.randf_range(-1.0, 1.0)
+			var ao := Vector3(cos(ay), 0, sin(ay))
+			var reach := height * rng.randf_range(0.4, 0.58)
+			var lift := height * rng.randf_range(0.22, 0.36)
+			var ap: Array = []
+			var ar: Array = []
+			for k in 8:
+				var t := k / 7.0
+				ap.append(from + ao * reach * t + Vector3(0, lift * sin(t * PI * 0.85) - t * t * 0.8, 0))
+				ar.append(radius * lerpf(0.22, 0.05, t))
+			if not (_far() and radius * 0.22 < FAR_MIN_BRANCH):
+				kit.loft(ap, ar, _sides(5), bark, Callable(), Callable(), false, true)
+			arches.append(ap)
+			# Leaves thick along the top of the bow (the crown), so it's one leafy dome, not bare branches.
+			var at: Vector3 = (ap[2] as Vector3).lerp(ap[3], rng.randf())
+			blob(kit, rng, at + Vector3(0, 0.1, 0), rng.randf_range(0.8, 1.1), 0.72, leaf.lerp(deep, rng.randf_range(0.0, 0.4)), 0.3)
+	# The curtains: streamers from points along each arch, longer the farther out, ending a little above the ground.
+	for ap: Array in arches:
+		var n := ap.size()
+		for k in range(1, n):
+			var per := 1 if lod else 2
+			for m in per:
+				var t := (float(k) + rng.randf_range(-0.4, 0.4)) / (n - 1)
+				var seg := clampi(int(t * (n - 1)), 0, n - 2)
+				var top: Vector3 = (ap[seg] as Vector3).lerp(ap[seg + 1], t * (n - 1) - seg)
+				var hang := top.y * lerpf(0.35, 0.92, pow(t, 0.8)) * rng.randf_range(0.85, 1.05)
+				if hang < 0.5:
+					continue
+				var sway := Vector3(rng.randf_range(-0.25, 0.25), 0, rng.randf_range(-0.25, 0.25))
+				var rows := 3 if lod else 5
+				var path: Array = []
+				var radii: Array = []
+				for q in rows + 1:
+					var u := float(q) / rows
+					path.append(top + Vector3(0, -hang * u, 0) + sway * sin(u * PI * 0.9) + Vector3(sin(u * 4.0 + k), 0, cos(u * 3.0 + m)) * 0.04)
+					radii.append(lerpf(0.11, 0.05, u) * (1.8 if lod else 1.0))
+				var base := leaf.lerp(deep, rng.randf_range(0.0, 0.5))
+				var tipc := tip_col.lerp(leaf, rng.randf_range(0.0, 0.5))
+				kit.loft(path, radii, 3 if lod else 4, base, func(u: float, _ang: float) -> Color: return base.lerp(tipc, u),
+					func(_u: float, _ang: float) -> Vector2: return Vector2(1.0, 0.3), false, true, 0.0)
+				if lod:
+					continue
+				# Narrow leaves along its edges, so the curtain reads leafy, not as ribbons.
+				for q in rng.randi_range(1, 2):
+					var u := rng.randf_range(0.05, 0.95)
+					var c: Vector3 = (path[0] as Vector3).lerp(path[rows], u)
+					var sdir := Vector3(cos(u * 17.0 + m), 0, sin(u * 17.0 + m))
+					var l := rng.randf_range(0.12, 0.2)
+					var lc := base.lerp(tipc, u).lightened(rng.randf_range(-0.05, 0.08))
+					kit.add_tri(c, c + sdir * l * 0.5 + Vector3(0, -l, 0), c + sdir * 0.03 + Vector3(0, -l * 0.35, 0), lc)
+					kit.add_tri(c, c + sdir * 0.03 + Vector3(0, -l * 0.35, 0), c + sdir * l * 0.5 + Vector3(0, -l, 0), lc)
 
 
 ## Dead tree: bare gnarled branches, no canopy.

@@ -51,6 +51,18 @@ class Species:
 	var tail_pivot := Vector3.ZERO   ## where the tail joins the body
 	var bird_kind := "flock"  ## birds: flock (circling) | perch (lands in trees and on logs) | soar (high slow circles)
 
+	## Whether it runs off as soon as someone comes near. About half the island's kinds do (the skittish ones, and
+	## some of the wary); the rest stand their ground, watch, and edge away if crowded, and only bolt when startled:
+	## someone sprinting at them, a hit, or the herd taking fright. Worked out from the species itself, so it's the
+	## same on every machine and for every world already made.
+	func bolts() -> bool:
+		match temperament:
+			"skittish":
+				return true
+			"wary":
+				return fposmod(flee_radius * 7.31 + leg_len * 3.7, 1.0) < 0.55
+		return false
+
 const ROLE_LABELS := {"grazer": "Grazer", "defensive": "Territorial beast", "critter": "Critter", "bird": "Bird", "small": "Small animal"}
 
 var species: Array[Species] = []

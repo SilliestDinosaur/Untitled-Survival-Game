@@ -66,6 +66,9 @@ var _fidget := 0.0              ## a head shake, easing away
 var _fidget_cd := 0.0
 var _rest := 0.0                ## 0 standing .. 1 lying down (eased)
 var _asleep := false
+var _far_cd := 0
+var _far_dt := 0.0
+var _edge_cd := 0.0             ## a bold animal crowded by the player steps away, then waits this long before again
 var young := false              ## a young one: small, keeps close to its mother (the herd's leader)
 var _reach: PackedFloat32Array = []   ## each leg's stretch to meet the ground under its foot (1 = its own length)
 var _reach_cd := 0.0
@@ -79,6 +82,9 @@ var _found_res := {}
 var _hop_from := Vector3.ZERO
 var _hop_t := 0.0
 const TREE_TOPS := {"kapok": 20.0, "jungle_tree": 8.5, "oak": 5.0, "autumn_oak": 5.0, "birch": 6.0, "willow": 4.5, "acacia": 4.5, "palm": 6.5, "pine": 6.0, "fir": 7.0}
+## Rough trunk radius at the foot (x the tree's scale): climbers go up the outside of the trunk, not through it.
+const TRUNK_R := {"kapok": 1.0, "jungle_tree": 0.6, "oak": 0.45, "autumn_oak": 0.45, "willow": 0.45, "acacia": 0.3, "palm": 0.3}
+var _climb_off := Vector3.ZERO   ## where on the trunk's side it climbs and sits (from the trunk's centre line)
 var _cave := false
 const LAIR_LEASH := 14.0
 
@@ -282,6 +288,15 @@ func _physics_process(delta: float) -> void:
 		return
 	if dead:
 		return
+	# Far off (out past 90 m, where nobody can make out a stride), think and move every third frame.
+	_far_cd -= 1
+	if _far_cd > 0:
+		_far_dt += delta
+		return
+	if player and not in_tree and state != State.TREE and player.global_position.distance_squared_to(position) > 90.0 * 90.0:
+		_far_cd = 3
+		delta += _far_dt
+	_far_dt = 0.0
 	# With several players around, pay attention to whoever is closest.
 	_target_cd -= delta
 	if _target_cd <= 0.0 and targets.size() > 1:
@@ -294,6 +309,7 @@ func _physics_process(delta: float) -> void:
 					best = d
 					player = t
 	_attack_cd = maxf(_attack_cd - delta, 0.0)
+	_edge_cd -= delta
 	_call_cd -= delta
 	_timer -= delta
 	var to_player := player.global_position - position if player else Vector3(1e6, 0, 0)
@@ -411,7 +427,7 @@ func _physics_process(delta: float) -> void:
 				if species.temperament == "curious" and dist > 4.0 and not sprinting:
 					_enter(State.WANDER)
 					_target = player.global_position - to_player.normalized() * 4.0   # come closer for a look
-				elif dist < species.flee_radius:
+				elif dist < species.flee_radius and (species.bolts() or sprinting):
 					_enter(State.FLEE)
 					_alarm_herd()
 					_call()
@@ -532,10 +548,21 @@ func _perceive(dist: float, sprinting: bool) -> void:
 	var radius := species.flee_radius * (1.7 if sprinting else 1.0)
 	if state == State.REST:
 		radius *= 0.6 if _asleep else 0.85   # asleep it notices you late (and then jumps up all the faster)
+	var bolts: bool = species.bolts() or sprinting   # someone running at it startles even the bold ones
 	if dist < radius * 0.45:
-		_enter(State.FLEE)   # far too close: bolt immediately
-		_alarm_herd()
-		_call()
+		if bolts:
+			_enter(State.FLEE)   # far too close: bolt immediately
+			_alarm_herd()
+			_call()
+		elif _edge_cd <= 0.0 and dist < 3.2 and player:
+			# A bold one, crowded: it steps off a few paces, keeping an eye on you, and settles again.
+			_edge_cd = _rng.randf_range(3.0, 5.0)
+			var away := position - player.global_position
+			away.y = 0.0
+			_enter(State.WANDER)
+			_target = position + (away.normalized() if away.length() > 0.01 else Vector3.FORWARD).rotated(Vector3.UP, _rng.randf_range(-0.6, 0.6)) * _rng.randf_range(4.0, 7.0)
+		elif state != State.ALERT and state != State.WANDER and _edge_cd <= 0.0:
+			_enter(State.ALERT)
 	elif dist < radius and state != State.ALERT:
 		if species.temperament == "calm" and not sprinting:
 			return   # calm animals don't mind someone walking by
@@ -758,6 +785,9 @@ func _animate(delta: float, graze: float, alert: float) -> void:
 ## sinking in. Worked out a few times a second (the ground doesn't change fast), eased in between.
 func _leg_reach(delta: float) -> void:
 	if _legs.is_empty() or _cave or species.leg_len < 0.05 or not species.body in ["quad", "upright"] or _rest > 0.01:
+		if _rest <= 0.01:   # (not reaching: legs back to their own length after lying down)
+			for leg in _legs:
+				leg.scale.y = lerpf(leg.scale.y, 1.0, 1.0 - exp(-10.0 * delta))
 		return
 	if _reach.size() != _legs.size():
 		_reach.resize(_legs.size())
@@ -852,8 +882,18 @@ func _try_climb() -> void:
 		return
 	_tree_top = top
 	_tree_res = _found_res
+	_set_climb_side(position)
 	_tree_phase = "to_trunk"
 	_enter(State.TREE)
+	_timer = 8.0   # to reach the trunk (then the stay up there is timed afresh)
+
+
+## The side of the trunk facing `from`, just clear of the bark.
+func _set_climb_side(from: Vector3) -> void:
+	var xf: Transform3D = _tree_res.get("transform", Transform3D())
+	var r: float = float(TRUNK_R.get(String(_tree_res.get("kind", "")), 0.35)) * xf.basis.x.length() + species.body_w * 0.5 + 0.1
+	var side := Vector3(from.x - _tree_top.x, 0, from.z - _tree_top.z)
+	_climb_off = (side.normalized() if side.length() > 0.01 else Vector3.FORWARD) * r
 
 
 ## The top of the nearest tree to p within reach (where an animal sits in its crown), other than `not_at`; null if none.
@@ -892,24 +932,40 @@ func _tree_step(delta: float, dist_to_player: float) -> void:
 		_tree_phase = "down"   # the tree was felled under it: it drops to the ground
 	match _tree_phase:
 		"to_trunk":
-			var d := Vector3(_tree_top.x - position.x, 0, _tree_top.z - position.z)
-			if d.length() < 0.7:
+			# Straight for its foot (the usual steering keeps animals clear of trees, which had climbers circling
+			# the trunk they were after).
+			var foot := _tree_top + _climb_off
+			var d := Vector3(foot.x - position.x, 0, foot.z - position.z)
+			if d.length() < 0.35:
 				_tree_phase = "up"
 				in_tree = true
+				_timer = _rng.randf_range(20.0, 50.0)
 			elif _timer <= 0.0:
 				_enter(State.IDLE)
 				return
 			else:
-				_move(delta, d.normalized(), species.run_speed)
+				_desired_yaw = atan2(-d.x, -d.z)
+				_yaw = rotate_toward(_yaw, _desired_yaw, 6.0 * delta)
+				_speed = lerpf(_speed, species.run_speed * clampf(cos(angle_difference(_yaw, _desired_yaw)), 0.3, 1.0), 1.0 - exp(-4.0 * delta))
+				var step := minf(_speed * delta, d.length())
+				position += d.normalized() * step
+				_gait += step / maxf(species.leg_len * 1.6, 0.2) * PI
+				var gy := Game.world_gen.get_height(position.x, position.z)
+				position.y = lerpf(position.y, gy, 1.0 - exp(-14.0 * delta))
+				rotation = Vector3(0, _yaw, 0)
 				_animate(delta, 0.0, 0.0)
 				return
 		"up":
-			position.x = move_toward(position.x, _tree_top.x, delta)
-			position.z = move_toward(position.z, _tree_top.z, delta)
-			position.y = move_toward(position.y, _tree_top.y, 3.2 * delta)
+			# Up the side of the trunk, facing it.
+			var spot := _tree_top + _climb_off
+			position.x = move_toward(position.x, spot.x, delta)
+			position.z = move_toward(position.z, spot.z, delta)
+			position.y = move_toward(position.y, spot.y, 3.2 * delta)
+			_yaw = rotate_toward(_yaw, atan2(_climb_off.x, _climb_off.z), 8.0 * delta)
+			_speed = 0.0
 			_gait += delta * 9.0
 			_body.rotation.x = lerpf(_body.rotation.x, 1.25, 1.0 - exp(-8.0 * delta))
-			if absf(position.y - _tree_top.y) < 0.05:
+			if absf(position.y - spot.y) < 0.05:
 				_tree_phase = "sit"
 		"sit":
 			_body.rotation.x = lerpf(_body.rotation.x, 0.0, 1.0 - exp(-6.0 * delta))
@@ -926,6 +982,7 @@ func _tree_step(delta: float, dist_to_player: float) -> void:
 					_hop_from = position
 					_tree_top = next
 					_tree_res = _found_res
+					_set_climb_side(position)
 					_hop_t = 0.0
 					_tree_phase = "hop"
 					_call(1.1)
@@ -933,9 +990,10 @@ func _tree_step(delta: float, dist_to_player: float) -> void:
 				_tree_phase = "down"
 		"hop":
 			_hop_t = minf(_hop_t + delta / 0.85, 1.0)
-			var a := _hop_from.lerp(_tree_top, _hop_t)
+			var land := _tree_top + _climb_off
+			var a := _hop_from.lerp(land, _hop_t)
 			position = a + Vector3.UP * sin(_hop_t * PI) * 2.2
-			var d2 := _tree_top - _hop_from
+			var d2 := land - _hop_from
 			_yaw = atan2(-d2.x, -d2.z)
 			_body.rotation.x = lerpf(0.4, -0.4, _hop_t)
 			for leg in _legs:
