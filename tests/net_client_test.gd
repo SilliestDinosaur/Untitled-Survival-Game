@@ -140,8 +140,8 @@ func _process(_delta: float) -> bool:
 			elif _waited() > 45.0:
 				_check(false, "tree never fell (hp %s)" % str(_target.get("hp")))
 				# What happened, for a failure on two machines: the replies, and whether the tree's changes arrived.
-				print("  tree %s (%s) at %.1f m; hits sent %d, replies %d, last reply %s; removed here %s, in Game %s; tool %s" % [
-					_target.id, _target.kind, _target.transform.origin.distance_to(_player.global_position), _hits_sent, _hit_replies,
+				print("  tree %s (%s) at %.1f m; in a loaded chunk %s; hits sent %d, replies %d, last reply %s; removed here %s, in Game %s; tool %s" % [
+					_target.id, _target.kind, _target.transform.origin.distance_to(_player.global_position), str(not _main.get_node("World").find_resource(_target.id).is_empty()), _hits_sent, _hit_replies,
 					str(_last_hit).left(300), str(_target.get("removed", false)), str(_game.removed_resources.has(_target.id)),
 					_player.inventory.selected_item()])
 				return _finish()

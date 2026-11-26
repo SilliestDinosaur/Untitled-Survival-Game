@@ -179,13 +179,33 @@ static func _ground_under(gen: WorldGen, x: float, z: float, r: float) -> float:
 	return lowest
 
 
+## A biome for one plant from the blend of biomes at its spot. Faint traces of biomes far off (a jungle's last 0.1%
+## out in the tundra) are left out, so borders still mix but no kapok turns up alone on the snow.
+const MIN_BIOME_SHARE := 0.05
+
 static func _pick_biome(weights: Dictionary, roll: float) -> int:
-	var acc := 0.0
+	var total := 0.0
+	var best := Biome.MEADOW
+	var best_w := -1.0
 	for b: int in weights:
-		acc += weights[b]
+		var w: float = weights[b]
+		if w >= MIN_BIOME_SHARE:
+			total += w
+		if w > best_w:
+			best_w = w
+			best = b
+	if total <= 0.0:
+		return best
+	var acc := 0.0
+	roll *= total
+	for b: int in weights:
+		var w: float = weights[b]
+		if w < MIN_BIOME_SHARE:
+			continue
+		acc += w
 		if roll <= acc:
 			return b
-	return Biome.MEADOW
+	return best
 
 
 static func _pick_weighted(table: Array, roll: float) -> String:

@@ -347,17 +347,18 @@ static func buttresses(kit: MeshKit, rng: RandomNumberGenerator, radius: float, 
 		var out := Vector3(cos(a), 0, sin(a))
 		var reach := radius * rng.randf_range(3.5, 5.5)
 		var tall := height * rng.randf_range(0.8, 1.2)
-		var path: Array = []
-		var radii: Array = []
-		for k in 6:
-			var t := k / 5.0
-			# Up the trunk at the start, curving down and out to the ground.
-			var y := tall * pow(1.0 - t, 1.7) - 0.15
-			path.append(out * (radius * 0.6 + reach * t) + Vector3(0, y, 0))
-			radii.append(lerpf(radius * 0.35, radius * 0.12, t))
-		# Flattened across: each fin is wide in its own upright plane and thin across it.
-		kit.loft(path, radii, 5, bark.darkened(0.05), Callable(), func(_t: float, ang: float) -> Vector2:
-			return Vector2(cos(ang) * 0.35, sin(ang) * 2.2), true, true, 0.04)
+		# A solid fin down to the ground: up the trunk, then a concave top edge sweeping down and out to the ground,
+		# then back along (and a little into) the ground, so nothing hangs in the air under it.
+		var outline := PackedVector2Array([Vector2(radius * 0.3, -0.4), Vector2(radius * 0.3, tall)])
+		var steps := 7
+		var wob := rng.randf() * TAU
+		for k in range(1, steps + 1):
+			var t := float(k) / steps
+			var y := tall * pow(1.0 - t, 1.8) + sin(t * 9.0 + wob) * 0.06 * (1.0 - t)
+			outline.append(Vector2(radius * 0.3 + (radius * 0.3 + reach) * t, maxf(y, -0.1)))
+		outline.append(Vector2(radius * 0.3 + (radius * 0.3 + reach) * 0.8, -0.4))
+		var b := Basis(out, Vector3.UP, out.cross(Vector3.UP))
+		kit.extrude(outline, Transform3D(b, Vector3.ZERO), radius * 0.32, radius * 0.1, bark.darkened(0.05), bark.darkened(0.15), 0.5)
 
 
 ## Mossy, leafy rosettes (bromeliads and ferns) sitting in the crooks of branches.
@@ -380,13 +381,18 @@ static func lianas(kit: MeshKit, rng: RandomNumberGenerator, top: Vector3, sprea
 		var start := top + Vector3(cos(a) * spread, rng.randf_range(-1.0, 0.2), sin(a) * spread)
 		var to_ground := rng.randf() < 0.55
 		var drop := (start.y - rng.randf_range(0.0, 0.4)) if to_ground else rng.randf_range(2.5, height * 0.45)
-		var sway := Vector3(cos(a + 1.3), 0, sin(a + 1.3)) * rng.randf_range(0.4, 1.4)
+		# Hanging slack: a long bow out to one side, a gentler S the other way, and a slow twist, so it reads as a
+		# rope-like vine and not a pole.
+		var sway := Vector3(cos(a + 1.3), 0, sin(a + 1.3)) * rng.randf_range(0.8, 2.0) * clampf(drop / 12.0, 0.4, 1.4)
+		var side := Vector3(cos(a + 2.9), 0, sin(a + 2.9)) * rng.randf_range(0.3, 0.8)
 		var path: Array = []
 		var radii: Array = []
-		for k in 7:
-			var t := k / 6.0
-			path.append(start + Vector3(0, -drop * t, 0) + sway * sin(t * PI) + Vector3(sin(t * 5.0 + a), 0, cos(t * 4.0 + a)) * 0.15)
-			radii.append(lerpf(0.06, 0.035, t))
+		var segs := 11
+		for k in segs + 1:
+			var t := float(k) / segs
+			path.append(start + Vector3(0, -drop * t, 0) + sway * sin(t * PI) + side * sin(t * TAU * 1.5)
+				+ Vector3(sin(t * 7.0 + a), 0, cos(t * 6.0 + a)) * 0.18)
+			radii.append(lerpf(0.07, 0.035, t))
 		kit.loft(path, radii, 4, color, Callable(), Callable(), false, true)
 
 

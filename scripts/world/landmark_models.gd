@@ -65,6 +65,7 @@ func _arch(kit: MeshKit, gen: WorldGen, at: Vector3, yaw: float, rng: RandomNumb
 	var height := rng.randf_range(6.0, 8.5)
 	var thick := rng.randf_range(0.9, 1.25)
 	var base_col := pal.rock.lerp(Color(0.72, 0.5, 0.36), 0.45)
+	var phase := rng.randf() * TAU
 	var path: Array = []
 	var radii: Array = []
 	var steps := 14
@@ -80,32 +81,86 @@ func _arch(kit: MeshKit, gen: WorldGen, at: Vector3, yaw: float, rng: RandomNumb
 		radii.append(thick * (1.0 + 0.9 * pow(1.0 - sin(t * PI), 2.0)) * (1.0 + rng.randf_range(-0.08, 0.08)))
 	kit.loft(path, radii, 9, base_col, func(t: float, _ang: float) -> Color:
 		var band := sin(t * 23.0) * 0.5 + 0.5
-		return base_col.lightened(0.1 * band).darkened(0.08 * (1.0 - band)), Callable(), true, true, 0.12)
+		return base_col.lightened(0.1 * band).darkened(0.08 * (1.0 - band)),
+		func(t: float, ang: float) -> Vector2:
+			# Weathered across, not a tube: a lumpy outline that changes along the span.
+			var f := 1.0 + 0.18 * sin(ang * 3.0 + phase + t * 5.0) + 0.08 * sin(ang * 5.0 - t * 7.0)
+			return Vector2(f * 1.1, f * 0.9), true, true, 0.22)
 	for sgn: float in [-1.0, 1.0]:
 		var leg := at + dir * sgn * span * 0.45
 		leg.y = gen.get_height(leg.x, leg.z)
+		# Rubble fallen from it round the foot of each leg.
+		for j in rng.randi_range(2, 4):
+			var a := rng.randf() * TAU
+			var bp := leg + Vector3(cos(a), 0, sin(a)) * thick * rng.randf_range(1.6, 3.0)
+			bp.y = gen.get_height(bp.x, bp.z)
+			var bs := thick * rng.randf_range(0.25, 0.55)
+			kit.add_primitive(MeshKit.sphere(1.0, 7, 4), Transform3D(Basis(Vector3.UP, rng.randf() * TAU).scaled(Vector3(bs * 1.3, bs * 0.8, bs)), bp + Vector3(0, bs * 0.35, 0)), base_col.darkened(rng.randf_range(0.0, 0.15)), 0.35, 0.06)
 		_solid(leg + Vector3(0, height * 0.45, 0), Vector3(thick * 2.2, height * 0.9, thick * 2.2), yaw)
 	return 1
 
 
-## Two to four tall rock pillars standing in the sea, grassy on top, the waves' line round their feet.
+## Two to four tall rock pillars standing in the sea: craggy and leaning a little, layered in bands, ledged, dark and
+## wet where the waves reach, a grassy cap on top and fallen blocks round their feet.
 func _stacks(kit: MeshKit, gen: WorldGen, at: Vector3, rng: RandomNumberGenerator, pal: WorldPalette) -> int:
 	var count := rng.randi_range(2, 4)
+	var sea := Game.SEA_LEVEL
+	var grass: Color = pal.ground[WorldGen.Biome.MEADOW]
 	for k in count:
 		var p := at + Vector3(rng.randf_range(-7, 7), 0, rng.randf_range(-7, 7))
 		var floor_y := gen.get_height(p.x, p.z)
-		var top := rng.randf_range(5.0, 12.0) * (1.0 if k == 0 else rng.randf_range(0.4, 0.8))
-		var r := rng.randf_range(1.4, 2.6) * (1.0 if k == 0 else 0.7)
+		var top := rng.randf_range(6.0, 13.0) * (1.0 if k == 0 else rng.randf_range(0.4, 0.8))
+		var r := rng.randf_range(1.6, 2.8) * (1.0 if k == 0 else 0.7)
+		var lean := Vector3(rng.randf_range(-1, 1), 0, rng.randf_range(-1, 1)).normalized() * rng.randf_range(0.3, 1.2)
+		# Where the ledges are: the radius steps in there.
+		var ledge_a := rng.randf_range(0.3, 0.5)
+		var ledge_b := rng.randf_range(0.6, 0.8)
 		var path: Array = []
 		var radii: Array = []
-		for i in 6:
-			var t := i / 5.0
-			path.append(Vector3(p.x, lerpf(floor_y - 0.5, top, t), p.z) + Vector3(rng.randf_range(-0.2, 0.2), 0, rng.randf_range(-0.2, 0.2)) * t)
-			radii.append(r * lerpf(1.25, 0.8, t) * rng.randf_range(0.9, 1.1))
-		var c := pal.rock.darkened(rng.randf_range(0.0, 0.15))
-		kit.loft(path, radii, 8, c, func(t: float, _ang: float) -> Color:
-			return c.lightened(0.18) if t < 0.18 else (pal.ground[WorldGen.Biome.MEADOW] if t > 0.97 else c), Callable(), true, true, 0.15)
-		_solid(Vector3(p.x, (floor_y + top) * 0.5, p.z), Vector3(r * 2.0, top - floor_y, r * 2.0), 0.0)
+		var rings := 11
+		for i in rings:
+			var t := float(i) / (rings - 1)
+			var y := lerpf(floor_y - 0.5, top, t)
+			path.append(Vector3(p.x, y, p.z) + lean * t * t + Vector3(rng.randf_range(-0.15, 0.15), 0, rng.randf_range(-0.15, 0.15)) * t)
+			var rr := r * lerpf(1.0, 0.72, t)
+			rr *= 1.0 + 0.45 * clampf(1.0 - (y - floor_y) / 2.5, 0.0, 1.0)   # the foot flares out under the water
+			if t > ledge_a:
+				rr *= 0.86
+			if t > ledge_b:
+				rr *= 0.88
+			radii.append(rr * rng.randf_range(0.93, 1.07))
+		var c := pal.rock.darkened(rng.randf_range(0.0, 0.12)).lerp(Color(0.6, 0.55, 0.48), 0.2)
+		var phase := rng.randf() * TAU
+		var phase2 := rng.randf() * TAU
+		var wet := c.darkened(0.4).lerp(Color(0.2, 0.3, 0.28), 0.3)
+		var span := top - floor_y
+		kit.loft(path, radii, 10, c, func(t: float, _ang: float) -> Color:
+			var y := floor_y - 0.5 + t * (span + 0.5)
+			if y < sea + 0.7:
+				return wet   # wet and weedy where the waves reach
+			var band := sin(y * 2.3 + phase) * 0.5 + 0.5
+			var col := c.lightened(0.14 * band).darkened(0.1 * (1.0 - band))
+			return col.lerp(grass.darkened(0.15), 0.45) if t > 0.94 else col,
+			func(t: float, ang: float) -> Vector2:
+				# Craggy across: a lumpy, flattened outline, different at each height.
+				var f := 1.0 + 0.2 * sin(ang * 3.0 + phase + t * 2.0) + 0.1 * sin(ang * 5.0 + phase2 - t * 3.0)
+				return Vector2(f, f * 0.85), true, true, 0.3)
+		# A grassy cap over the flat top, and a tuft or two hanging over its edge.
+		var cap_at: Vector3 = path[rings - 1]
+		var cap_r: float = radii[rings - 1]
+		kit.add_primitive(MeshKit.sphere(1.0, 10, 5), Transform3D(Basis.from_scale(Vector3(cap_r * 1.08, 0.35, cap_r * 0.95)), cap_at + Vector3(0, -0.05, 0)), grass, 0.15, 0.06)
+		for j in rng.randi_range(1, 3):
+			var a := rng.randf() * TAU
+			kit.add_primitive(MeshKit.sphere(1.0, 6, 4), Transform3D(Basis.from_scale(Vector3(0.45, 0.3, 0.45)), cap_at + Vector3(cos(a) * cap_r, -0.2, sin(a) * cap_r)), grass.darkened(0.1), 0.2, 0.06)
+		# Blocks fallen from it, half in the water round its foot.
+		for j in rng.randi_range(3, 5):
+			var a := rng.randf() * TAU
+			var d := r * rng.randf_range(1.3, 2.0)
+			var bp := Vector3(p.x + cos(a) * d, 0, p.z + sin(a) * d)
+			var by := maxf(gen.get_height(bp.x, bp.z), sea - 1.5)
+			var bs := rng.randf_range(0.5, 1.1) * r * 0.5
+			kit.add_primitive(MeshKit.sphere(1.0, 7, 4), Transform3D(Basis(Vector3.UP, rng.randf() * TAU).scaled(Vector3(bs * 1.2, bs * 0.8, bs)), Vector3(bp.x, by + bs * 0.3, bp.z)), wet.lerp(c, 0.4), 0.35, 0.06)
+		_solid(Vector3(p.x, (floor_y + top) * 0.5, p.z) + lean * 0.3, Vector3(r * 2.0, top - floor_y, r * 2.0), 0.0)
 	return count
 
 

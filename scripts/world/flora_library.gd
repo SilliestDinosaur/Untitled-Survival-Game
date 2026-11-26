@@ -174,6 +174,7 @@ var _pal: WorldPalette
 var _specs := {}          # mesh key -> {kind, index, seed, bare, detail}: what mesh() builds
 var _base_detail := 1.0
 var _bare := false   ## building the "already harvested" look
+var _lod := false    ## building a far-away twin (models with many small parts use fewer, bigger ones)
 
 ## Kinds that look different after being hand-harvested (the fruiting tree is added per world).
 ## Trees are built at this share of the model detail setting, whatever it is: they are the costliest flora to draw.
@@ -236,9 +237,11 @@ func mesh(key: String) -> ArrayMesh:
 		var kept_bare := _bare
 		MeshKit.detail = spec.detail
 		_bare = spec.bare
+		_lod = key.ends_with("_lod")
 		meshes[key] = _build_mesh(spec.kind, spec.index, spec.seed)
 		MeshKit.detail = kept_detail
 		_bare = kept_bare
+		_lod = false
 	return meshes[key]
 
 
@@ -435,22 +438,29 @@ func _willow(kit: MeshKit, rng: RandomNumberGenerator) -> void:
 	# The dome: soft lumps over the limbs.
 	for tip: Vector3 in tips:
 		TreeModels.blob(kit, rng, tip + Vector3(0, 0.25, 0), rng.randf_range(0.9, 1.3), 0.6, leaf.lightened(rng.randf_range(-0.04, 0.05)), 0.45)
-	# The curtains: from each limb's end, strands arcing out a little and falling straight, flat leafy ribbons.
+	# The curtains: from each limb's end, slim strands arcing out a little and falling, with gaps between them so the
+	# light comes through (a curtain, not a wall). Far away: a few wider, simpler strands in the same places.
+	# (The strand rng draws are the same near and far, so the far twin keeps the near one's shape.)
 	for tip: Vector3 in tips:
 		var out := Vector3(tip.x, 0, tip.z)
 		out = out.normalized() if out.length() > 0.05 else Vector3(1, 0, 0)
-		for k in rng.randi_range(7, 11):
+		var count := rng.randi_range(6, 9)
+		for k in count:
 			var a := rng.randf() * TAU
-			var start: Vector3 = tip + Vector3(cos(a), 0, sin(a)) * rng.randf_range(0.5, 1.3) + Vector3(0, rng.randf_range(-0.2, 0.3), 0)
-			var drop := rng.randf_range(0.65, 0.92) * start.y
+			var start: Vector3 = tip + Vector3(cos(a), 0, sin(a)) * rng.randf_range(0.5, 1.4) + Vector3(0, rng.randf_range(-0.2, 0.3), 0)
+			var drop := rng.randf_range(0.6, 0.93) * start.y
+			var c := leaf.lightened(rng.randf_range(-0.06, 0.08))
+			if _lod and k % 2 == 1:
+				continue
+			var segs := 3 if _lod else 6
+			var wide := 1.7 if _lod else 1.0
 			var path: Array = []
 			var radii: Array = []
-			for j in 6:
-				var t := j / 5.0
-				path.append(start + out * 0.5 * sin(t * PI * 0.5) * (1.0 - t * 0.4) + Vector3(0, -drop * t, 0) + Vector3(sin(t * 3.0 + a), 0, cos(t * 3.0 + a)) * 0.06)
-				radii.append(lerpf(0.13, 0.05, t))
-			var c := leaf.lightened(rng.randf_range(-0.06, 0.08))
-			kit.loft(path, radii, 4, c, func(t: float, _ang: float) -> Color: return c.lightened(0.08 * t), func(_t: float, _ang: float) -> Vector2: return Vector2(1.0, 0.3), false, true, 0.02)
+			for j in segs + 1:
+				var t := float(j) / segs
+				path.append(start + out * 0.5 * sin(t * PI * 0.5) * (1.0 - t * 0.4) + Vector3(0, -drop * t, 0) + Vector3(sin(t * 3.0 + a), 0, cos(t * 3.0 + a)) * 0.07)
+				radii.append(lerpf(0.09, 0.03, t) * wide)
+			kit.loft(path, radii, 3 if _lod else 4, c, func(t: float, _ang: float) -> Color: return c.lightened(0.1 * t), func(_t: float, _ang: float) -> Vector2: return Vector2(1.0, 0.3), false, true, 0.0 if _lod else 0.015)
 
 
 ## Savanna tree: leaning trunk splitting into branches with flat, wide canopy layers.
@@ -752,13 +762,19 @@ func _boulder(kit: MeshKit, rng: RandomNumberGenerator) -> void:
 ## Fallen log: a gnarled lofted trunk with bark ridges, a broken end, moss and shelf fungi.
 ## A patch of wet mud: a flat dark sheen on the ground with a few puddles in it.
 func _mud(kit: MeshKit, rng: RandomNumberGenerator) -> void:
-	var mud := Color(0.24, 0.18, 0.12).lerp(_pal.ground[WorldGen.Biome.JUNGLE], 0.15)
+	# Warm wet earth, not black: dark enough to read as mud against the grass, light enough not to read as a hole.
+	# Each patch sits on a wider, fainter rim of churned earth halfway to the ground colour, so it fades in at its edge.
+	var ground: Color = _pal.ground[WorldGen.Biome.JUNGLE]
+	var mud := Color(0.4, 0.3, 0.2).lerp(ground, 0.2)
 	for i in rng.randi_range(3, 5):
-		var at := Vector3(rng.randf_range(-0.9, 0.9), 0.02, rng.randf_range(-0.9, 0.9))
-		kit.add_primitive(MeshKit.cylinder(rng.randf_range(0.6, 1.1), rng.randf_range(0.7, 1.2), 0.04, 12), Transform3D(Basis(Vector3.UP, rng.randf() * TAU).scaled(Vector3(1.0, 1.0, rng.randf_range(0.6, 1.0))), at), mud.darkened(rng.randf_range(0.0, 0.15)), 0.0, 0.03)
-	for i in rng.randi_range(2, 3):   # puddles: darker, glossy-looking
-		var at := Vector3(rng.randf_range(-0.6, 0.6), 0.05, rng.randf_range(-0.6, 0.6))
-		kit.add_primitive(MeshKit.cylinder(rng.randf_range(0.2, 0.4), rng.randf_range(0.22, 0.42), 0.02, 10), Transform3D(Basis(), at), Color(0.1, 0.13, 0.12), 0.0, 0.0)
+		var at := Vector3(rng.randf_range(-0.9, 0.9), 0.0, rng.randf_range(-0.9, 0.9))
+		var r := rng.randf_range(0.6, 1.1)
+		var b := Basis(Vector3.UP, rng.randf() * TAU).scaled(Vector3(1.0, 1.0, rng.randf_range(0.6, 1.0)))
+		kit.add_primitive(MeshKit.cylinder(r * 1.25, r * 1.3, 0.03, 12), Transform3D(b, at + Vector3(0, 0.015, 0)), mud.lerp(ground, 0.5), 0.0, 0.03)
+		kit.add_primitive(MeshKit.cylinder(r, r * 1.05, 0.04, 12), Transform3D(b, at + Vector3(0, 0.03, 0)), mud.darkened(rng.randf_range(0.0, 0.12)), 0.0, 0.03)
+	for i in rng.randi_range(2, 3):   # puddles: brown water catching the sky a little
+		var at := Vector3(rng.randf_range(-0.6, 0.6), 0.055, rng.randf_range(-0.6, 0.6))
+		kit.add_primitive(MeshKit.cylinder(rng.randf_range(0.2, 0.4), rng.randf_range(0.22, 0.42), 0.02, 10), Transform3D(Basis(), at), Color(0.3, 0.27, 0.22).lerp(Color(0.55, 0.62, 0.66), 0.25), 0.0, 0.0)
 
 
 func _log(kit: MeshKit, rng: RandomNumberGenerator) -> void:
