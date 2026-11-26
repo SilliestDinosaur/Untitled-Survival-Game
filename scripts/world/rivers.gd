@@ -161,9 +161,15 @@ static func _add_river(gen: WorldGen, rng: RandomNumberGenerator, out: Dictionar
 	var hs := minf(surf[0], rim - 0.35)
 	for i in n:
 		surf[i] = minf(surf[i], hs)
-	var head_pond := [hc, hr, hs, dep[0] + 0.35, 5.0 if rock else 10.0]
-	out.heads.append({"c": hc, "up": up, "rock": rock, "r": hr, "surface": hs, "rise": rise, "big": big})
-	out.lines.append({"pts": pts, "surface": surf, "width": wid, "depth": dep, "big": big, "end": traced.end})
+	var reach_h := 5.0 if rock else 10.0
+	# [centre, radius, surface, depth, bank reach, "head"/"neck", outlet direction]. The neck, between the pool and
+	# the channel, flares the banks from the round pool into the river's, so they meet in a curve, not a corner.
+	var head_pond := [hc, hr, hs, dep[0] + 0.35, reach_h, "head", -up]
+	var out_p: Vector2 = pts[1]
+	var neck := [hc.lerp(out_p, 0.55), lerpf(hr, wid[1] + 0.6, 0.55), hs, lerpf(dep[0] + 0.35, dep[1], 0.5), reach_h, "neck", -up]
+	out.heads.append({"c": hc, "up": up, "rock": rock, "r": hr, "surface": hs, "rise": rise, "big": big,
+		"out_p": out_p, "out_s": surf[1], "out_w": wid[1]})
+	out.lines.append({"pts": pts, "surface": surf, "width": wid, "depth": dep, "big": big, "end": traced.end, "head_c": hc, "head_r": hr})
 	var segs: Array = out.segs
 	for i in n - 1:
 		var si := segs.size()
@@ -173,8 +179,9 @@ static func _add_river(gen: WorldGen, rng: RandomNumberGenerator, out: Dictionar
 	if pond.is_empty() == false:
 		out.ponds.append(pond)
 		_bucket(out.buckets, pond[0], pond[0], float(pond[1]) + REACH, -1 - (out.ponds.size() - 1))
-	out.ponds.append(head_pond)
-	_bucket(out.buckets, head_pond[0], head_pond[0], float(head_pond[1]) + float(head_pond[4]), -1 - (out.ponds.size() - 1))
+	for hp: Array in [head_pond, neck]:
+		out.ponds.append(hp)
+		_bucket(out.buckets, hp[0], hp[0], float(hp[1]) + float(hp[4]), -1 - (out.ponds.size() - 1))
 
 
 static func _bucket(buckets: Dictionary, a: Vector2, b: Vector2, reach: float, idx: int) -> void:
@@ -493,12 +500,18 @@ static func build_meshes(plan: Dictionary, parent: Node3D, sea_material: ShaderM
 			piece_start = piece_end
 	_cascades(plan, parent)
 	for pd: Array in plan.ponds:
+		if pd.size() > 5 and pd[5] == "neck":
+			continue
 		var deco := _dress_pond(gen, pd, rng, mat)
 		if deco:
 			parent.add_child(deco)
 	for hd: Dictionary in plan.get("heads", []):
 		_dress_head(gen, hd, rng, mat, parent)
+	for hd: Dictionary in plan.get("heads", []):
+		parent.add_child(_head_water(hd))
 	for pd: Array in plan.ponds:
+		if pd.size() > 5:
+			continue   # a spring's pool: its water is drawn with its outlet (see _head_water)
 		var c: Vector2 = pd[0]
 		var mi := MeshInstance3D.new()
 		var disc := CylinderMesh.new()
@@ -619,6 +632,12 @@ static func _ribbon(plan: Dictionary, line: Dictionary, i0: int, i1: int) -> Mes
 		var steep := clampf((surf[i_a] - surf[i_b]) / maxf((pts[i_a] as Vector2).distance_to(pts[i_b]), 0.5), 0.0, 1.0)
 		var side := Vector2(-tan.y, tan.x)
 		var half := wid[i] + 0.7   # a little under the banks, so the water's edge is hidden in them
+		# Out of its spring's pool: the flowing water fades in over the pool's still water, from inside the pool to
+		# past its rim, so there's no edge where one becomes the other.
+		var fade := 0.0
+		if line.has("head_c"):
+			var hr: float = line.head_r
+			fade = 1.0 - smoothstep(hr * 0.6, hr + 2.5, p.distance_to(line.head_c))
 		var row: Array = []
 		for k in 5:
 			var u := (k / 4.0) * 2.0 - 1.0
@@ -631,7 +650,7 @@ static func _ribbon(plan: Dictionary, line: Dictionary, i0: int, i1: int) -> Mes
 			# An edge that opens into another river (where a stream comes in): no waterline across that opening.
 			if (k == 0 or k == 4) and not _nearest(plan, q.x + side.x * u, q.y + side.y * u, 0.6, own).is_empty():
 				inset = -99.0
-			row.append([Vector3(q.x, y, q.y) - centre, Vector2((u + 1.0) * half, along), half, inset, steep])
+			row.append([Vector3(q.x, y, q.y) - centre, Vector2((u + 1.0) * half, along), half, inset, steep, fade])
 		rows.append(row)
 		if i < n - 1:
 			along += p.distance_to(pts[i + 1])
@@ -645,7 +664,7 @@ static func _ribbon(plan: Dictionary, line: Dictionary, i0: int, i1: int) -> Mes
 			var d: Array = rows[r + 1][k + 1]
 			for v: Array in [a, c, b, b, c, d]:
 				st.set_uv(v[1])
-				st.set_color(Color(v[4], 0.0, 0.0))   # how steep (white water)
+				st.set_color(Color(v[4], 0.0, v[5]))   # how steep (white water); b: faded out (out of a spring's pool)
 				st.set_uv2(Vector2(v[2], v[3]))   # the ribbon's half width, and how far in from its edge the waterline is (far out: none)
 				st.set_normal(Vector3.UP)
 				st.add_vertex(v[0])
@@ -746,8 +765,11 @@ static func _dress_pond(gen: WorldGen, pd: Array, rng: RandomNumberGenerator, ma
 	var centre := Vector3(c2.x, float(pd[2]), c2.y)
 	var kit := MeshKit.new(int(c2.x))
 	_lilies(kit, Vector3(rng.randf_range(-0.3, 0.3), 0.015, rng.randf_range(-0.3, 0.3)) * r, rng, rng.randi_range(8, 14), r * 0.55)
+	var outlet: Variant = pd[6] if pd.size() > 6 else null
 	for k in rng.randi_range(6, 10):
 		var a := rng.randf() * TAU
+		if outlet != null and absf(angle_difference(a, (outlet as Vector2).angle())) < 0.75:
+			continue   # not across the mouth where the river runs out
 		var xz := c2 + Vector2(cos(a), sin(a)) * (r + rng.randf_range(-0.4, 0.4))
 		_reeds(kit, Vector3(xz.x, gen.get_height(xz.x, xz.y), xz.y) - centre, rng)
 	var mi := MeshInstance3D.new()
@@ -876,6 +898,47 @@ static func _dress_head(gen: WorldGen, hd: Dictionary, rng: RandomNumberGenerato
 	mi.position = centre
 	mi.visibility_range_end = 260.0
 	parent.add_child(mi)
+
+
+## A spring's pool and its outlet as one sheet of still water: the round pool, drawn out into a funnel that narrows
+## to the river's width where the river has fully taken over (it fades in over this, see _ribbon). Just under the
+## river's water where they overlap, so they don't flicker.
+static func _head_water(hd: Dictionary) -> MeshInstance3D:
+	var c: Vector2 = hd.c
+	var r: float = float(hd.r) + 0.6
+	var op: Vector2 = hd.out_p
+	var dir := (op - c).normalized()
+	var side := Vector2(-dir.y, dir.x)
+	var ow := float(hd.out_w) + 0.7
+	var pts := PackedVector2Array()
+	for k in 28:
+		var a := TAU * k / 28.0
+		pts.append(c + Vector2(cos(a), sin(a)) * r)
+	pts.append(op + side * ow)
+	pts.append(op - side * ow)
+	var hull := Geometry2D.convex_hull(pts)
+	hull.remove_at(hull.size() - 1)   # (the hull repeats its first point at the end)
+	var tris := Geometry2D.triangulate_polygon(hull)
+	var top := float(hd.surface) - 0.04
+	var low := float(hd.out_s) - 0.06
+	var reach := maxf((op - c).length() - r * 0.5, 0.1)
+	var st := SurfaceTool.new()
+	st.begin(Mesh.PRIMITIVE_TRIANGLES)
+	var centre := Vector3(c.x, top, c.y)
+	for k in tris:
+		var q: Vector2 = hull[k]
+		# Level over the pool, easing down toward the outlet's end to sit under the river there.
+		var along := clampf(((q - c).dot(dir) - r * 0.5) / reach, 0.0, 1.0)
+		st.set_normal(Vector3.UP)
+		st.add_vertex(Vector3(q.x, lerpf(top, minf(top, low), along), q.y) - centre)
+	var mi := MeshInstance3D.new()
+	mi.mesh = st.commit()
+	mi.material_override = pond_material
+	mi.position = centre
+	mi.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+	mi.visibility_range_end = 420.0
+	mi.set_meta("water", true)
+	return mi
 
 
 static func _stone(kit: MeshKit, at: Vector3, r: float, rng: RandomNumberGenerator) -> void:

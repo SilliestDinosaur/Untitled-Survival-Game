@@ -37,10 +37,20 @@ void vertex() {
 }
 
 void fragment() {
+	// Rivers out of a spring's pool (COLOR.b, 1 at the pool .. 0 downstream): the river's look eases into the pool's
+	// (ripples fixed in the world, no current, no edge foam, clearer), so where the two sheets meet they match. (A fade
+	// by ALPHA would make the river truly see-through everywhere, which washes it out.)
+	float pool = flow > 0.0 ? COLOR.b : 0.0;
 	vec2 uv = flow > 0.0 ? vec2(UV.x, -UV.y + TIME * flow * 1.3) : world_pos.xz;
 	vec3 n1 = texture(ripple_a, uv * 0.03 + TIME * vec2(0.010, 0.006)).rgb;
 	vec3 n2 = texture(ripple_b, uv * 0.055 - TIME * vec2(0.007, 0.011)).rgb;
 	vec3 nm = mix(n1, n2, 0.5);
+	if (pool > 0.0) {   // the pool's own still ripples, blended in
+		vec3 s1 = texture(ripple_a, world_pos.xz * 0.03 + TIME * vec2(0.010, 0.006)).rgb;
+		vec3 s2 = texture(ripple_b, world_pos.xz * 0.055 - TIME * vec2(0.007, 0.011)).rgb;
+		nm = mix(nm, mix(s1, s2, 0.5), pool);
+		uv = mix(uv, world_pos.xz, step(0.5, pool));
+	}
 	NORMAL_MAP = nm;
 	NORMAL_MAP_DEPTH = 0.45;
 
@@ -62,7 +72,7 @@ void fragment() {
 	vec3 body = mix(shallow_color, deep_color, clamp(mix(sqrt(t), bands, 0.55), 0.0, 1.0));
 	// Clear near the shore: you see the sand and stones through a tinted film. The ground is
 	// already lit, so it goes in as emission and the lit water body is faded out over it.
-	float see = exp(-ref_depth / clarity) * 0.85;
+	float see = exp(-ref_depth / mix(clarity, 2.2, pool)) * 0.85;
 	vec3 through = ground * mix(vec3(1.0), shallow_color * 1.6, 0.45);
 
 	// Sky reflection at grazing angles.
@@ -80,7 +90,7 @@ void fragment() {
 	float shore_foam = 0.0;
 	if (flow > 0.0) {
 		float shore = UV2.x - abs(UV.x - UV2.x) - UV2.y;   // metres in from the waterline
-		shore_foam = (1.0 - smoothstep(0.05, 0.4, shore + (fn - 0.5) * 0.35)) * 0.55;
+		shore_foam = (1.0 - smoothstep(0.05, 0.4, shore + (fn - 0.5) * 0.35)) * 0.55 * (1.0 - pool);
 	}
 	// Rivers: white water where they run steeply (rapids, little falls): broken streaks of foam racing downstream
 	// across the whole width, thicker the steeper.
@@ -91,7 +101,7 @@ void fragment() {
 		float race2 = texture(ripple_a, vec2(UV.x * 0.6 + 0.3, -UV.y * 0.3 + TIME * flow * 4.5)).r;
 		// (The ripple textures sit around 0.5: streaks where they run high, more of them the steeper.)
 		float r = race * 0.6 + race2 * 0.4;
-		rapids = steep * (smoothstep(0.56 - steep * 0.06, 0.64 - steep * 0.04, r) * 0.95 + 0.12);
+		rapids = steep * (smoothstep(0.56 - steep * 0.06, 0.64 - steep * 0.04, r) * 0.95 + 0.12) * (1.0 - pool);
 	}
 	float foam = clamp(max(max(smoothstep(0.35, 0.6, edge), shore_foam), rapids) + lines * 0.55 * step(0.45, fn), 0.0, 1.0);
 

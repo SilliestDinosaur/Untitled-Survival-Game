@@ -161,6 +161,11 @@ func _process(_delta: float) -> bool:
 			if not is_instance_valid(_animal):
 				return _finish()
 			_animal.set_physics_process(false)
+			# Others wandering into the line of the swing would take the hits: they're moved well away.
+			for other in _main.get_node("Wildlife").get_animals():
+				if other != _animal and is_instance_valid(other) and other.global_position.distance_to(_player.global_position) < 12.0:
+					other.set_physics_process(false)
+					other.global_position += Vector3(40, 0, 40)
 			var front := _player.global_position - _player.global_transform.basis.z * 2.0
 			_animal.global_position = Vector3(front.x, _player.global_position.y, front.z)
 			_player.get_node("Head").look_at(_animal.global_position + Vector3.UP * _animal.species.leg_len, Vector3.UP)
