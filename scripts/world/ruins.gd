@@ -40,8 +40,9 @@ static func plan(gen: WorldGen) -> Array:
 		var h := gen.get_height(x, z)
 		if h < 4.0 or h > 70.0 or gen.near_river(x, z, 16.0):
 			continue
-		var dims := dims_of(kind, seed_value)
-		var reach := reach_of(kind, dims)
+		var des := design(kind, seed_value)
+		var dims: Vector2 = des.dims
+		var reach: float = des.reach
 		if not _clear(out, gen.landmarks, x, z):
 			continue
 		if Caves.void_distance(gen.caves, Vector3(x, h, z)) < 14.0:
@@ -50,40 +51,189 @@ static func plan(gen: WorldGen) -> Array:
 		if kind == "temple":
 			if biome in [WorldGen.Biome.TUNDRA, WorldGen.Biome.MARSH] or h > 45.0 or gen.get_normal(x, z).y < 0.9:
 				continue
-			if _rise(gen, x, z, yaw, dims.x * 0.5 + 1.0, dims.y * 0.5 + 1.0) > 3.2:
+			if _rise(gen, x, z, yaw, dims.x * 0.5 + 1.0, dims.y * 0.5 + 1.0) > 3.6:
 				continue   # too steep for a plinth
 		else:
 			if h < 12.0 or gen.get_normal(x, z).y < 0.8 or biome == WorldGen.Biome.MARSH:
 				continue
-			if _rise(gen, x, z, 0.0, dims.x + 1.6, dims.x + 1.6) > 3.0:
-				continue
-			# On a rise: the land falls away round it (a view, and seen from afar).
-			var ring := 0.0
-			for k in 8:
-				var a := TAU * k / 8.0
-				ring += gen.get_height(x + cos(a) * 30.0, z + sin(a) * 30.0)
-			if ring / 8.0 > h - 2.0:
-				continue
+			if des.fort:
+				# A fort wants a broad, level-ish top for its walls.
+				if _rise(gen, x, z, yaw, float(des.span) + 2.0, float(des.span) + 2.0) > 3.8:
+					continue
+			else:
+				if _rise(gen, x, z, 0.0, dims.x + 1.6, dims.x + 1.6) > 3.0:
+					continue
+				# On a rise: the land falls away round it (a view, and seen from afar).
+				var ring := 0.0
+				for k in 8:
+					var a := TAU * k / 8.0
+					ring += gen.get_height(x + cos(a) * 30.0, z + sin(a) * 30.0)
+				if ring / 8.0 > h - 2.0:
+					continue
 		counts[kind] = int(counts.get(kind, 0)) + 1
-		out.append({"kind": kind, "pos": Vector3(x, h, z), "yaw": yaw, "seed": seed_value, "r": reach, "size": dims})
+		out.append({"kind": kind, "pos": Vector3(x, h, z), "yaw": yaw, "seed": seed_value, "r": reach, "size": dims, "fort": bool(des.get("fort", false))})
 	return out
 
 
-## A temple's plinth (width, depth) or a tower's (radius, height), from its seed: the planner and the models
-## agree on it without passing anything else around.
-static func dims_of(kind: String, seed_value: int) -> Vector2:
+## A ruin's design, from its seed alone (so the planner and the models agree without passing anything round):
+##   temple: {dims (its footprint, metres), reach, plan (see _floor_plan)}
+##   tower:  {dims (radius, height), reach, fort: false}, or a fort: {fort: true, span (its half width), towers:
+##           [[centre Vector2, radius, height, round?]] (the first the keep), dims, reach}
+static func design(kind: String, seed_value: int) -> Dictionary:
 	var rng := RandomNumberGenerator.new()
 	rng.seed = seed_value
 	if kind == "temple":
-		return Vector2(snappedf(rng.randf_range(9.0, 15.0), 0.5), snappedf(rng.randf_range(10.0, 18.0), 0.5))
-	return Vector2(rng.randf_range(2.2, 3.2), rng.randf_range(9.0, 15.0))
+		var plan := _floor_plan(rng)
+		var dims := Vector2(plan.nx * plan.cell + 2.0, plan.nz * plan.cell + 2.0)
+		return {"dims": dims, "reach": dims.length() * 0.5 + 7.0, "plan": plan}
+	if rng.randf() < 0.45:
+		# A fort: towers round a courtyard, curtain walls between them.
+		var n := rng.randi_range(3, 5)
+		var span := rng.randf_range(8.0, 13.0)
+		var towers: Array = []
+		var turn := rng.randf() * TAU
+		for k in n:
+			var a := turn + TAU * k / n + rng.randf_range(-0.25, 0.25) / n * TAU
+			var d := span * rng.randf_range(0.85, 1.05)
+			var keep := k == 0
+			towers.append([Vector2(cos(a), sin(a)) * d, rng.randf_range(2.5, 3.2) if keep else rng.randf_range(1.6, 2.3),
+				rng.randf_range(11.0, 16.0) if keep else rng.randf_range(6.0, 9.5), rng.randf() < 0.65])
+		return {"fort": true, "span": span, "towers": towers, "dims": Vector2(span, 6.0), "reach": span + 9.0}
+	var dims := Vector2(rng.randf_range(2.0, 3.4), rng.randf_range(7.0, 18.0))
+	return {"fort": false, "dims": dims, "reach": dims.x + 6.0}
 
 
-## How far round a ruin its ground reaches (no trees or rocks on it).
-static func reach_of(kind: String, dims: Vector2) -> float:
-	if kind == "temple":
-		return dims.length() * 0.5 + 5.0
-	return dims.x + 6.0
+## A walk-in temple's floor plan on a grid of cells: rooms of different sizes, a tree of corridors joining them (a
+## loop or two, a dead end or two), sometimes a courtyard open to the sky, sometimes a room with a stair up to a
+## roof terrace. The way in is at the front (the -z edge).
+##   {cell (metres), nx, nz, grid: cell -> 0 nothing, 1 corridor, 2+ room (index + 2), rooms: [Rect2i],
+##    open: {Vector3i(x, z, axis): true} (a way through that edge: axis 0 the +x side, 1 the +z side),
+##    entrance: Vector2i (a front-row cell, entered through its -z side), court, deep, stair (room indices or -1)}
+static func _floor_plan(rng: RandomNumberGenerator) -> Dictionary:
+	var cell := snappedf(rng.randf_range(2.8, 3.8), 0.1)
+	var nx := rng.randi_range(3, 7)
+	var nz := rng.randi_range(3, 7)
+	var grid: Array = []   # (an Array, not a packed one: the carving below changes it from inside a lambda)
+	grid.resize(nx * nz)
+	grid.fill(0)
+	var rooms: Array = []
+	var want := 1 + (nx * nz) / 7
+	for t in 60:
+		if rooms.size() >= want:
+			break
+		var w := rng.randi_range(1, mini(3, nx))
+		var d := rng.randi_range(1, mini(3, nz))
+		var r := Rect2i(rng.randi_range(0, nx - w), rng.randi_range(0, nz - d), w, d)
+		var ok := true
+		for o: Rect2i in rooms:   # a cell apart at least, for corridors between
+			if r.position.x < o.end.x + 1 and r.end.x + 1 > o.position.x and r.position.y < o.end.y + 1 and r.end.y + 1 > o.position.y:
+				ok = false
+				break
+		if not ok:
+			continue
+		rooms.append(r)
+		for x in range(r.position.x, r.end.x):
+			for z in range(r.position.y, r.end.y):
+				grid[z * nx + x] = rooms.size() + 1
+	if rooms.is_empty():
+		rooms.append(Rect2i(0, 0, nx, nz))
+		grid.fill(2)
+	var open := {}
+	var carve := func(a: Vector2i, b: Vector2i) -> void:
+		var c := a
+		var x_first := rng.randf() < 0.5
+		while c != b:
+			var step := Vector2i(signi(b.x - c.x), 0) if (x_first and c.x != b.x) or c.y == b.y else Vector2i(0, signi(b.y - c.y))
+			var n := c + step
+			if grid[n.y * nx + n.x] == 0:
+				grid[n.y * nx + n.x] = 1
+			open[_edge(c, n)] = true
+			c = n
+	var centre := func(r: Rect2i) -> Vector2i: return r.position + Vector2i(r.size.x / 2, r.size.y / 2)
+	# Join the rooms: a tree (each new room to the nearest already joined), then a loop or two.
+	var joined := [0]
+	while joined.size() < rooms.size():
+		var best := Vector2i(-1, -1)
+		var best_d := 1e9
+		for i in rooms.size():
+			if joined.has(i):
+				continue
+			for j: int in joined:
+				var dd := float((centre.call(rooms[i]) - centre.call(rooms[j])).length_squared())
+				if dd < best_d:
+					best_d = dd
+					best = Vector2i(i, j)
+		carve.call(centre.call(rooms[best.x]), centre.call(rooms[best.y]))
+		joined.append(best.x)
+	if rooms.size() >= 3:
+		for k in rng.randi_range(0, 2):
+			carve.call(centre.call(rooms[rng.randi() % rooms.size()]), centre.call(rooms[rng.randi() % rooms.size()]))
+	# The way in: from the front edge, straight back to the first room it meets (or the nearest room).
+	var front: Rect2i = rooms[0]
+	for r: Rect2i in rooms:
+		if r.position.y < front.position.y:
+			front = r
+	var ex := clampi(front.position.x + rng.randi_range(0, front.size.x - 1), 0, nx - 1)
+	var entrance := Vector2i(ex, 0)
+	if grid[ex] == 0:
+		grid[ex] = 1
+	carve.call(entrance, Vector2i(ex, front.position.y))
+	# A dead end or two off the corridors.
+	for k in rng.randi_range(0, 2):
+		var halls: Array = []
+		for i in grid.size():
+			if grid[i] == 1:
+				halls.append(Vector2i(i % nx, i / nx))
+		if halls.is_empty():
+			break
+		var c: Vector2i = halls[rng.randi() % halls.size()]
+		var dirs := [Vector2i(1, 0), Vector2i(-1, 0), Vector2i(0, 1), Vector2i(0, -1)]
+		for step in rng.randi_range(1, 2):
+			var dir: Vector2i = dirs[rng.randi() % 4]
+			var n := c + dir
+			if n.x < 0 or n.y < 0 or n.x >= nx or n.y >= nz or grid[n.y * nx + n.x] != 0:
+				break
+			grid[n.y * nx + n.x] = 1
+			open[_edge(c, n)] = true
+			c = n
+	# The deepest room from the way in (where the chest is), a courtyard, a room with a stair up.
+	var dist := {entrance: 0}
+	var queue := [entrance]
+	while not queue.is_empty():
+		var c: Vector2i = queue.pop_front()
+		for dir: Vector2i in [Vector2i(1, 0), Vector2i(-1, 0), Vector2i(0, 1), Vector2i(0, -1)]:
+			var n := c + dir
+			if n.x < 0 or n.y < 0 or n.x >= nx or n.y >= nz or dist.has(n) or grid[n.y * nx + n.x] == 0:
+				continue
+			var gc: int = grid[c.y * nx + c.x]
+			var gn: int = grid[n.y * nx + n.x]
+			if (gc >= 2 and gc == gn) or open.has(_edge(c, n)):
+				dist[n] = int(dist[c]) + 1
+				queue.append(n)
+	var deep := 0
+	var far := -1
+	for i in rooms.size():
+		var c: Vector2i = centre.call(rooms[i])
+		if int(dist.get(c, -1)) > far:
+			far = int(dist.get(c, -1))
+			deep = i
+	var court := -1
+	var stair := -1
+	var order: Array = range(rooms.size())
+	for i: int in order:
+		var r: Rect2i = rooms[i]
+		if court < 0 and i != deep and r.size.x * r.size.y >= 4 and rng.randf() < 0.5:
+			court = i
+		elif stair < 0 and i != court and maxi(r.size.x, r.size.y) >= 2 and rng.randf() < 0.45:
+			stair = i
+	return {"cell": cell, "nx": nx, "nz": nz, "grid": grid, "rooms": rooms, "open": open, "entrance": entrance,
+		"court": court, "deep": deep, "stair": stair}
+
+
+## The key of the edge between two neighbouring cells.
+static func _edge(a: Vector2i, b: Vector2i) -> Vector3i:
+	var lo := Vector2i(mini(a.x, b.x), mini(a.y, b.y))
+	return Vector3i(lo.x, lo.y, 0 if a.x != b.x else 1)
 
 
 ## The ruin whose ground (x, z) is on, or {}.
