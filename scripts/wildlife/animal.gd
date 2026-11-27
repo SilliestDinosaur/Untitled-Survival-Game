@@ -67,6 +67,11 @@ var _fidget_cd := 0.0
 var _rest := 0.0                ## 0 standing .. 1 lying down (eased)
 var _asleep := false
 var _far_cd := 0
+var _ok_at := Vector3.INF      ## the last spot it found it could walk to (see _move)
+var _ground_y := NAN           ## the ground under it, kept while it stands still
+var _ground_dirty := true      ## look the ground up again (set when it's moved by anything but _move)
+var _tilt_cd := 0.0            ## the slope under it is looked at a few times a second (see _animate)
+var _tilt := Vector2.ZERO      ## pitch, roll of that slope
 var _far_dt := 0.0
 var _edge_cd := 0.0             ## a bold animal crowded by the player steps away, then waits this long before again
 var young := false              ## a young one: small, keeps close to its mother (the herd's leader)
@@ -176,6 +181,8 @@ func _mesh(m: Mesh) -> MeshInstance3D:
 
 
 func _enter(s: State) -> void:
+	_ground_dirty = true   # (whatever moved it last, look the ground up afresh)
+	_ok_at = Vector3.INF
 	if s in [State.ALERT, State.FLEE] and state in [State.IDLE, State.GRAZE, State.WANDER, State.REST, State.DRINK]:
 		_startle = 1.0   # it jumps
 	if s != State.REST:
@@ -582,18 +589,27 @@ func _move(delta: float, want_dir: Vector3, want_speed: float) -> void:
 	_speed = lerpf(_speed, want_speed * clampf(facing, 0.25, 1.0), 1.0 - exp(-3.0 * delta))
 	var forward := Vector3(-sin(_yaw), 0, -cos(_yaw))
 	var next := position + forward * _speed * delta
-	var h: float = _ground_at(next)
+	# The ground is looked up only as it's needed: standing still, the height under it is kept; on the move, where
+	# it's going is checked again once it's a step on from the last place found good (the land doesn't change in a
+	# hand's width, and each look-up samples the terrain several times).
 	if _speed > 0.01:
-		if _walkable(next, h):
+		var h: float = _ground_at(next)
+		var ok := Vector2(next.x - _ok_at.x, next.z - _ok_at.z).length_squared() < 0.3 * 0.3 and not _cave
+		if ok or _walkable(next, h):
+			if not ok:
+				_ok_at = next
 			position.x = next.x
 			position.z = next.z
+			_ground_y = h
 			_gait += _speed * delta / maxf(species.leg_len * 1.6, 0.2) * PI   # stride locked to distance
 		else:
 			_speed *= 0.5
 			_steer_cd = 0.0
-	var gy := _ground_at(position)
-	if not is_nan(gy):
-		position.y = lerpf(position.y, gy, 1.0 - exp(-14.0 * delta))
+	if is_nan(_ground_y) or _ground_dirty:
+		_ground_y = _ground_at(position)
+		_ground_dirty = false
+	if not is_nan(_ground_y):
+		position.y = lerpf(position.y, _ground_y, 1.0 - exp(-14.0 * delta))
 	rotation = Vector3(0, _yaw, 0)
 
 
@@ -692,8 +708,17 @@ func _animate(delta: float, graze: float, alert: float) -> void:
 	var side := Vector3(-fwd.z, 0, fwd.x)
 	var half := species.body_len * 0.5
 	var g: WorldGen = Game.world_gen
-	var pitch := 0.0 if _cave else atan2(g.get_height(position.x + fwd.x * half, position.z + fwd.z * half) - g.get_height(position.x - fwd.x * half, position.z - fwd.z * half), species.body_len)
-	var roll := 0.0 if _cave else atan2(g.get_height(position.x + side.x * 0.4, position.z + side.z * 0.4) - g.get_height(position.x - side.x * 0.4, position.z - side.z * 0.4), 0.8)
+	# The slope under it (to lean into), looked at a few times a second, not every frame: four terrain samples each.
+	_tilt_cd -= delta
+	if _tilt_cd <= 0.0:
+		_tilt_cd = _rng.randf_range(0.12, 0.2)
+		if _cave:
+			_tilt = Vector2.ZERO
+		else:
+			_tilt.x = atan2(g.get_height(position.x + fwd.x * half, position.z + fwd.z * half) - g.get_height(position.x - fwd.x * half, position.z - fwd.z * half), species.body_len)
+			_tilt.y = atan2(g.get_height(position.x + side.x * 0.4, position.z + side.z * 0.4) - g.get_height(position.x - side.x * 0.4, position.z - side.z * 0.4), 0.8)
+	var pitch := _tilt.x
+	var roll := _tilt.y
 	var turn_lean := clampf(angle_difference(_yaw, _desired_yaw), -0.6, 0.6) * stride * 0.25
 	# A walk sways side to side with the steps; a gallop rocks fore and aft.
 	var sway := sin(_gait) * 0.035 * moving * (1.0 - run)
@@ -927,6 +952,8 @@ func _nearest_tree(p: Vector3, reach: float, not_at: Vector3) -> Variant:
 ## Up a tree: run to the trunk, climb, sit in the crown looking about, now and then leap to the next tree, and come
 ## down again once things are quiet.
 func _tree_step(delta: float, dist_to_player: float) -> void:
+	_ground_dirty = true
+	_ok_at = Vector3.INF
 	_breath += delta * 1.7
 	if _tree_phase in ["up", "sit"] and _tree_res.get("removed", false):
 		_tree_phase = "down"   # the tree was felled under it: it drops to the ground

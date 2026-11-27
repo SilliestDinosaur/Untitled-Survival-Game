@@ -129,6 +129,13 @@ func _ready() -> void:
 	player.stats.died.connect(func() -> void:
 		var at: Vector3 = player.global_position
 		player.death_pos = [at.x, at.y, at.z]   # marked on the map and compass, to go back for your things
+		# Whatever was open closes: you wake up looking at the world, not a page left over from before.
+		if _inventory.visible:
+			_toggle_inventory(false)
+		if _map.visible:
+			_toggle_map(false)
+		if _journal.visible:
+			_toggle_journal(false)
 		player.reset_inventory()
 		_start_loading(_spawn, "You collapsed... waking up on")
 		save_now())
@@ -254,9 +261,18 @@ func create_world(display_name: String, seed_value: int, difficulty := Difficult
 	Game.start_new_save(display_name)
 	player.reset_inventory()
 	player.stats.reset()
+	_fresh_character()
 	_pending_player = {}
 	_new_world.hide()
 	_start_loading(_spawn, "Generating")
+
+
+## A brand-new world: nothing of the last one's carried over (map marks, where you fell, the journal). (Not on a
+## death: that starts loading with no saved character too, and must keep them.)
+func _fresh_character() -> void:
+	player.markers = []
+	player.death_pos = []
+	player.progress = {}
 
 
 func load_world(save_id: String) -> void:
@@ -287,6 +303,8 @@ func _join_world(snap: Dictionary) -> void:
 		player.spawn_point = _spawn
 	_pending_player = snap.get("you", {})
 	player.stats.reset()
+	if _pending_player.is_empty():
+		_fresh_character()   # first time in this host's world
 	var p: Array = _pending_player.get("pos", [])
 	var pos := Vector3(p[0], p[1], p[2]) if p.size() == 3 else _spawn
 	_multiplayer.hide()
@@ -362,9 +380,6 @@ func _start_loading(at: Vector3, heading := "Generating") -> void:
 	if _pending_player.is_empty():
 		player.rotation = Vector3(0, randf() * TAU, 0)
 		player.stats.reset()
-		player.markers = []      # a fresh start: nothing carried over from the last world
-		player.death_pos = []
-		player.progress = {}
 	_set_focus(player)
 
 

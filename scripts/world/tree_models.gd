@@ -357,7 +357,7 @@ static func rainforest(kit: MeshKit, rng: RandomNumberGenerator, bark: Color, le
 		var yaw := turn + TAU * (float(i) + rng.randf_range(-0.25, 0.25)) / limbs
 		var dir := Vector3(cos(yaw), rng.randf_range(0.7, 1.25), sin(yaw)).normalized()
 		var length := height * rng.randf_range(0.26, 0.34)
-		branch(kit, rng, fork, dir, length, radius * 0.62, 2, bark, tips, 7)
+		branch(kit, rng, fork, dir, length, radius * 0.62, 1, bark, tips, 7)   # (forking once: fewer, bigger clumps)
 		var end := fork + dir * length
 		limb_ends.append(end)
 		if rng.randf() < 0.6:
@@ -366,7 +366,7 @@ static func rainforest(kit: MeshKit, rng: RandomNumberGenerator, bark: Color, le
 	var crown_mid := fork + Vector3(0, height * 0.2, 0)
 	for tip: Vector3 in tips:
 		var col := leaf.lerp(leaf2, rng.randf()).lightened(rng.randf_range(-0.05, 0.05))
-		var r := rng.randf_range(1.7, 2.4)
+		var r := rng.randf_range(2.3, 3.1)
 		blob(kit, rng, tip + Vector3(0, r * 0.18, 0), r, rng.randf_range(0.42, 0.55), col, 0.55)
 		if lod:
 			continue

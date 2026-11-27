@@ -44,6 +44,7 @@ var _was_night := false
 var _dusk_warned := false
 var _hunger_nudged := false
 var _hint_tw: Tween
+var _guide_shown := true
 var _cold_nudged := false
 const JournalUI := preload("res://scripts/ui/journal_ui.gd")
 var guide: JournalUI.Guide     ## the first-steps checklist (top left)
@@ -60,7 +61,9 @@ func setup(p: CharacterBody3D, w: Node) -> void:
 	player.hit_landed.connect(hit_marker)
 	guide.player = p
 	Settings.changed.connect(func() -> void:
-		if not player.progress.is_empty():
+		# (Only the guide's own setting: any other change, a slider dragged, would restart its fade each step.)
+		if not player.progress.is_empty() and Settings.show_guide != _guide_shown:
+			_guide_shown = Settings.show_guide
 			guide.refresh([]))
 
 

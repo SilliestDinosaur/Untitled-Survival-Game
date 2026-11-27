@@ -28,13 +28,62 @@ func _init() -> void:
 	visible = false
 
 
-## A new world: the terrain picture is made again the next time the map opens.
+## A new world: the terrain picture is painted again, on a worker thread straight away (it takes a few seconds of
+## sampling the land: on the main thread, the first time the map opened, it stalled play for that long). A world
+## changing again meanwhile (seeds previewed on the title screen) cancels the old painting.
 func reset_for_world() -> void:
+	if _job:
+		_job.cancelled = true
+	_job = null
 	_ground = null
 	_ground_tex = null
 	_fog_tex = null
 	_ground_row = 0
 	_fog_dirty = true
+	if Game.world_gen:
+		_job = PaintJob.new()
+		_job.gen = Game.world_gen
+		_job.pal = Game.palette
+		_job.side = _side()
+		_job.task = WorkerThreadPool.add_task(_job.run, false, "map")
+		_jobs.append(_job)
+
+
+## A painting of the map on a worker thread. The worker holds only this (never the map node, which may be gone before
+## it finishes): it fills `result`, or stops early once `cancelled`.
+class PaintJob extends RefCounted:
+	var gen: WorldGen
+	var pal: WorldPalette
+	var side := 0
+	var task := -1
+	var cancelled := false
+	var done := false
+	var result: Image
+	var _lock := Mutex.new()
+
+	func run() -> void:
+		var img := WorldMap.paint_rows(null, 0, side, side, gen, pal, self)
+		_lock.lock()
+		result = img
+		done = true
+		_lock.unlock()
+
+	func take() -> Image:
+		_lock.lock()
+		var img := result if done else null
+		_lock.unlock()
+		return img
+
+
+var _job: PaintJob             ## the painting for the world shown now (null once picked up)
+var _jobs: Array[PaintJob] = []   ## every painting started, waited for once done (as the pool wants)
+
+
+func _exit_tree() -> void:
+	for j in _jobs:
+		j.cancelled = true
+		WorkerThreadPool.wait_for_task_completion(j.task)
+	_jobs.clear()
 
 
 func mark_dirty() -> void:
@@ -42,10 +91,22 @@ func mark_dirty() -> void:
 
 
 func _process(delta: float) -> void:
+	for k in range(_jobs.size() - 1, -1, -1):
+		if WorkerThreadPool.is_task_completed(_jobs[k].task):
+			WorkerThreadPool.wait_for_task_completion(_jobs[k].task)
+			_jobs.remove_at(k)
+	if _job and _job.done:
+		var img := _job.take()
+		_job = null
+		if img:
+			_ground = img
+			_ground_row = _side()
+			_ground_tex = ImageTexture.create_from_image(_ground)   # (textures are made on the main thread)
+			queue_redraw()
 	if not visible or not Game.world_gen:
 		return
-	if _ground_row < _side():
-		_build_ground_rows(ROWS_PER_FRAME)
+	if _job == null and _ground_row < _side():
+		_build_ground_rows(ROWS_PER_FRAME)   # (only if the painting wasn't started: the map test, an old world)
 		queue_redraw()
 	_fog_timer -= delta
 	if _fog_dirty and _fog_timer <= 0.0:
@@ -60,19 +121,39 @@ func _side() -> int:
 
 
 func _build_ground_rows(rows: int) -> void:
-	var gen: WorldGen = Game.world_gen
-	var pal: WorldPalette = Game.palette
-	var n := _side()
-	if _ground == null:
-		_ground = Image.create(n, n, false, Image.FORMAT_RGB8)
+	_ground = paint_rows(_ground, _ground_row, rows, _side(), Game.world_gen, Game.palette, null)
+	_ground_row = mini(_ground_row + rows, _side())
+	if _ground_row >= _side():
+		_ground_tex = ImageTexture.create_from_image(_ground)
+
+
+## Paint `rows` rows of the picture (n pixels square) from row `from` into img (made if null). With a job: give up
+## (null) as soon as it's cancelled.
+static func paint_rows(img: Image, from: int, rows: int, n: int, gen: WorldGen, pal: WorldPalette, job: PaintJob) -> Image:
+	if img == null:
+		img = Image.create(n, n, false, Image.FORMAT_RGB8)
 	var light := Vector3(-0.45, 1.0, -0.55).normalized()
 	var paper := UITheme.PAPER
-	var last := mini(_ground_row + rows, n)
-	for j in range(_ground_row, last):
+	var last := mini(from + rows, n)
+	# Heights on the pixel grid, one sample each (with a border), for the colour and the hillshade both: the shade
+	# used to sample four more heights round every pixel.
+	var w := n + 2
+	var hrow := func(j: int) -> PackedFloat32Array:
+		var out := PackedFloat32Array()
+		out.resize(w)
+		for i in w:
+			out[i] = gen.get_base_height((i - 0.5) * PX, (j + 0.5) * PX)
+		return out
+	var prev: PackedFloat32Array = hrow.call(from - 1)
+	var cur: PackedFloat32Array = hrow.call(from)
+	for j in range(from, last):
+		if job and job.cancelled:
+			return null
+		var nxt: PackedFloat32Array = hrow.call(j + 1)
 		for i in n:
 			var x := (i + 0.5) * PX
 			var z := (j + 0.5) * PX
-			var h := gen.get_base_height(x, z)
+			var h: float = cur[i + 1]
 			var col: Color
 			var river := Rivers.surface_at(gen.rivers, x, z)
 			if h < river:
@@ -84,17 +165,17 @@ func _build_ground_rows(rows: int) -> void:
 			else:
 				col = pal.meadow_grass.lerp(pal.rock_light, clampf((h - 35.0) / 70.0, 0.0, 1.0))
 			# Hillshade from the neighbouring heights.
-			var gx := (gen.get_base_height(x + PX, z) - gen.get_base_height(x - PX, z)) / (2.0 * PX)
-			var gz := (gen.get_base_height(x, z + PX) - gen.get_base_height(x, z - PX)) / (2.0 * PX)
+			var gx := (cur[i + 2] - cur[i]) / (2.0 * PX)
+			var gz := (nxt[i + 1] - prev[i + 1]) / (2.0 * PX)
 			var nrm := Vector3(-gx, 1.0, -gz).normalized()
 			var shade := 0.8 + 0.3 * maxf(0.0, nrm.dot(light))
 			col = col * shade
 			# A little paper in the colour, so it reads as drawn.
 			col = col.lerp(paper, 0.18)
-			_ground.set_pixel(i, j, col)
-	_ground_row = last
-	if _ground_row >= n:
-		_ground_tex = ImageTexture.create_from_image(_ground)
+			img.set_pixel(i, j, col)
+		prev = cur
+		cur = nxt
+	return img
 
 
 ## The paper fog over what you haven't seen. Filled in one go, then cleared only where you've been (found with the
