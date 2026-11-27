@@ -36,6 +36,7 @@ const EFFECTS := {
 	"vigor": {"name": "Vigor", "desc": "Stamina recovers twice as fast.", "time": 60.0},
 	"satiate": {"name": "Sated", "desc": "Hunger drains much slower.", "time": 150.0},
 	"poison": {"name": "Poisoned", "desc": "Loses health over time.", "time": 10.0},
+	"warm": {"name": "Warmed", "desc": "The cold bites much less.", "time": 120.0},
 }
 
 const BASE_ITEMS := {
@@ -59,6 +60,17 @@ const BASE_ITEMS := {
 	"cooked_meat": {"name": "Cooked Meat", "kind": "food", "stack": 40, "icon": "cooked_meat", "food": 30.0, "health": 5.0, "desc": "Seared over a campfire. Much better."},
 	"roast_fruit": {"name": "Roasted Fruit", "kind": "food", "stack": 40, "icon": "roast_fruit", "food": 24.0, "health": 6.0, "desc": "Soft, caramelised and warm."},
 	"stew": {"name": "Hearty Stew", "kind": "food", "stack": 10, "icon": "stew", "food": 55.0, "health": 12.0, "effect": "satiate", "desc": "Meat and berries simmered in a wooden bowl. Keeps you full for a long time."},
+	# Gathered from the plants of particular lands.
+	"juniper_berries": {"name": "Juniper Berries", "kind": "food", "stack": 40, "icon": "berries", "color": Color(0.38, 0.46, 0.68), "food": 4.0, "health": 0.0,
+		"effect": "warm", "desc": "Sharp, piney berries from juniper in the dry hills and the cold north. They warm you from the inside for a while."},
+	"lingonberries": {"name": "Lingonberries", "kind": "food", "stack": 40, "icon": "berries", "color": Color(0.82, 0.14, 0.16), "food": 8.0, "health": 4.0,
+		"desc": "Tart red berries off low shrublets in the taiga and tundra."},
+	"aloe": {"name": "Aloe Leaf", "kind": "food", "stack": 20, "icon": "herb", "color": Color(0.5, 0.66, 0.52), "food": 0.0, "health": 10.0, "effect": "mend",
+		"verb": "Apply", "desc": "A fat leaf of desert aloe. Its cool gel soothes wounds and heals over time."},
+	"cattail_root": {"name": "Cattail Root", "kind": "food", "stack": 40, "icon": "herb", "color": Color(0.74, 0.62, 0.44), "food": 12.0, "health": 2.0,
+		"desc": "Starchy root pulled from the marsh mud. Filling, if bland."},
+	"wild_garlic": {"name": "Wild Garlic", "kind": "food", "stack": 40, "icon": "herb", "color": Color(0.36, 0.6, 0.3), "food": 3.0, "health": 2.0,
+		"effect": "vigor", "desc": "Pungent leaves from shady woods. Puts a spring in your step."},
 	"bandage": {"name": "Bandage", "kind": "food", "stack": 20, "icon": "bandage", "food": 0.0, "health": 15.0, "effect": "mend", "verb": "Apply", "desc": "Fiber wrap sealed with resin. Stops bleeding and heals over time."},
 	# Light
 	"torch": {"name": "Torch", "kind": "tool", "stack": 1, "icon": "torch", "tier": 0, "desc": "Lights the way at night. Burns down as you swing it.",
@@ -162,9 +174,19 @@ const HARVEST := {
 	"agave": [["fiber", 2, 3, 1.0]],
 	"giant_mushroom": [["mushroom_%d", 1, 3, 1.0], ["fiber", 0, 1, 0.5]],
 	"glowcap": [["mushroom_%d", 1, 2, 1.0], ["fiber", 0, 1, 0.4]],
+	"heather": [["fiber", 1, 2, 1.0], ["sticks", 0, 1, 0.4]],
+	"juniper": [["juniper_berries", 1, 3, 1.0], ["sticks", 0, 1, 0.5], ["resin", 1, 1, 0.2]],
+	"sagebrush": [["fiber", 1, 2, 1.0], ["sticks", 1, 2, 1.0]],
+	"bramble": [["berries", 2, 4, 1.0], ["fiber", 0, 1, 0.5]],
+	"spore_bush": [["fiber", 1, 2, 1.0], ["mushroom_%d", 0, 1, 0.5]],
+	"lingonberry": [["lingonberries", 2, 4, 1.0]],
+	# Picked up whole:
+	"cattail": [["cattail_root", 1, 2, 1.0], ["fiber", 1, 2, 1.0]],
+	"aloe": [["aloe", 1, 2, 1.0]],
+	"wild_garlic": [["wild_garlic", 1, 3, 1.0]],
 }
 ## Hand-harvesting these picks the whole thing up (the node is removed).
-const PICKUP_KEYS := ["mushroom", "herb", "pebbles", "scree", "branch", "tumbleweed", "sapling"]
+const PICKUP_KEYS := ["mushroom", "herb", "pebbles", "scree", "branch", "tumbleweed", "sapling", "cattail", "aloe", "wild_garlic"]
 ## HP damage per hit at multiplier 1.0 (trees have 100 HP -> 6 hits with a stone hatchet).
 const HIT_DAMAGE := 17.0
 ## Share of the per-hit yield you actually get (difficulty: resources take some effort).
@@ -348,8 +370,13 @@ static func yield_key(kind: String) -> String:
 ## Which HARVEST table a node uses when gathered by hand (or "" if it can't be).
 static func harvest_key(kind: String) -> String:
 	match kind:
-		"berry", "bush", "reeds", "dead_bush", "cactus", "mushroom", "herb", "pebbles", "scree", "branch", "tumbleweed", "sapling", "agave", "giant_mushroom", "glowcap":
+		"berry", "bush", "reeds", "dead_bush", "cactus", "mushroom", "herb", "pebbles", "scree", "branch", "tumbleweed", "sapling", "agave", "giant_mushroom", "glowcap", \
+				"heather", "juniper", "sagebrush", "bramble", "spore_bush", "lingonberry", "cattail", "aloe", "wild_garlic":
 			return kind
+		"rhododendron", "hibiscus":
+			return "bush"
+		"ocotillo":
+			return "dead_bush"
 		"jungle_plant":
 			return "bush"
 		"jungle_tree":

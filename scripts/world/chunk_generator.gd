@@ -18,8 +18,9 @@ const TREE_ATTEMPTS := 110
 const ROCK_ATTEMPTS := 10
 const BUSH_ATTEMPTS := 26
 const CLUTTER_ATTEMPTS := 22
-const GRASS_ATTEMPTS := 650
-const FLOWER_ATTEMPTS := 70
+const GRASS_ATTEMPTS := 600
+const FLOWER_ATTEMPTS := 55
+const GROUND_PLANT_ATTEMPTS := 80   ## each land's own ground plants (see FloraLibrary.BIOME_GROUND)
 const FERN_ATTEMPTS := 90
 const PALM_ATTEMPTS := 10
 const TALL_GRASS_ATTEMPTS := 160
@@ -459,10 +460,12 @@ static func _place_resources(coord: Vector2i, origin: Vector3, gen: WorldGen, fl
 	for i in BUSH_ATTEMPTS:
 		var a := _attempt(rng, origin, size)
 		var h := gen.get_height(a.x, a.z)
-		if h < 2.2 or gen.near_river(a.x, a.z) or h > 50.0 or gen.get_normal(a.x, a.z).y < 0.8:
+		if h < 2.2 or gen.near_river(a.x, a.z) or h > 66.0 or gen.get_normal(a.x, a.z).y < 0.8:
 			counter[0] += 1
 			continue
 		var biome := _pick_biome(gen.biome_weights_at(a.x, a.z, h), a.r_biome)
+		if h > 50.0:
+			biome = Biome.HIGHLANDS   # up on the mountains: heather and mountain juniper
 		if a.r_place >= FloraLibrary.BIOME_BUSH_DENSITY[biome]:
 			counter[0] += 1
 			continue
@@ -918,3 +921,38 @@ static func _place_ground_cover(coord: Vector2i, origin: Vector3, gen: WorldGen,
 		var key: String = flower_keys[absi(pick) % flower_keys.size()]
 		var t := Transform3D(Basis(Vector3.UP, yaw), Vector3(lx, h, lz))
 		_append_instance(buffers, key, fit.call("flower", key, t), Color(1, 1, 1))
+	# Each land's own ground plants: lupins and daisies in the meadows, sedges in the marsh, lichens on the tundra...
+	# They grow in patches of one kind (with a few strays), like the flowers.
+	for i in int(GROUND_PLANT_ATTEMPTS * density):
+		var lx := rng.randf() * size
+		var lz := rng.randf() * size
+		var keep := rng.randf()
+		var variant := rng.randi()
+		var yaw := rng.randf() * TAU
+		var roll := rng.randf()
+		var scl := rng.randf_range(0.8, 1.25)
+		var wx := origin.x + lx
+		var wz := origin.z + lz
+		var h := gen.get_height(wx, wz)
+		if h < 0.8 or h > 90.0 or gen.near_river(wx, wz):
+			continue
+		var biome := _pick_biome(gen.biome_weights_at(wx, wz, h), roll)
+		# The shore, the high slopes and the peaks have their own (see WorldGen.get_biome's height bands).
+		if h < 2.3:
+			biome = Biome.BEACH
+		elif h > 76.0:
+			biome = Biome.SNOW
+		elif h > 52.0:
+			biome = Biome.HIGHLANDS
+		var table: Array = FloraLibrary.BIOME_GROUND.get(biome, [])
+		if table.is_empty() or keep > float(FloraLibrary.BIOME_GROUND_DENSITY.get(biome, 0.0)) or gen.get_normal(wx, wz).y < 0.8:
+			continue
+		var patch := absi(int(floor(wx / 7.0) * 31.0 + floor(wz / 7.0) * 17.0))
+		var pick := fposmod(patch * 0.618034, 1.0) if variant % 5 != 0 else fposmod(variant * 0.37, 1.0)
+		var kind := _pick_weighted(table, pick)
+		var gkeys: Array = flora.variants.get(kind, [])
+		if gkeys.is_empty():
+			continue
+		var gkey: String = gkeys[(patch + variant % 2) % gkeys.size()]
+		var gt := Transform3D(Basis(Vector3.UP, yaw).scaled(Vector3.ONE * scl), Vector3(lx, h, lz))
+		_append_instance(buffers, gkey, fit.call("flower", gkey, gt), Color(1, 1, 1))

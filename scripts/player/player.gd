@@ -632,11 +632,12 @@ func _interact_verb(r: Dictionary) -> String:
 	if key == "":
 		return ""
 	if key in ItemDB.PICKUP_KEYS:
-		return "Uproot" if key == "sapling" else "Pick up"
+		return {"sapling": "Uproot", "cattail": "Pull up", "wild_garlic": "Pick", "aloe": "Cut a leaf"}.get(key, "Pick up")
 	if Game.is_harvested(r.id):
 		return "(nothing left yet)"
 	match key:
-		"berry": return "Pick berries"
+		"berry", "bramble", "juniper", "lingonberry": return "Pick berries"
+		"heather", "sagebrush", "spore_bush": return "Gather"
 		"fruit_tree": return "Shake for fruit"
 		"tree", "conifer": return "Gather sticks"
 		"cactus": return "Cut flesh"
@@ -1200,6 +1201,8 @@ func _update_exposure() -> void:
 	# Out of the wind under a roof, and more so with walls round you: a closed house keeps nearly all the chill out.
 	shelter = GameActions.shelter_at(p)
 	_cold *= 1.0 - 0.85 * shelter
+	if stats.effects.has("warm"):
+		_cold *= 0.4   # juniper berries: warm from the inside
 	if shelter >= 0.95 and not progress.is_empty() and not (progress.get("flags", {}) as Dictionary).has("home"):
 		# The first time you stand in a room of your own, closed all round: what it's good for.
 		if not progress.has("flags"):

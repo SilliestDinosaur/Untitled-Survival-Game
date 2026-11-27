@@ -26,35 +26,37 @@ const BIOME_TREE_DENSITY := {
 	Biome.JUNGLE: 0.75, Biome.TUNDRA: 0.04, Biome.BADLANDS: 0.04, Biome.FUNGAL: 0.4,
 }
 const BIOME_BUSHES := {
-	Biome.MEADOW: [["bush", 0.4], ["berry", 0.35], ["flower_bush", 0.25]],
-	Biome.FOREST: [["bush", 0.7], ["berry", 0.3]],
-	Biome.AUTUMN: [["bush", 0.45], ["berry", 0.35], ["flower_bush", 0.2]],
-	Biome.DRYLANDS: [["bush", 0.35], ["dead_bush", 0.35], ["agave", 0.3]],
-	Biome.TAIGA: [["berry", 0.5], ["bush", 0.5]],
-	Biome.MARSH: [["reeds", 0.75], ["bush", 0.25]],
-	Biome.DESERT: [["dead_bush", 0.4], ["agave", 0.35], ["small_cactus", 0.25]],
-	Biome.JUNGLE: [["jungle_plant", 0.55], ["flower_bush", 0.25], ["berry", 0.2]],
-	Biome.TUNDRA: [["dead_bush", 0.5], ["berry", 0.3], ["bush", 0.2]],
-	Biome.BADLANDS: [["dead_bush", 0.5], ["agave", 0.3], ["small_cactus", 0.2]],
-	Biome.FUNGAL: [["glowcap", 0.7], ["jungle_plant", 0.15], ["bush", 0.15]],
+	Biome.MEADOW: [["bush", 0.3], ["berry", 0.25], ["flower_bush", 0.2], ["bramble", 0.25]],
+	Biome.FOREST: [["bush", 0.45], ["berry", 0.2], ["rhododendron", 0.2], ["bramble", 0.15]],
+	Biome.AUTUMN: [["bush", 0.3], ["berry", 0.25], ["flower_bush", 0.15], ["bramble", 0.15], ["rhododendron", 0.15]],
+	Biome.DRYLANDS: [["bush", 0.2], ["dead_bush", 0.25], ["agave", 0.2], ["sagebrush", 0.2], ["juniper", 0.15]],
+	Biome.TAIGA: [["berry", 0.3], ["bush", 0.25], ["juniper", 0.25], ["heather", 0.2]],
+	Biome.MARSH: [["reeds", 0.6], ["bush", 0.15], ["hibiscus", 0.25]],
+	Biome.DESERT: [["dead_bush", 0.3], ["agave", 0.25], ["small_cactus", 0.15], ["ocotillo", 0.15], ["sagebrush", 0.15]],
+	Biome.JUNGLE: [["jungle_plant", 0.45], ["flower_bush", 0.15], ["berry", 0.15], ["hibiscus", 0.25]],
+	Biome.TUNDRA: [["dead_bush", 0.3], ["berry", 0.2], ["bush", 0.1], ["heather", 0.25], ["juniper", 0.15]],
+	Biome.BADLANDS: [["dead_bush", 0.3], ["agave", 0.2], ["small_cactus", 0.15], ["ocotillo", 0.2], ["sagebrush", 0.15]],
+	Biome.FUNGAL: [["glowcap", 0.55], ["jungle_plant", 0.1], ["bush", 0.1], ["spore_bush", 0.25]],
+	Biome.HIGHLANDS: [["heather", 0.55], ["juniper", 0.45]],   # (bushes above the tree line: see ChunkGenerator)
 }
 const BIOME_BUSH_DENSITY := {
 	Biome.MEADOW: 0.25, Biome.FOREST: 0.35, Biome.AUTUMN: 0.3, Biome.DRYLANDS: 0.4,
 	Biome.TAIGA: 0.3, Biome.MARSH: 0.75, Biome.DESERT: 0.3,
 	Biome.JUNGLE: 0.75, Biome.TUNDRA: 0.2, Biome.BADLANDS: 0.25, Biome.FUNGAL: 0.55,
+	Biome.HIGHLANDS: 0.2,
 }
 ## Small things on the ground that make places feel lived-in.
 const BIOME_CLUTTER := {
-	Biome.MEADOW: [["pebbles", 0.45], ["stump", 0.15], ["mushroom", 0.15], ["herb", 0.12], ["branch", 0.15], ["sapling", 0.12], ["cache", 0.015]],
-	Biome.FOREST: [["log", 0.25], ["stump", 0.2], ["mushroom", 0.25], ["pebbles", 0.1], ["herb", 0.1], ["branch", 0.25], ["sapling", 0.15], ["cache", 0.015]],
-	Biome.AUTUMN: [["log", 0.25], ["mushroom", 0.3], ["stump", 0.15], ["pebbles", 0.1], ["herb", 0.1], ["branch", 0.25], ["cache", 0.015]],
-	Biome.DRYLANDS: [["pebbles", 0.35], ["boulder", 0.2], ["scree", 0.2], ["tumbleweed", 0.15], ["branch", 0.1], ["cache", 0.02]],
-	Biome.TAIGA: [["log", 0.3], ["stump", 0.2], ["mushroom", 0.15], ["pebbles", 0.1], ["herb", 0.1], ["branch", 0.2], ["sapling", 0.12], ["scree", 0.08], ["cache", 0.015]],
-	Biome.MARSH: [["log", 0.4], ["mushroom", 0.45], ["stump", 0.15], ["herb", 0.15], ["cache", 0.015]],
-	Biome.DESERT: [["pebbles", 0.3], ["boulder", 0.3], ["scree", 0.15], ["tumbleweed", 0.2], ["small_cactus", 0.2], ["cache", 0.03]],
+	Biome.MEADOW: [["pebbles", 0.45], ["stump", 0.15], ["mushroom", 0.15], ["herb", 0.12], ["branch", 0.15], ["sapling", 0.12], ["cache", 0.015], ["wild_garlic", 0.1]],
+	Biome.FOREST: [["log", 0.25], ["stump", 0.2], ["mushroom", 0.25], ["pebbles", 0.1], ["herb", 0.1], ["branch", 0.25], ["sapling", 0.15], ["cache", 0.015], ["wild_garlic", 0.12]],
+	Biome.AUTUMN: [["log", 0.25], ["mushroom", 0.3], ["stump", 0.15], ["pebbles", 0.1], ["herb", 0.1], ["branch", 0.25], ["cache", 0.015], ["wild_garlic", 0.08]],
+	Biome.DRYLANDS: [["pebbles", 0.35], ["boulder", 0.2], ["scree", 0.2], ["tumbleweed", 0.15], ["branch", 0.1], ["cache", 0.02], ["aloe", 0.08]],
+	Biome.TAIGA: [["log", 0.3], ["stump", 0.2], ["mushroom", 0.15], ["pebbles", 0.1], ["herb", 0.1], ["branch", 0.2], ["sapling", 0.12], ["scree", 0.08], ["cache", 0.015], ["lingonberry", 0.18]],
+	Biome.MARSH: [["log", 0.4], ["mushroom", 0.45], ["stump", 0.15], ["herb", 0.15], ["cache", 0.015], ["cattail", 0.3]],
+	Biome.DESERT: [["pebbles", 0.3], ["boulder", 0.3], ["scree", 0.15], ["tumbleweed", 0.2], ["small_cactus", 0.2], ["cache", 0.03], ["aloe", 0.15]],
 	Biome.JUNGLE: [["mossy_log", 0.4], ["log", 0.15], ["mushroom", 0.2], ["herb", 0.2], ["stump", 0.1], ["branch", 0.15], ["sapling", 0.15], ["cache", 0.015]],
-	Biome.TUNDRA: [["ice_rock", 0.35], ["pebbles", 0.25], ["scree", 0.2], ["boulder", 0.15], ["branch", 0.05], ["cache", 0.02]],
-	Biome.BADLANDS: [["boulder", 0.3], ["scree", 0.3], ["pebbles", 0.2], ["tumbleweed", 0.15], ["cache", 0.025]],
+	Biome.TUNDRA: [["ice_rock", 0.35], ["pebbles", 0.25], ["scree", 0.2], ["boulder", 0.15], ["branch", 0.05], ["cache", 0.02], ["lingonberry", 0.2]],
+	Biome.BADLANDS: [["boulder", 0.3], ["scree", 0.3], ["pebbles", 0.2], ["tumbleweed", 0.15], ["cache", 0.025], ["aloe", 0.1]],
 	Biome.FUNGAL: [["mushroom", 0.55], ["log", 0.2], ["herb", 0.1], ["stump", 0.1], ["cache", 0.02]],
 }
 const BIOME_CLUTTER_DENSITY := {
@@ -82,6 +84,31 @@ const BIOME_FERNS := {
 	Biome.MEADOW: 0.0, Biome.FOREST: 0.8, Biome.AUTUMN: 0.3, Biome.DRYLANDS: 0.0,
 	Biome.TAIGA: 0.6, Biome.MARSH: 0.7, Biome.DESERT: 0.0,
 	Biome.JUNGLE: 1.0, Biome.TUNDRA: 0.0, Biome.BADLANDS: 0.0, Biome.FUNGAL: 0.4,
+}
+## Each land's own ground plants (wildflowers, sedges, lichens...), grown in patches among the grass: [kind, weight].
+## They share the ground cover's count with the grass and the old flowers (see ChunkGenerator), so the ground is as
+## thick as before, only more varied.
+const BIOME_GROUND := {
+	Biome.MEADOW: [["lupin", 0.5], ["daisy", 0.5]],
+	Biome.FOREST: [["foxglove", 0.6], ["daisy", 0.4]],
+	Biome.AUTUMN: [["foxglove", 0.5], ["lupin", 0.5]],
+	Biome.DRYLANDS: [["desert_bloom", 1.0]],
+	Biome.TAIGA: [["cotton_grass", 0.4], ["sedge", 0.3], ["lichen", 0.3]],
+	Biome.MARSH: [["sedge", 0.7], ["cotton_grass", 0.3]],
+	Biome.DESERT: [["desert_bloom", 1.0]],
+	Biome.JUNGLE: [["bromeliad", 1.0]],
+	Biome.TUNDRA: [["lichen", 0.55], ["cotton_grass", 0.45]],
+	Biome.BADLANDS: [["lichen", 0.4], ["desert_bloom", 0.6]],
+	Biome.FUNGAL: [["puffball", 1.0]],
+	Biome.BEACH: [["dune_grass", 0.65], ["sea_thrift", 0.35]],
+	Biome.HIGHLANDS: [["alpine_cushion", 0.45], ["lichen", 0.35], ["edelweiss", 0.2]],
+	Biome.SNOW: [["lichen", 1.0]],
+}
+const BIOME_GROUND_DENSITY := {
+	Biome.MEADOW: 0.8, Biome.FOREST: 0.5, Biome.AUTUMN: 0.5, Biome.DRYLANDS: 0.4,
+	Biome.TAIGA: 0.5, Biome.MARSH: 0.8, Biome.DESERT: 0.3,
+	Biome.JUNGLE: 0.6, Biome.TUNDRA: 0.8, Biome.BADLANDS: 0.35, Biome.FUNGAL: 0.7,
+	Biome.BEACH: 0.6, Biome.HIGHLANDS: 0.55, Biome.SNOW: 0.12,
 }
 
 ## Everything that can be placed. Fields:
@@ -146,6 +173,33 @@ const KINDS := {
 	# The jungle floor: a fallen giant gone green with moss and ferns, and patches of wet mud (last again).
 	"mossy_log": {"category": "clutter", "label": "Mossy log", "variants": 3, "solid": true, "hp": 90, "target": "tree", "yield": "log", "shape": "log"},
 	"mud": {"category": "grass", "label": "", "variants": 3, "solid": false, "hp": 0},
+	# More plants for every land (last again): shrubs, small plants worth gathering ("named": shown by their own
+	# name, not a made-up species name), and each land's own ground plants.
+	"heather": {"category": "bush", "label": "Heather", "variants": 3, "solid": false, "hp": 25, "target": "bush", "yield": "bush", "shape": "bush", "named": true},
+	"juniper": {"category": "bush", "label": "Juniper", "variants": 2, "solid": false, "hp": 40, "target": "bush", "yield": "bush", "shape": "bush", "named": true},
+	"sagebrush": {"category": "bush", "label": "Sagebrush", "variants": 2, "solid": false, "hp": 30, "target": "bush", "yield": "bush", "shape": "bush", "named": true},
+	"bramble": {"category": "bush", "label": "Bramble", "variants": 2, "solid": false, "hp": 30, "target": "bush", "yield": "bush", "shape": "bush", "named": true},
+	"rhododendron": {"category": "bush", "label": "Rhododendron", "variants": 3, "solid": false, "hp": 40, "target": "bush", "yield": "bush", "shape": "bush", "named": true},
+	"ocotillo": {"category": "bush", "label": "Ocotillo", "variants": 2, "solid": false, "hp": 30, "target": "bush", "yield": "dead_bush", "shape": "bush", "named": true},
+	"hibiscus": {"category": "bush", "label": "Hibiscus", "variants": 3, "solid": false, "hp": 30, "target": "bush", "yield": "bush", "shape": "bush", "named": true},
+	"spore_bush": {"category": "bush", "label": "Sporebush", "variants": 3, "solid": false, "hp": 25, "target": "bush", "yield": "bush", "shape": "bush", "named": true},
+	"cattail": {"category": "clutter", "label": "Cattails", "variants": 2, "solid": false, "hp": 10, "target": "bush", "yield": "reeds", "shape": "small", "named": true},
+	"aloe": {"category": "clutter", "label": "Aloe", "variants": 2, "solid": false, "hp": 10, "target": "bush", "yield": "bush", "shape": "small", "named": true},
+	"wild_garlic": {"category": "clutter", "label": "Wild Garlic", "variants": 2, "solid": false, "hp": 10, "target": "bush", "yield": "bush", "shape": "small", "named": true},
+	"lingonberry": {"category": "clutter", "label": "Lingonberry", "variants": 2, "solid": false, "hp": 15, "target": "bush", "yield": "bush", "shape": "small", "named": true},
+	"lupin": {"category": "flower", "label": "", "variants": 3, "solid": false, "hp": 0},
+	"daisy": {"category": "flower", "label": "", "variants": 2, "solid": false, "hp": 0},
+	"foxglove": {"category": "flower", "label": "", "variants": 2, "solid": false, "hp": 0},
+	"sedge": {"category": "flower", "label": "", "variants": 2, "solid": false, "hp": 0},
+	"desert_bloom": {"category": "flower", "label": "", "variants": 3, "solid": false, "hp": 0},
+	"bromeliad": {"category": "flower", "label": "", "variants": 2, "solid": false, "hp": 0},
+	"cotton_grass": {"category": "flower", "label": "", "variants": 2, "solid": false, "hp": 0},
+	"lichen": {"category": "flower", "label": "", "variants": 3, "solid": false, "hp": 0},
+	"puffball": {"category": "flower", "label": "", "variants": 2, "solid": false, "hp": 0},
+	"dune_grass": {"category": "flower", "label": "", "variants": 2, "solid": false, "hp": 0},
+	"sea_thrift": {"category": "flower", "label": "", "variants": 2, "solid": false, "hp": 0},
+	"alpine_cushion": {"category": "flower", "label": "", "variants": 3, "solid": false, "hp": 0},
+	"edelweiss": {"category": "flower", "label": "", "variants": 2, "solid": false, "hp": 0},
 }
 
 ## The jungle's own layer of undergrowth, on top of its bushes (see ChunkGenerator): [kind, weight].
@@ -186,7 +240,7 @@ var _lod := false    ## building a far-away twin (models with many small parts u
 ## Kinds that look different after being hand-harvested (the fruiting tree is added per world).
 ## Trees are built at this share of the model detail setting, whatever it is: they are the costliest flora to draw.
 const TREE_DETAIL := 0.5
-const BARE_KINDS := ["berry", "reeds", "agave", "glowcap", "giant_mushroom"]
+const BARE_KINDS := ["berry", "reeds", "agave", "glowcap", "giant_mushroom", "juniper", "bramble", "lingonberry"]
 
 
 func _init(seed_value: int, pal: WorldPalette) -> void:
@@ -367,6 +421,8 @@ func display_name(kind: String) -> String:
 			return "%s Crystals" % ItemDB.tier_info(4).name
 		"berry":
 			return ItemDB.display_name("berries").trim_suffix(" Berries") + " Bush"
+	if KINDS.get(kind, {}).get("named", false):
+		return String(KINDS[kind].label)
 	return species_names.get(kind, kind.capitalize())
 
 
@@ -467,6 +523,31 @@ func _build_mesh(kind: String, index: int, variant_seed: int) -> ArrayMesh:
 		"cliff_vine": _cliff_vine(kit, rng)
 		"mossy_log": _mossy_log(kit, rng)
 		"mud": _mud(kit, rng)
+		"heather": _heather(kit, rng, index)
+		"juniper": _juniper(kit, rng)
+		"sagebrush": _sagebrush(kit, rng)
+		"bramble": _bramble(kit, rng)
+		"rhododendron": _rhododendron(kit, rng, index)
+		"ocotillo": _ocotillo(kit, rng)
+		"hibiscus": _hibiscus(kit, rng, index)
+		"spore_bush": _spore_bush(kit, rng, index)
+		"cattail": _cattail(kit, rng)
+		"aloe": _aloe(kit, rng, index)
+		"wild_garlic": _wild_garlic(kit, rng)
+		"lingonberry": _lingonberry(kit, rng)
+		"lupin": _lupin(kit, rng, index)
+		"daisy": _daisy(kit, rng)
+		"foxglove": _foxglove(kit, rng, index)
+		"sedge": _sedge(kit, rng)
+		"desert_bloom": _desert_bloom(kit, rng, index)
+		"bromeliad": _bromeliad(kit, rng, index)
+		"cotton_grass": _cotton_grass(kit, rng)
+		"lichen": _lichen(kit, rng, index)
+		"puffball": _puffball(kit, rng)
+		"dune_grass": _dune_grass(kit, rng)
+		"sea_thrift": _sea_thrift(kit, rng)
+		"alpine_cushion": _alpine_cushion(kit, rng, index)
+		"edelweiss": _edelweiss(kit, rng)
 		"kapok": TreeModels.emergent(kit, rng, _vary(_pal.bark, rng).lightened(0.3), _vary(_pal.jungle_leaves, rng).darkened(0.05), rng.randf_range(22.0, 27.0), rng.randf_range(0.6, 0.75))
 	if kind == ItemDB.fruit_tree and not _bare:
 		_add_fruit(kit, rng)
@@ -1597,3 +1678,462 @@ func _ice_rock(kit: MeshKit, rng: RandomNumberGenerator) -> void:
 		var length := rng.randf_range(0.3, 0.6)
 		kit.add_primitive(MeshKit.cylinder(0.0, rng.randf_range(0.08, 0.14), length, 5), Transform3D(Basis(Quaternion(Vector3.UP, dir)), base + dir * length * 0.4), ice.lightened(0.1), 0.0, 0.03)
 	kit.flat_shading = false
+
+
+# --- More plants for every land ------------------------------------------------------------
+
+## A rosette of leaves round a point (used by several of the small plants): `n` leaves of a length, rising at `rise`.
+func _rosette(kit: MeshKit, rng: RandomNumberGenerator, at: Vector3, n: int, length: float, width: float, rise: float, col: Color) -> void:
+	for i in n:
+		var a := TAU * i / n + rng.randf_range(-0.15, 0.15)
+		var dir := Vector3(cos(a), rise * rng.randf_range(0.8, 1.2), sin(a)).normalized()
+		# (Each leaf from a point a hair apart and turned a touch: whorls that cross never share a plane.)
+		var from := at + Vector3(rng.randf_range(-0.004, 0.004), rng.randf_range(0.0, 0.006), rng.randf_range(-0.004, 0.004))
+		var twist := Vector3(-sin(a), rng.randf_range(-0.15, 0.15), cos(a)).normalized()
+		_leaf_diamond(kit, from, dir, twist.cross(dir).normalized(), length * rng.randf_range(0.8, 1.15), width, _vary(col, rng, 0.04))
+
+
+## Heather: a low, springy mound of tiny dark leaves, thick with spikes of little purple, pink or white bells.
+func _heather(kit: MeshKit, rng: RandomNumberGenerator, index: int) -> void:
+	var leaf := _vary(Color(0.24, 0.36, 0.22), rng)
+	var bloom: Color = [Color(0.62, 0.36, 0.62), Color(0.82, 0.48, 0.62), Color(0.9, 0.86, 0.88)][index % 3]
+	var center := Vector3(0, 0.15, 0)
+	var blobs := []
+	for i in rng.randi_range(7, 9):
+		var a := rng.randf() * TAU
+		var d := rng.randf_range(0.0, 0.6)
+		var r := rng.randf_range(0.2, 0.32)
+		var pos := Vector3(cos(a) * d, r * 0.55, sin(a) * d)
+		blobs.append([pos, r])
+		kit.add_primitive(MeshKit.sphere(r, 7, 4), Transform3D(Basis.from_scale(Vector3(1, 0.75, 1)), pos), leaf.lightened(rng.randf_range(-0.05, 0.06)), r * 0.35, 0.08, center)
+	for i in rng.randi_range(24, 30):
+		var bl: Array = blobs[rng.randi() % blobs.size()]
+		var dir := Vector3(rng.randf_range(-0.6, 0.6), 1.0, rng.randf_range(-0.6, 0.6)).normalized()
+		var at: Vector3 = bl[0] + dir * float(bl[1]) * 0.7
+		kit.add_primitive(MeshKit.sphere(0.03, 5, 3), Transform3D(Basis(Quaternion(Vector3.UP, dir)).scaled(Vector3(1, 3.2, 1)), at + dir * 0.06), _vary(bloom, rng, 0.05), 0.0, 0.05)
+
+
+## Juniper: a low, spreading conifer shrub: a dense middle, and sprays of spiky blue-green needles fanning out and up
+## over it, dusted with frosty blue berries.
+func _juniper(kit: MeshKit, rng: RandomNumberGenerator) -> void:
+	var col := _vary(Color(0.25, 0.42, 0.38), rng)
+	var stem := _vary(_pal.bark, rng).darkened(0.1)
+	var center := Vector3(0, 0.35, 0)
+	var spots := []
+	for i in 3:   # the dense middle
+		var p := Vector3(rng.randf_range(-0.2, 0.2), rng.randf_range(0.25, 0.45), rng.randf_range(-0.2, 0.2))
+		kit.add_primitive(MeshKit.sphere(rng.randf_range(0.3, 0.4), 7, 5), Transform3D(Basis.from_scale(Vector3(1, 0.8, 1)), p), col.darkened(0.08), 0.12, 0.08, center)
+		spots.append(p)
+	for i in rng.randi_range(7, 9):
+		var a := TAU * i / 8.0 + rng.randf_range(-0.3, 0.3)
+		var out := Vector3(cos(a), 0, sin(a))
+		var length := rng.randf_range(0.6, 0.95)
+		var tip := out * length + Vector3.UP * rng.randf_range(0.35, 0.7)
+		kit.loft([Vector3(0, -0.04, 0), out * length * 0.35 + Vector3.UP * 0.22, tip], [0.045, 0.03, 0.012], 5, stem)
+		# Sprays along the branch, each a tapering cone pointing out (its tip at the branch's end).
+		for j in 3:
+			var t := 0.45 + j * 0.25
+			var at := out * length * t + Vector3.UP * lerpf(0.25, tip.y, t)
+			var d := (out + Vector3.UP * rng.randf_range(0.1, 0.5) + Vector3(rng.randf_range(-0.2, 0.2), 0, rng.randf_range(-0.2, 0.2))).normalized()
+			var lc := rng.randf_range(0.28, 0.4)
+			kit.add_primitive(MeshKit.cylinder(0.0, rng.randf_range(0.2, 0.27), lc, 7), Transform3D(Basis(Quaternion(Vector3.UP, d)), at + d * lc * 0.3), col.lightened(rng.randf_range(-0.05, 0.08)), 0.06, 0.08)
+			spots.append(at)
+	if not _bare:
+		for i in rng.randi_range(16, 22):
+			var t: Vector3 = spots[rng.randi() % spots.size()]
+			kit.add_primitive(MeshKit.sphere(0.035, 5, 3), Transform3D(Basis(), t + Vector3(rng.randf_range(-0.15, 0.15), rng.randf_range(0.08, 0.2), rng.randf_range(-0.15, 0.15))), Color(0.42, 0.5, 0.7).lightened(rng.randf_range(0.0, 0.15)), 0.0, 0.03)
+
+
+## Sagebrush: a silvery grey-green shrub of many small, lumpy clumps on gnarled, twisting woody stems.
+func _sagebrush(kit: MeshKit, rng: RandomNumberGenerator) -> void:
+	var leaf := _vary(Color(0.4, 0.47, 0.4), rng, 0.04)
+	var wood := _vary(_pal.dead_wood, rng).darkened(0.2)
+	var center := Vector3(0, 0.4, 0)
+	for i in rng.randi_range(6, 8):
+		var a := rng.randf() * TAU
+		var d := rng.randf_range(0.15, 0.5)
+		var top := Vector3(cos(a) * d, rng.randf_range(0.45, 0.75), sin(a) * d)
+		var kink := Vector3(cos(a + 1.2) * 0.1, 0.22, sin(a + 1.2) * 0.1)
+		kit.loft([Vector3(cos(a) * 0.04, -0.05, sin(a) * 0.04), kink, top], [0.04, 0.03, 0.015], 5, wood)
+		# Clumps down the stem as well as at its end, so it's a full, rounded shrub.
+		for t: float in [0.45, 1.0]:
+			var r := rng.randf_range(0.15, 0.23) * (0.85 if t < 1.0 else 1.0)
+			var at := kink.lerp(top, t) if t < 1.0 else top
+			var off := Vector3(rng.randf_range(-0.1, 0.1), rng.randf_range(-0.04, 0.1), rng.randf_range(-0.1, 0.1))
+			kit.add_primitive(MeshKit.sphere(r, 7, 5), Transform3D(Basis.from_scale(Vector3(1.15, 0.8, 1.15)), at + off), leaf.lightened(rng.randf_range(-0.08, 0.06)), r * 0.55, 0.1, center)
+
+
+## Bramble: a low thicket of leaves, long thorny canes arching out of it and down to the ground, clusters of dark
+## berries along them.
+func _bramble(kit: MeshKit, rng: RandomNumberGenerator) -> void:
+	var cane := _vary(Color(0.42, 0.22, 0.22), rng)
+	var leaf := _vary(_pal.bush_leaves.darkened(0.12), rng)
+	var center := Vector3(0, 0.35, 0)
+	var spots := []
+	for i in rng.randi_range(4, 5):   # the thicket
+		var a := rng.randf() * TAU
+		var p := Vector3(cos(a) * rng.randf_range(0.0, 0.35), rng.randf_range(0.2, 0.4), sin(a) * rng.randf_range(0.0, 0.35))
+		var r := rng.randf_range(0.28, 0.4)
+		kit.add_primitive(MeshKit.sphere(r, 8, 5), Transform3D(Basis.from_scale(Vector3(1.1, 0.75, 1.1)), p), leaf.lightened(rng.randf_range(-0.05, 0.06)), r * 0.35, 0.08, center)
+		spots.append(p + Vector3(0, r * 0.5, 0))
+	for i in rng.randi_range(6, 8):
+		var a := rng.randf() * TAU
+		var out := Vector3(cos(a), 0, sin(a))
+		var reach := rng.randf_range(0.85, 1.15)
+		var top := rng.randf_range(0.45, 0.65)
+		var path := [Vector3(0, 0.15, 0), out * reach * 0.3 + Vector3.UP * top, out * reach * 0.65 + Vector3.UP * top * 0.75, out * reach + Vector3.UP * 0.05]
+		kit.loft(path, [0.022, 0.018, 0.014, 0.009], 4, cane)
+		for k in range(1, 3):
+			var p: Vector3 = path[k]
+			kit.add_primitive(MeshKit.sphere(rng.randf_range(0.16, 0.22), 6, 4), Transform3D(Basis.from_scale(Vector3(1.2, 0.7, 1.2)), p + Vector3(0, 0.02, 0)), leaf.lightened(rng.randf_range(-0.03, 0.08)), 0.06, 0.08)
+			spots.append(p + Vector3(0, 0.05, 0))
+	if not _bare:
+		for i in rng.randi_range(6, 9):
+			var t: Vector3 = spots[rng.randi() % spots.size()] + Vector3(rng.randf_range(-0.12, 0.12), 0.0, rng.randf_range(-0.12, 0.12))
+			for j in 4:
+				var ripe := rng.randf() < 0.7
+				kit.add_primitive(MeshKit.sphere(0.035, 6, 4), Transform3D(Basis(), t + Vector3(rng.randf_range(-0.04, 0.04), rng.randf_range(-0.02, 0.04), rng.randf_range(-0.04, 0.04))),
+					Color(0.16, 0.08, 0.16) if ripe else Color(0.65, 0.18, 0.2), 0.0, 0.04)
+
+
+## Rhododendron: a tall evergreen shrub of glossy leaf whorls, crowned with round trusses of pink, purple or white
+## flowers.
+func _rhododendron(kit: MeshKit, rng: RandomNumberGenerator, index: int) -> void:
+	var leaf := _vary(Color(0.18, 0.32, 0.2), rng)
+	var bloom: Color = [Color(0.86, 0.45, 0.62), Color(0.62, 0.42, 0.78), Color(0.95, 0.9, 0.92)][index % 3]
+	var stem := _vary(_pal.bark, rng)
+	for i in rng.randi_range(8, 11):
+		var a := rng.randf() * TAU
+		var d := rng.randf_range(0.1, 0.6)
+		var at := Vector3(cos(a) * d, rng.randf_range(0.45, 1.35), sin(a) * d)
+		kit.loft([Vector3(cos(a) * 0.05, -0.05, sin(a) * 0.05), at * Vector3(0.5, 0.6, 0.5), at], [0.035, 0.025, 0.015], 4, stem)
+		_rosette(kit, rng, at, 6, 0.3, 0.12, 0.35, leaf)
+		kit.add_primitive(MeshKit.sphere(0.2, 7, 5), Transform3D(Basis.from_scale(Vector3(1, 0.6, 1)), at - Vector3(0, 0.05, 0)), leaf.darkened(0.08), 0.06, 0.08)
+		if rng.randf() < 0.8:
+			for j in 7:
+				var f := at + Vector3(rng.randf_range(-0.09, 0.09), 0.08 + rng.randf_range(0.0, 0.09), rng.randf_range(-0.09, 0.09))
+				kit.add_primitive(MeshKit.sphere(0.055, 6, 4), Transform3D(Basis(), f), _vary(bloom, rng, 0.04), 0.0, 0.04)
+
+
+## Ocotillo: a fountain of tall, thin, spiny wands from one root, each tipped with a spike of scarlet flowers.
+func _ocotillo(kit: MeshKit, rng: RandomNumberGenerator) -> void:
+	var col := _vary(Color(0.45, 0.42, 0.34), rng)
+	var bloom := Color(0.9, 0.3, 0.18)
+	for i in rng.randi_range(9, 13):
+		var a := rng.randf() * TAU
+		var spread := rng.randf_range(0.15, 0.45)
+		var h := rng.randf_range(1.8, 3.0)
+		var out := Vector3(cos(a), 0, sin(a))
+		var path := [out * 0.04, out * spread * 0.3 + Vector3.UP * h * 0.35, out * spread * 0.75 + Vector3.UP * h * 0.75, out * spread + Vector3.UP * h]
+		kit.loft(path, [0.035, 0.028, 0.02, 0.012], 5, col, func(t: float, ang: float) -> Color:
+			return col.lightened(0.18) if fposmod(t * 22.0 + ang, 1.0) < 0.18 else col)   # little spines in rows
+		if rng.randf() < 0.75:
+			var tip: Vector3 = path[3]
+			kit.add_primitive(MeshKit.cylinder(0.0, 0.035, 0.22, 5), Transform3D(Basis(), tip + Vector3(0, 0.1, 0)), _vary(bloom, rng, 0.04), 0.0, 0.04)
+
+
+## Hibiscus: a lush, leafy shrub with big open flowers, red, pink or orange, each with a long stamen.
+func _hibiscus(kit: MeshKit, rng: RandomNumberGenerator, index: int) -> void:
+	var leaf := _vary(_pal.jungle_leaves.lerp(_pal.bush_leaves, 0.4), rng)
+	var petal: Color = [Color(0.86, 0.16, 0.2), Color(0.95, 0.5, 0.65), Color(0.97, 0.55, 0.22)][index % 3]
+	var center := Vector3(0, 0.6, 0)
+	var blobs := []
+	for i in rng.randi_range(5, 7):
+		var r := rng.randf_range(0.3, 0.45)
+		var a := rng.randf() * TAU
+		var d := rng.randf_range(0.0, 0.4)
+		var pos := Vector3(cos(a) * d, r * 0.9 + rng.randf_range(0.1, 0.5), sin(a) * d)
+		blobs.append([pos, r])
+		kit.add_primitive(MeshKit.sphere(r, 8, 5), Transform3D(Basis(), pos), leaf.lightened(rng.randf_range(-0.05, 0.07)), r * 0.3, 0.08, center)
+	_leaf_clumps(kit, rng, blobs, center, leaf, rng.randi_range(8, 10), 0.14)
+	for i in rng.randi_range(10, 14):
+		var bl: Array = blobs[rng.randi() % blobs.size()]
+		var dir := Vector3(rng.randf_range(-1, 1), rng.randf_range(0.0, 0.9), rng.randf_range(-1, 1)).normalized()
+		var at: Vector3 = bl[0] + dir * (float(bl[1]) * 0.95 + 0.06)
+		var flower := PackedVector2Array()
+		for k in 10:
+			var ang := TAU * k / 10.0
+			flower.append(Vector2(cos(ang), sin(ang)) * (0.22 if k % 2 == 0 else 0.13))
+		kit.extrude(flower, Transform3D(Basis(Quaternion(Vector3.FORWARD, dir)), at), 0.012, 0.006, _vary(petal, rng, 0.04), petal.lightened(0.25), 0.5)
+		kit.loft([at, at + dir * 0.12], [0.008, 0.006], 4, Color(0.98, 0.85, 0.4))
+
+
+## Sporebush: pale stalks of the fungal groves, each topped with a frilled, softly glowing cap.
+func _spore_bush(kit: MeshKit, rng: RandomNumberGenerator, index: int) -> void:
+	var stalk := Color(0.82, 0.78, 0.84)
+	var cap: Color = [Color(0.35, 0.75, 0.78), Color(0.62, 0.42, 0.82), Color(0.82, 0.5, 0.7)][index % 3]
+	for i in rng.randi_range(5, 8):
+		var a := rng.randf() * TAU
+		var d := rng.randf_range(0.05, 0.4)
+		var h := rng.randf_range(0.5, 1.3)
+		var top := Vector3(cos(a) * d * 1.4, h, sin(a) * d * 1.4)
+		kit.loft([Vector3(cos(a) * d * 0.3, -0.04, sin(a) * d * 0.3), Vector3(cos(a) * d, h * 0.5, sin(a) * d), top], [0.04, 0.03, 0.025], 6, stalk.darkened(rng.randf_range(0.0, 0.1)))
+		var r := rng.randf_range(0.12, 0.2)
+		kit.add_primitive(MeshKit.sphere(r, 9, 4), Transform3D(Basis.from_scale(Vector3(1, 0.4, 1)), top + Vector3(0, 0.02, 0)), _vary(cap, rng, 0.04), r * 0.2, 0.05)
+		# The frill under the cap: a lighter, wider skirt.
+		kit.add_primitive(MeshKit.cylinder(r * 0.4, r * 1.15, 0.05, 9), Transform3D(Basis(), top - Vector3(0, 0.03, 0)), cap.lightened(0.3), 0.0, 0.04)
+
+
+## Cattails: a clump of long blades from the mud, and stiff stems with brown velvet heads.
+func _cattail(kit: MeshKit, rng: RandomNumberGenerator) -> void:
+	var col := _vary(_pal.reed, rng)
+	kit.force_up_normals = true
+	for i in rng.randi_range(10, 14):
+		var a := rng.randf() * TAU
+		var base := Vector3(cos(a), 0, sin(a)) * rng.randf_range(0.0, 0.2) + Vector3(0, -0.05, 0)
+		var lean := Vector3(cos(a), 0, sin(a)) * rng.randf_range(0.1, 0.35)
+		var tip := base + lean + Vector3.UP * rng.randf_range(0.9, 1.5)
+		var side := Vector3(-sin(a), 0, cos(a)) * 0.028
+		kit.add_tri(base - side, base + side, tip, col.darkened(0.25), col.darkened(0.25), col.lightened(0.12))
+	kit.force_up_normals = false
+	if not _bare:
+		for i in rng.randi_range(3, 5):
+			var a := rng.randf() * TAU
+			var base := Vector3(cos(a), 0, sin(a)) * rng.randf_range(0.0, 0.15)
+			var h := rng.randf_range(1.2, 1.6)
+			var top := base + Vector3(rng.randf_range(-0.05, 0.05), h, rng.randf_range(-0.05, 0.05))
+			kit.loft([base - Vector3(0, 0.05, 0), top], [0.011, 0.008], 4, col.darkened(0.1))
+			kit.add_primitive(MeshKit.sphere(0.045, 6, 4), Transform3D(Basis.from_scale(Vector3(1, 3.4, 1)), top - Vector3(0, 0.17, 0)), Color(0.4, 0.26, 0.16), 0.0, 0.03)
+
+
+## Aloe: a rosette of thick, pale-spotted, toothed leaves; the second kind sends up a spike of coral flowers.
+func _aloe(kit: MeshKit, rng: RandomNumberGenerator, index: int) -> void:
+	var col := _vary(Color(0.42, 0.58, 0.46), rng, 0.04)
+	var n := rng.randi_range(9, 12)
+	for i in n:
+		var a := TAU * i / n + rng.randf_range(-0.1, 0.1)
+		var dir := Vector3(cos(a), 0, sin(a))
+		var length := rng.randf_range(0.3, 0.45)
+		var rise := rng.randf_range(0.35, 0.6)
+		var path := [dir * 0.02, dir * length * 0.45 + Vector3.UP * rise * 0.55, dir * length + Vector3.UP * rise * 0.8]
+		kit.loft(path, [0.045, 0.035, 0.0], 5, col, func(t: float, aa: float) -> Color:
+			return Color(0.75, 0.82, 0.7) if fposmod(t * 9.0 + aa * 0.7, 1.0) < 0.2 else col,   # pale spots
+			func(t: float, aa: float) -> Vector2: return Vector2(1.0, 0.45), true, false)
+	if index == 1:
+		kit.loft([Vector3(0, 0, 0), Vector3(0.02, 0.5, 0), Vector3(0.03, 0.85, 0)], [0.015, 0.012, 0.008], 4, col.darkened(0.15))
+		for j in 6:
+			kit.add_primitive(MeshKit.cylinder(0.0, 0.022, 0.07, 5), Transform3D(Basis(Vector3.FORWARD, PI), Vector3(0.03, 0.62 + j * 0.045, 0) + Vector3(cos(j * 2.0), 0, sin(j * 2.0)) * 0.025), Color(0.95, 0.5, 0.3), 0.0, 0.03)
+
+
+## Wild garlic: a carpet of broad, glossy leaves, with stems of starry white flower heads.
+func _wild_garlic(kit: MeshKit, rng: RandomNumberGenerator) -> void:
+	var col := _vary(Color(0.3, 0.52, 0.26), rng)
+	for i in rng.randi_range(4, 6):
+		var at := Vector3(rng.randf_range(-0.25, 0.25), 0.0, rng.randf_range(-0.25, 0.25))
+		_rosette(kit, rng, at, 4, 0.26, 0.1, 0.6, col)
+	for i in rng.randi_range(2, 4):
+		var base := Vector3(rng.randf_range(-0.2, 0.2), 0.0, rng.randf_range(-0.2, 0.2))
+		var top := base + Vector3(rng.randf_range(-0.04, 0.04), rng.randf_range(0.28, 0.4), rng.randf_range(-0.04, 0.04))
+		kit.loft([base - Vector3(0, 0.03, 0), top], [0.008, 0.006], 4, col.darkened(0.1))
+		for j in 7:
+			var d := Vector3(rng.randf_range(-1, 1), rng.randf_range(0.2, 1), rng.randf_range(-1, 1)).normalized()
+			kit.add_primitive(MeshKit.sphere(0.018, 5, 3), Transform3D(Basis(), top + d * 0.04), Color(0.96, 0.96, 0.92), 0.0, 0.02)
+
+
+## Lingonberry: a low carpet of tiny glossy leaves on wiry stems, hung with bright red berries.
+func _lingonberry(kit: MeshKit, rng: RandomNumberGenerator) -> void:
+	var col := _vary(Color(0.2, 0.36, 0.2), rng)
+	var spots := []
+	for i in rng.randi_range(9, 13):
+		var at := Vector3(rng.randf_range(-0.35, 0.35), rng.randf_range(0.06, 0.18), rng.randf_range(-0.35, 0.35))
+		kit.add_primitive(MeshKit.sphere(rng.randf_range(0.08, 0.12), 6, 4), Transform3D(Basis.from_scale(Vector3(1, 0.7, 1)), at), col.lightened(rng.randf_range(-0.05, 0.08)), 0.03, 0.07)
+		spots.append(at)
+	if not _bare:
+		for i in rng.randi_range(12, 18):
+			var at: Vector3 = spots[rng.randi() % spots.size()]
+			kit.add_primitive(MeshKit.sphere(0.025, 5, 3), Transform3D(Basis(), at + Vector3(rng.randf_range(-0.08, 0.08), rng.randf_range(0.02, 0.08), rng.randf_range(-0.08, 0.08))),
+				Color(0.82, 0.12, 0.14).lightened(rng.randf_range(0.0, 0.12)), 0.0, 0.03)
+
+
+# Ground plants: small and many, so few triangles each.
+
+## Lupins: spires of blue, purple or pink pea-flowers over a ring of fingered leaves.
+func _lupin(kit: MeshKit, rng: RandomNumberGenerator, index: int) -> void:
+	var bloom: Color = [Color(0.42, 0.45, 0.85), Color(0.6, 0.38, 0.75), Color(0.9, 0.55, 0.7)][index % 3]
+	var leaf := _pal.meadow_grass.darkened(0.15)
+	kit.force_up_normals = true
+	for i in rng.randi_range(2, 4):
+		var base := Vector3(rng.randf_range(-0.2, 0.2), -0.03, rng.randf_range(-0.2, 0.2))
+		var h := rng.randf_range(0.45, 0.75)
+		for l in 5:
+			var a := TAU * l / 5.0 + rng.randf()
+			kit.add_tri(base, base + Vector3(cos(a) * 0.15 - sin(a) * 0.03, 0.12, sin(a) * 0.15 + cos(a) * 0.03), base + Vector3(cos(a) * 0.15 + sin(a) * 0.03, 0.12, sin(a) * 0.15 - cos(a) * 0.03), leaf)
+		kit.add_tri(base - Vector3(0.012, 0, 0), base + Vector3(0.012, 0, 0), base + Vector3(0, h * 0.6, 0), leaf.darkened(0.1))
+		kit.force_up_normals = false
+		kit.add_primitive(MeshKit.cylinder(0.0, 0.055, h * 0.5, 6), Transform3D(Basis(), base + Vector3(0, h * 0.72, 0)), _vary(bloom, rng, 0.05), 0.08, 0.06)
+		kit.force_up_normals = true
+
+
+## Daisies: a little patch of white flowers with golden middles on thin stems.
+func _daisy(kit: MeshKit, rng: RandomNumberGenerator) -> void:
+	kit.force_up_normals = true
+	var stem := _pal.meadow_grass.darkened(0.2)
+	for i in rng.randi_range(4, 7):
+		var base := Vector3(rng.randf_range(-0.25, 0.25), -0.03, rng.randf_range(-0.25, 0.25))
+		var top := base + Vector3(rng.randf_range(-0.04, 0.04), rng.randf_range(0.15, 0.3), rng.randf_range(-0.04, 0.04))
+		kit.add_tri(base - Vector3(0.01, 0, 0.008), base + Vector3(0.01, 0, 0.008), top, stem)
+		var white := Color(0.97, 0.96, 0.92)
+		for k in 6:
+			var a1 := TAU * k / 6.0
+			kit.add_tri(top + Vector3(0, 0.004, 0), top + Vector3(cos(a1 - 0.25), 0.0, sin(a1 - 0.25)) * 0.055, top + Vector3(cos(a1 + 0.25), 0.0, sin(a1 + 0.25)) * 0.055, white)
+		kit.add_primitive(MeshKit.sphere(0.018, 5, 3), Transform3D(Basis.from_scale(Vector3(1, 0.6, 1)), top + Vector3(0, 0.01, 0)), Color(0.96, 0.78, 0.2), 0.0, 0.02)
+
+
+## Foxgloves: one or two tall spires hung with drooping pink or purple bells, over a rosette of soft leaves.
+func _foxglove(kit: MeshKit, rng: RandomNumberGenerator, index: int) -> void:
+	var bloom: Color = [Color(0.85, 0.45, 0.7), Color(0.66, 0.42, 0.8)][index % 2]
+	var leaf := _pal.fern.darkened(0.05)
+	_rosette(kit, rng, Vector3(0, 0.0, 0), 6, 0.28, 0.11, 0.25, leaf)
+	for s in rng.randi_range(1, 2):
+		var base := Vector3(rng.randf_range(-0.08, 0.08), 0.0, rng.randf_range(-0.08, 0.08))
+		var h := rng.randf_range(0.8, 1.15)
+		kit.loft([base - Vector3(0, 0.04, 0), base + Vector3(0.02, h, 0)], [0.012, 0.007], 4, leaf.darkened(0.1))
+		for j in 7:
+			var y := h * (0.45 + j * 0.075)
+			var a := j * 2.4
+			var at := base + Vector3(cos(a) * 0.04 + 0.02 * y / h, y, sin(a) * 0.04)
+			kit.add_primitive(MeshKit.cylinder(0.035, 0.012, 0.07, 6), Transform3D(Basis(Vector3(sin(a), 0, -cos(a)), 0.5), at), _vary(bloom, rng, 0.04).lightened(j * 0.02), 0.0, 0.04)
+
+
+## Sedge: a stiff, arching tuft of dark grassy blades with brown seed spikes.
+func _sedge(kit: MeshKit, rng: RandomNumberGenerator) -> void:
+	kit.force_up_normals = true
+	var col := _vary(Color(0.32, 0.45, 0.25), rng)
+	for i in rng.randi_range(9, 13):
+		var a := rng.randf() * TAU
+		var base := Vector3(cos(a), 0, sin(a)) * rng.randf_range(0.0, 0.12) + Vector3(0, -0.04, 0)
+		var out := Vector3(cos(a), 0, sin(a))
+		var mid := base + out * 0.12 + Vector3.UP * rng.randf_range(0.35, 0.5)
+		var tip := base + out * rng.randf_range(0.3, 0.45) + Vector3.UP * rng.randf_range(0.25, 0.4)
+		var side := Vector3(-sin(a), 0, cos(a)) * 0.02
+		kit.add_tri(base - side, base + side, mid, col.darkened(0.25), col.darkened(0.25), col)
+		kit.add_tri(mid - side * 0.6, mid + side * 0.6, tip, col, col, col.lightened(0.15))
+	for i in rng.randi_range(2, 3):
+		var base := Vector3(rng.randf_range(-0.06, 0.06), -0.04, rng.randf_range(-0.06, 0.06))
+		var top := base + Vector3(rng.randf_range(-0.05, 0.05), rng.randf_range(0.5, 0.65), rng.randf_range(-0.05, 0.05))
+		kit.add_tri(base - Vector3(0.008, 0, 0), base + Vector3(0.008, 0, 0), top, col.darkened(0.15))
+		kit.add_tri(top - Vector3(0.02, 0.1, 0), top + Vector3(0.02, -0.1, 0), top + Vector3(0, 0.02, 0), Color(0.45, 0.32, 0.2))
+
+
+## Desert blooms: a low tuft of grey-green leaves bursting with small bright flowers after the rains.
+func _desert_bloom(kit: MeshKit, rng: RandomNumberGenerator, index: int) -> void:
+	var bloom: Color = [Color(0.98, 0.62, 0.18), Color(0.98, 0.85, 0.25), Color(0.9, 0.3, 0.6)][index % 3]
+	var leaf := Color(0.52, 0.58, 0.46)
+	kit.force_up_normals = true
+	for i in rng.randi_range(6, 9):
+		var a := rng.randf() * TAU
+		var tip := Vector3(cos(a) * 0.14, 0.1, sin(a) * 0.14)
+		kit.add_tri(Vector3(-0.01, -0.02, 0), Vector3(0.01, -0.02, 0), tip, leaf.darkened(0.15), leaf.darkened(0.15), leaf)
+	for i in rng.randi_range(4, 7):
+		var at := Vector3(rng.randf_range(-0.15, 0.15), rng.randf_range(0.1, 0.2), rng.randf_range(-0.15, 0.15))
+		kit.add_tri(Vector3(at.x - 0.006, -0.02, at.z), Vector3(at.x + 0.006, -0.02, at.z), at, leaf.darkened(0.2))
+		for k in 5:
+			var a1 := TAU * k / 5.0
+			kit.add_tri(at + Vector3(0, 0.004, 0), at + Vector3(cos(a1 - 0.3), 0.01, sin(a1 - 0.3)) * 0.045, at + Vector3(cos(a1 + 0.3), 0.01, sin(a1 + 0.3)) * 0.045, _vary(bloom, rng, 0.04))
+
+
+## Bromeliad: a vase of stiff, arching strap leaves on the forest floor, flushed red, pink or orange at the heart.
+func _bromeliad(kit: MeshKit, rng: RandomNumberGenerator, index: int) -> void:
+	var leaf := _vary(_pal.fern.lightened(0.05), rng)
+	var heart: Color = [Color(0.86, 0.2, 0.22), Color(0.95, 0.45, 0.2)][index % 2]
+	_rosette(kit, rng, Vector3(0, 0.0, 0), 9, 0.38, 0.09, 0.8, leaf)
+	_rosette(kit, rng, Vector3(0, 0.04, 0), 5, 0.2, 0.07, 1.6, heart)
+	kit.add_primitive(MeshKit.cylinder(0.0, 0.04, 0.14, 6), Transform3D(Basis(), Vector3(0, 0.12, 0)), heart.lightened(0.15), 0.0, 0.03)
+
+
+## Cotton grass: fine sedge blades with nodding tufts of white cotton on thin stems.
+func _cotton_grass(kit: MeshKit, rng: RandomNumberGenerator) -> void:
+	kit.force_up_normals = true
+	var col := _vary(Color(0.45, 0.5, 0.32), rng)
+	for i in rng.randi_range(6, 9):
+		var a := rng.randf() * TAU
+		var base := Vector3(cos(a), 0, sin(a)) * rng.randf_range(0.0, 0.1) + Vector3(0, -0.04, 0)
+		var tip := base + Vector3(cos(a), 0, sin(a)) * 0.1 + Vector3.UP * rng.randf_range(0.2, 0.32)
+		var side := Vector3(-sin(a), 0, cos(a)) * 0.015
+		kit.add_tri(base - side, base + side, tip, col.darkened(0.2), col.darkened(0.2), col.lightened(0.1))
+	kit.force_up_normals = false
+	for i in rng.randi_range(3, 6):
+		var base := Vector3(rng.randf_range(-0.12, 0.12), -0.04, rng.randf_range(-0.12, 0.12))
+		var top := base + Vector3(rng.randf_range(-0.05, 0.05), rng.randf_range(0.35, 0.5), rng.randf_range(-0.05, 0.05))
+		kit.add_tri(base - Vector3(0.006, 0, 0), base + Vector3(0.006, 0, 0), top, col.darkened(0.1))
+		kit.add_primitive(MeshKit.sphere(0.045, 6, 4), Transform3D(Basis.from_scale(Vector3(1, 1.25, 1)), top + Vector3(0, 0.02, 0)), Color(0.97, 0.97, 0.94), 0.25, 0.04)
+
+
+## Lichen: crusty, flat rosettes of grey-green, sulphur yellow or rusty orange spread over the ground.
+func _lichen(kit: MeshKit, rng: RandomNumberGenerator, index: int) -> void:
+	var col: Color = [Color(0.6, 0.66, 0.55), Color(0.82, 0.78, 0.35), Color(0.82, 0.5, 0.28)][index % 3]
+	for i in rng.randi_range(4, 7):
+		var at := Vector3(rng.randf_range(-0.35, 0.35), 0.0, rng.randf_range(-0.35, 0.35))
+		var r := rng.randf_range(0.08, 0.18)
+		kit.add_primitive(MeshKit.cylinder(r * 0.8, r, 0.025, 7), Transform3D(Basis(Vector3.UP, rng.randf() * TAU).scaled(Vector3(1, 1, rng.randf_range(0.6, 1.0))), at + Vector3(0, 0.005, 0)), _vary(col, rng, 0.05), r * 0.3, 0.1)
+
+
+## Puffballs: a cluster of round, papery white and tan fungi, the biggest split open at the top.
+func _puffball(kit: MeshKit, rng: RandomNumberGenerator) -> void:
+	for i in rng.randi_range(3, 6):
+		var r := rng.randf_range(0.05, 0.13)
+		var at := Vector3(rng.randf_range(-0.2, 0.2), r * 0.7, rng.randf_range(-0.2, 0.2))
+		var col := Color(0.93, 0.9, 0.82).lerp(Color(0.72, 0.6, 0.45), rng.randf_range(0.0, 0.6))
+		kit.add_primitive(MeshKit.sphere(r, 8, 5), Transform3D(Basis.from_scale(Vector3(1, 0.85, 1)), at), col, r * 0.15, 0.05)
+		if r > 0.1:
+			kit.add_primitive(MeshKit.cylinder(r * 0.25, r * 0.35, 0.02, 7), Transform3D(Basis(), at + Vector3(0, r * 0.8, 0)), col.darkened(0.45), 0.0, 0.03)
+
+
+## Dune grass: tall, wiry, sun-bleached blades leaning in the sea wind.
+func _dune_grass(kit: MeshKit, rng: RandomNumberGenerator) -> void:
+	kit.force_up_normals = true
+	var col := _vary(Color(0.7, 0.68, 0.46), rng, 0.04)
+	var wind := Vector3(rng.randf_range(-1, 1), 0, rng.randf_range(-1, 1)).normalized() * 0.15
+	for i in rng.randi_range(10, 14):
+		var a := rng.randf() * TAU
+		var base := Vector3(cos(a), 0, sin(a)) * rng.randf_range(0.0, 0.15) + Vector3(0, -0.04, 0)
+		var h := rng.randf_range(0.55, 0.85)
+		var mid := base + Vector3(cos(a), 0, sin(a)) * 0.06 + wind * 0.4 + Vector3.UP * h * 0.55
+		var tip := base + Vector3(cos(a), 0, sin(a)) * 0.14 + wind + Vector3.UP * h
+		var side := Vector3(-sin(a), 0, cos(a)) * 0.016
+		kit.add_tri(base - side, base + side, mid, col.darkened(0.25), col.darkened(0.25), col)
+		kit.add_tri(mid - side * 0.6, mid + side * 0.6, tip, col, col, col.lightened(0.15))
+
+
+## Sea thrift: a tight green cushion on the sand with pink pompom flowers on wiry stems.
+func _sea_thrift(kit: MeshKit, rng: RandomNumberGenerator) -> void:
+	var leaf := _vary(Color(0.36, 0.5, 0.34), rng)
+	kit.add_primitive(MeshKit.sphere(rng.randf_range(0.12, 0.16), 7, 4), Transform3D(Basis.from_scale(Vector3(1.2, 0.55, 1.2)), Vector3(0, 0.03, 0)), leaf, 0.04, 0.08)
+	for i in rng.randi_range(4, 7):
+		var base := Vector3(rng.randf_range(-0.1, 0.1), 0.04, rng.randf_range(-0.1, 0.1))
+		var top := base + Vector3(rng.randf_range(-0.05, 0.05), rng.randf_range(0.14, 0.24), rng.randf_range(-0.05, 0.05))
+		kit.loft([base, top], [0.005, 0.004], 3, leaf.darkened(0.1))
+		kit.add_primitive(MeshKit.sphere(0.035, 6, 4), Transform3D(Basis(), top + Vector3(0, 0.02, 0)), _vary(Color(0.92, 0.55, 0.72), rng, 0.04), 0.15, 0.04)
+
+
+## Alpine cushion: a dense, bright moss-like cushion hugging the rock, starred with tiny pink, white or purple flowers.
+func _alpine_cushion(kit: MeshKit, rng: RandomNumberGenerator, index: int) -> void:
+	var leaf := _vary(Color(0.38, 0.55, 0.3), rng)
+	var bloom: Color = [Color(0.92, 0.5, 0.68), Color(0.96, 0.95, 0.9), Color(0.66, 0.48, 0.82)][index % 3]
+	var spots := []
+	for i in rng.randi_range(2, 4):
+		var at := Vector3(rng.randf_range(-0.15, 0.15), 0.02, rng.randf_range(-0.15, 0.15))
+		var r := rng.randf_range(0.12, 0.2)
+		kit.add_primitive(MeshKit.sphere(r, 6, 3), Transform3D(Basis.from_scale(Vector3(1.0, 0.45, 1.0)), at), leaf.lightened(rng.randf_range(-0.04, 0.06)), r * 0.25, 0.08)
+		spots.append([at, r])
+	for i in rng.randi_range(8, 12):
+		var sp: Array = spots[rng.randi() % spots.size()]
+		var a := rng.randf() * TAU
+		var d := rng.randf_range(0.0, 0.8) * float(sp[1])
+		var at: Vector3 = sp[0] + Vector3(cos(a) * d, float(sp[1]) * 0.45 * sqrt(1.0 - (d / float(sp[1])) * (d / float(sp[1]))) + 0.005, sin(a) * d)
+		kit.add_primitive(MeshKit.sphere(0.02, 4, 2), Transform3D(Basis.from_scale(Vector3(1, 0.5, 1)), at), _vary(bloom, rng, 0.04), 0.0, 0.03)
+
+
+## Edelweiss: a little silvery rosette with white, felted, star-shaped flowers on short stems.
+func _edelweiss(kit: MeshKit, rng: RandomNumberGenerator) -> void:
+	var leaf := Color(0.62, 0.68, 0.6)
+	_rosette(kit, rng, Vector3(0, 0.0, 0), 6, 0.1, 0.04, 0.4, leaf)
+	kit.force_up_normals = true
+	for i in rng.randi_range(2, 4):
+		var base := Vector3(rng.randf_range(-0.06, 0.06), 0.0, rng.randf_range(-0.06, 0.06))
+		var top := base + Vector3(rng.randf_range(-0.03, 0.03), rng.randf_range(0.1, 0.17), rng.randf_range(-0.03, 0.03))
+		kit.add_tri(base - Vector3(0.006, 0, 0), base + Vector3(0.006, 0, 0), top, leaf.darkened(0.15))
+		for k in 7:
+			var a1 := TAU * k / 7.0
+			kit.add_tri(top + Vector3(0, 0.004, 0), top + Vector3(cos(a1 - 0.18), 0.0, sin(a1 - 0.18)) * 0.045, top + Vector3(cos(a1 + 0.18), 0.0, sin(a1 + 0.18)) * 0.045, Color(0.95, 0.95, 0.9))
+		kit.add_primitive(MeshKit.sphere(0.014, 5, 3), Transform3D(Basis(), top + Vector3(0, 0.008, 0)), Color(0.9, 0.85, 0.55), 0.0, 0.02)
