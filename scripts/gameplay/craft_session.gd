@@ -240,7 +240,7 @@ func _plan() -> Array:
 		Mode.SMITH:
 			return [{"mech": Mech.PUMP, "id": "heat", "dur": 2.5, "view": "mouth", "say": "Pump the bellows: move the mouse up and down"},
 				{"mech": Mech.FLICK, "id": "hammer", "n": 5, "view": "anvil", "say": "Aim at the glowing spot and flick down, to hammer it out"},
-				{"mech": Mech.DIP, "id": "quench", "n": 1, "view": "anvil", "say": "Hold {key} on the blade: drag it into the water and keep it under"},
+				{"mech": Mech.DIP, "id": "quench", "n": 1, "view": "quench", "say": "Hold {key} on the blade: drag it into the water and keep it under"},
 				{"mech": Mech.DRAG, "id": "haft", "n": 1, "view": "anvil", "say": "Hold {key} on the handle and drag it up into the head"}]
 		Mode.SMELT:
 			return [{"mech": Mech.DRAG, "id": "load", "n": 3, "view": "mouth", "say": "Hold {key} on the ore and drag it into the crucible"},
@@ -355,6 +355,9 @@ func _view(key: String) -> Transform3D:
 		"mouth":   # over the hearth's fire, from the front
 			from = Vector3(0.28, 1.7, -1.35)
 			at = Vector3(0.0, 0.86, -0.05)
+		"quench":   # stepped back: the anvil and the bucket beside it
+			from = Vector3(1.55, 1.5, -1.3)
+			at = Vector3(0.76, 0.42, -0.42)
 		"anvil":   # the anvil's face, with the stump and the hearth's corner around it
 			from = Vector3(1.32, 1.4, -1.14)
 			at = Vector3(0.88, 0.68, -0.23)
@@ -920,7 +923,7 @@ func _setup_striker() -> void:
 	add_child(_striker_pivot)
 	if mech() == Mech.SAW:
 		# A knife lying across the handle, its edge down, shaving along it.
-		mi.scale = Vector3.ONE * 0.8
+		mi.scale = Vector3.ONE * 1.7
 		mi.rotation = Vector3(0, 0, PI * 0.5)
 		_striker_pivot.global_position = work_point()
 		_striker_pivot.global_basis = _xf.basis * Basis(Vector3.UP, PI * 0.5) * Basis(Vector3.FORWARD, 0.5)
@@ -1144,13 +1147,17 @@ func _update_striker(delta: float) -> void:
 		at = _impact_at
 		k = 1.0
 	if mode == Mode.KNAP:
-		var lift := 0.0 if landing else 0.025
-		var local := _holder().to_local(at) + Vector3(0.035, lift, 0.0)
+		# A little in front of the stone (toward you) but right under the hand, its edge at the hand's point.
+		var lift := 0.0 if landing else 0.012
+		var near := _cam.project_position(ptr, maxf(_depth(hit) - 0.06, 0.1)) if not landing else at.lerp(_cam.global_position, 0.15)
+		var local := _holder().to_local(near) + Vector3(0.028, lift, 0.0)
 		_striker_pivot.position = _striker_pivot.position.lerp(local, k)
 		return
-	var pivot := at - _striker_side * 0.33 + Vector3(0, 0.1 if landing else 0.16, 0)
+	# (The rest pose is raised for a swing; tipped down 0.8 it lies flat on the work. Hovering, it's held just
+	# above the hand's point, a little cocked.)
+	var pivot := at - _striker_side * 0.33 + Vector3(0, 0.1, 0)
 	_striker_pivot.global_position = _striker_pivot.global_position.lerp(pivot, k)
-	_striker_pivot.global_basis = _striker_rest * Basis(Vector3.RIGHT, -0.5 if landing else 0.15)
+	_striker_pivot.global_basis = _striker_rest * Basis(Vector3.RIGHT, -0.8 if landing else -0.55)
 
 
 # Strokes: the bench (side to side) and the bellows (up and down).
@@ -1353,7 +1360,7 @@ func drag_target() -> Vector3:
 
 
 func _try_grab() -> void:
-	if drag_node == null or dragging or _snapping:
+	if drag_node == null or dragging or _snapping or step_t >= 1.0 or hold_t >= DIP_HOLD:
 		return
 	if ptr.distance_to(screen(drag_focus())) > GRAB * ui_scale():
 		_nag("Grab it: move onto it first")
@@ -1366,7 +1373,7 @@ func _try_grab() -> void:
 
 ## Each frame: the piece follows the hand while it's held; quenching, it hisses while it's under.
 func _drag_process(delta: float) -> void:
-	if drag_node == null or _snapping:
+	if drag_node == null or _snapping or step_t >= 1.0:
 		return
 	if not dragging:
 		drag_node.global_transform = _drag_from
@@ -1542,8 +1549,11 @@ func _step_ready() -> void:
 	_busy = false
 	_anchor = screen(work_point())
 	ptr = _anchor + (Vector2(0, -60) * ui_scale() if mech() == Mech.FLICK else Vector2.ZERO)
-	if mech() in [Mech.SAW, Mech.PUMP]:
+	if mech() == Mech.SAW:
 		_anchor += Vector2(0, 90) * ui_scale()
+		ptr = _anchor
+	if mech() == Mech.PUMP:   # off to the side, clear of the fire
+		_anchor += Vector2(-190, 30) * ui_scale()
 		ptr = _anchor
 	if mech() == Mech.TILT:
 		_anchor += Vector2(0, 110) * ui_scale()
