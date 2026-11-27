@@ -384,10 +384,11 @@ static func _pickaxe(k: MeshKit, tier: int, col: Color) -> void:
 	_handle(k, top + 0.04, 1, 0.02)   # the same round branch as the axe
 	if _s("head") < 0.0:
 		return
-	# A pick: a long point curving down and forward from the eye, a short squared poll behind it.
+	# A pick: a long, nearly straight point running forward from the eye (only a touch of droop at its tip), a short
+	# squared poll behind it.
 	var outline := _knap(PackedVector2Array([Vector2(-0.062, 0.024), Vector2(-0.07, 0.0), Vector2(-0.062, -0.024),
-		Vector2(-0.02, -0.032), Vector2(0.05, -0.034), Vector2(0.12, -0.042), Vector2(0.185, -0.06), Vector2(0.215, -0.078),
-		Vector2(0.175, -0.044), Vector2(0.11, -0.012), Vector2(0.045, 0.02), Vector2(-0.02, 0.032)]), 41, 0.0025)
+		Vector2(-0.02, -0.032), Vector2(0.05, -0.03), Vector2(0.12, -0.027), Vector2(0.185, -0.024), Vector2(0.222, -0.03),
+		Vector2(0.18, -0.011), Vector2(0.11, 0.003), Vector2(0.045, 0.022), Vector2(-0.02, 0.032)]), 41, 0.0025)
 	var ridge := PackedVector2Array(outline)
 	ridge.append(outline[0])
 	k.flat_shading = tier == 4   # crystal: crisp facets
