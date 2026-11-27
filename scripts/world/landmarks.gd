@@ -18,11 +18,19 @@ static func plan(gen: WorldGen) -> Array:
 	var out: Array = []
 	var size := Game.WORLD_SIZE
 	var counts := {}
+	# More of them on a bigger island, the same share of its ground.
+	var area := pow(size / 2048.0, 2.0)
+	var most := {}
+	for k: String in MAX:
+		most[k] = roundi(float(MAX[k]) * area)
 	var tries := 0
 	var wanted := 0
-	for k: String in MAX:
-		wanted += int(MAX[k])
-	while tries < 2600 and out.size() < wanted:   # (stops as soon as every kind has its share)
+	for k: String in most:
+		wanted += int(most[k])
+	# (Stops as soon as every kind has its share. Hilltops for the stones are rare, so a big island takes a good
+	# look; a 2 km world keeps its old budget, so an old save's landmarks come out where they always were.)
+	var budget := 2600 if area <= 1.0 else roundi(6000 * area)
+	while tries < budget and out.size() < wanted:
 		tries += 1
 		var x := rng.randf_range(80.0, size - 80.0)
 		var z := rng.randf_range(80.0, size - 80.0)
@@ -52,7 +60,7 @@ static func plan(gen: WorldGen) -> Array:
 			elif roll >= 0.78 and n.y > 0.9 and h < 45.0 and biome in [WorldGen.Biome.DRYLANDS, WorldGen.Biome.DESERT, WorldGen.Biome.BADLANDS, WorldGen.Biome.MEADOW, WorldGen.Biome.HIGHLANDS]:
 				kind = "arch"
 				r = 10.0
-		if kind == "" or int(counts.get(kind, 0)) >= int(MAX[kind]):
+		if kind == "" or int(counts.get(kind, 0)) >= int(most[kind]):
 			continue
 		# Apart from each other.
 		var p := Vector3(x, h, z)

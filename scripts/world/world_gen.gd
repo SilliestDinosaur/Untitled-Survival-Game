@@ -53,6 +53,11 @@ var _islets: Array[Vector3] = []
 var plateau_amount: float              ## 0..1: how much tableland this world has
 
 
+## This world's size (metres a side), kept here: the map is painted on a worker thread, which mustn't reach into
+## the Game autoload (it may be gone by then, quitting).
+var size := 2048.0
+
+
 func _init(seed_value: int, pal: WorldPalette) -> void:
 	palette = pal
 	var rng := RandomNumberGenerator.new()
@@ -60,15 +65,22 @@ func _init(seed_value: int, pal: WorldPalette) -> void:
 	# Each world has its own "personality": flatter or more mountainous.
 	mountain_scale = rng.randf_range(38.0, 72.0)
 	hill_scale = rng.randf_range(16.0, 30.0)
+	# A bigger island has bigger regions, not more of them: the region-sized noise (the land's broad shape, where
+	# the ranges run, the coast, climate, hilly-or-plain, tablelands, the outline's bends) stretches with the map.
+	# Lakes, hills, ridges and surface detail keep their size, so there are more of those. (A 2 km world, from an
+	# older save, comes out exactly as before.)
+	size = Game.WORLD_SIZE
+	var big := 2048.0 / size
+	FUNGAL_N = int(size / FUNGAL_CELL)
 
 	_continent.seed = seed_value
 	_continent.noise_type = FastNoiseLite.TYPE_SIMPLEX_SMOOTH
-	_continent.frequency = rng.randf_range(0.0014, 0.0022)
+	_continent.frequency = rng.randf_range(0.0014, 0.0022) * big
 	_continent.fractal_octaves = 4
 
 	_ranges.seed = seed_value + 6
 	_ranges.noise_type = FastNoiseLite.TYPE_SIMPLEX_SMOOTH
-	_ranges.frequency = rng.randf_range(0.0011, 0.0016)
+	_ranges.frequency = rng.randf_range(0.0011, 0.0016) * big
 	_ranges.fractal_octaves = 2
 
 	# Ridged multifractal with domain warping: long, bending crests with branching spurs
@@ -89,18 +101,18 @@ func _init(seed_value: int, pal: WorldPalette) -> void:
 
 	_coast.seed = seed_value + 10
 	_coast.noise_type = FastNoiseLite.TYPE_SIMPLEX_SMOOTH
-	_coast.frequency = rng.randf_range(0.0012, 0.0018)
+	_coast.frequency = rng.randf_range(0.0012, 0.0018) * big
 	_coast.fractal_octaves = 3
 	_detail.seed = seed_value + 2
 	_detail.frequency = 0.02
 	_detail.fractal_octaves = 2
 
 	_temperature.seed = seed_value + 3
-	_temperature.frequency = 0.0015
+	_temperature.frequency = 0.0015 * big
 	_temperature.fractal_octaves = 2
 
 	_moisture.seed = seed_value + 4
-	_moisture.frequency = 0.002
+	_moisture.frequency = 0.002 * big
 	_moisture.fractal_octaves = 3
 
 	_forest.seed = seed_value + 5
@@ -120,15 +132,15 @@ func _init(seed_value: int, pal: WorldPalette) -> void:
 	_hills.fractal_gain = 0.45
 	_hilly.seed = seed_value + 12
 	_hilly.noise_type = FastNoiseLite.TYPE_SIMPLEX_SMOOTH
-	_hilly.frequency = 0.0018
+	_hilly.frequency = 0.0018 * big
 	_plateau.seed = seed_value + 13
 	_plateau.noise_type = FastNoiseLite.TYPE_SIMPLEX_SMOOTH
-	_plateau.frequency = rng.randf_range(0.0022, 0.0032)
+	_plateau.frequency = rng.randf_range(0.0022, 0.0032) * big
 	_plateau.fractal_octaves = 2
 	plateau_amount = rng.randf_range(0.2, 1.0)
 	_warp.seed = seed_value + 14
 	_warp.noise_type = FastNoiseLite.TYPE_SIMPLEX_SMOOTH
-	_warp.frequency = 0.0009
+	_warp.frequency = 0.0009 * big
 	_warp.fractal_octaves = 2
 	# The outline: one lobe in the middle (so there's always land there), and three to five more around it of
 	# different sizes, reaching out as peninsulas or swelling the island to one side.
@@ -199,7 +211,7 @@ func edit_at(x: float, z: float) -> float:
 ## How far out a point is, as a share of the way from the island's middle to the map edge, with the coastline's
 ## bays and headlands: x is the broad outline, y adds the rocky edge's finer wobble.
 func _coast_at(x: float, z: float) -> Vector2:
-	var half := Game.WORLD_SIZE * 0.5
+	var half := size * 0.5
 	# Bent a little first, so the lobes' round edges become irregular bays and headlands.
 	var dx := (x - half) / half + _warp.get_noise_2d(x, z) * 0.15
 	var dz := (z - half) / half + _warp.get_noise_2d(z + 917.0, x) * 0.15
@@ -327,7 +339,7 @@ func get_moisture(x: float, z: float) -> float:
 ## How warm a place is before altitude: the north of the island cooler and the south warmer, with the noise's
 ## patches on top (so the biomes fall in a believable order across the island, not scattered at random).
 func _warmth(x: float, z: float) -> float:
-	var south := z / Game.WORLD_SIZE - 0.5   # -0.5 north .. 0.5 south
+	var south := z / size - 0.5   # -0.5 north .. 0.5 south
 	return clampf(_temperature.get_noise_2d(x, z) * 0.62 + 0.5 + south * 0.55, 0.0, 1.0)
 
 
@@ -355,7 +367,7 @@ func biome_weights_at(x: float, z: float, h: float) -> Dictionary:
 
 
 const FUNGAL_CELL := 32.0
-const FUNGAL_N := 64              ## 2048 / 32
+var FUNGAL_N := 64                ## cells a side: the world's size / FUNGAL_CELL (set in _init)
 var fungal_home := Vector2(-1e9, -1e9)   ## the middle of the island's one fungal grove (none if it has none)
 var _fungal_cells := PackedFloat32Array()   ## 1 in the grove's cells (its one connected patch), else 0
 var _fungal_limit := false
@@ -537,7 +549,7 @@ func get_terrain_color(height: float, normal_y: float, x: float, z: float, weigh
 
 ## A nice dry, flat-ish spot near the middle of the island to start on.
 func find_spawn_point() -> Vector3:
-	var center := Game.WORLD_SIZE * 0.5
+	var center := size * 0.5
 	for ring in range(0, 80):
 		var r := ring * 12.0
 		var steps := maxi(1, ring * 6)

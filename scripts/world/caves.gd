@@ -137,7 +137,7 @@ static func entrances(gen: WorldGen) -> Array:
 		return hash([Game.world_seed, a.x, a.z]) < hash([Game.world_seed, b.x, b.z]))
 	var out: Array = []
 	for c: Vector3 in cand:
-		if out.size() >= MAX_ENTRANCES:
+		if out.size() >= roundi(MAX_ENTRANCES * pow(size / 2048.0, 2.0)):   # (more on a bigger island)
 			break
 		var ok := true
 		for o: Vector3 in out:

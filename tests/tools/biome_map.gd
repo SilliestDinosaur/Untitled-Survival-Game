@@ -11,7 +11,7 @@ func _initialize() -> void:
 	var sheet := Image.create(res * seeds.size(), res, false, Image.FORMAT_RGB8)
 	for si in seeds.size():
 		var t0 := Time.get_ticks_msec()
-		g.new_world(int(seeds[si]))
+		g.new_world(int(seeds[si]), float(OS.get_environment("SIZE")) if OS.get_environment("SIZE") != "" else g.NEW_WORLD_SIZE)
 		var gen = g.world_gen
 		var cell: float = g.WORLD_SIZE / res
 		var hs := PackedFloat32Array()

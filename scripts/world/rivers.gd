@@ -33,8 +33,9 @@ static func plan(gen: WorldGen) -> Dictionary:
 	rng.seed = hash([Game.world_seed, "rivers"])
 	var out := {"lines": [], "segs": [], "buckets": {}, "ponds": [], "heads": []}
 	var taken: Array = []   # sources so far, kept apart
-	var big := _sources(gen, rng, 24.0, 1e9, 360.0, rng.randi_range(2, 4), taken)
-	var small := _sources(gen, rng, 9.0, 34.0, 150.0, rng.randi_range(5, 9), taken)
+	var wide := Game.WORLD_SIZE / 2048.0   # a bigger island has more rivers (and longer ones, to reach its coast)
+	var big := _sources(gen, rng, 24.0, 1e9, 360.0, roundi(rng.randi_range(2, 4) * wide), taken)
+	var small := _sources(gen, rng, 9.0, 34.0, 150.0, roundi(rng.randi_range(5, 9) * wide), taken)
 	for src: Vector2 in big:
 		_add_river(gen, rng, out, src, true)
 	for src: Vector2 in small:
@@ -46,7 +47,7 @@ static func plan(gen: WorldGen) -> Dictionary:
 ## from those already taken.
 static func _sources(gen: WorldGen, rng: RandomNumberGenerator, min_h: float, max_h: float, apart: float, count: int, taken: Array) -> Array:
 	var cands: Array = []
-	for k in 900:
+	for k in roundi(900 * pow(Game.WORLD_SIZE / 2048.0, 2.0)):   # (as many tries per square metre on any size of island)
 		var p := Vector2(rng.randf_range(0.12, 0.88), rng.randf_range(0.12, 0.88)) * Game.WORLD_SIZE
 		if gen.island_mask(p.x, p.y) < 0.95:
 			continue

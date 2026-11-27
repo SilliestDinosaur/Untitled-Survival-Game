@@ -7,7 +7,10 @@ extends Node
 signal world_changed
 signal assets_rebuilt   ## meshes were regenerated (model detail setting changed)
 
-const WORLD_SIZE := 2048.0   ## Map is WORLD_SIZE x WORLD_SIZE meters (about 2 km).
+const NEW_WORLD_SIZE := 3072.0   ## New worlds are this many metres a side (about 3 km).
+const OLD_WORLD_SIZE := 2048.0   ## Saves from before the island grew (no "world_size" in them) keep their 2 km.
+## This world's map is WORLD_SIZE x WORLD_SIZE metres. Set per world (see new_world); kept in its save.
+var WORLD_SIZE := NEW_WORLD_SIZE
 const CHUNK_SIZE := 64.0     ## Terrain is streamed in square chunks of this size.
 const SEA_LEVEL := 0.0
 const MAX_SEED := 999_999_999
@@ -87,7 +90,7 @@ func _ready() -> void:
 	structures_changed.connect(func() -> void: structures_version += 1)
 	Settings.apply_bindings()
 	var saves := SaveManager.list_saves()
-	new_world(saves[0].seed if not saves.is_empty() else random_seed())
+	new_world(saves[0].seed if not saves.is_empty() else random_seed(), float(saves[0].get("world_size", OLD_WORLD_SIZE)) if not saves.is_empty() else NEW_WORLD_SIZE)
 	Settings.changed.connect(_on_settings_changed)
 
 
@@ -135,8 +138,9 @@ func random_seed() -> int:
 
 
 ## Build everything that comes from the seed. Clears per-save state.
-func new_world(seed_value: int) -> void:
+func new_world(seed_value: int, size := NEW_WORLD_SIZE) -> void:
 	world_seed = clampi(seed_value, 1, MAX_SEED)
+	WORLD_SIZE = size
 	world_name = NameGen.world_name(world_seed)
 	palette = WorldPalette.new(world_seed)
 	world_gen = WorldGen.new(world_seed, palette)
@@ -235,7 +239,7 @@ func load_save(id: String) -> Dictionary:
 	var data := SaveManager.read(id)
 	if data.is_empty():
 		return {}
-	new_world(int(data.seed))
+	new_world(int(data.seed), float(data.get("world_size", OLD_WORLD_SIZE)))
 	save_id = id
 	save_name = data.get("name", world_name)
 	play_time = float(data.get("play_time", 0.0))
@@ -292,6 +296,7 @@ func write_save(player_data: Dictionary) -> void:
 		"name": save_name,
 		"world_name": world_name,
 		"seed": world_seed,
+		"world_size": WORLD_SIZE,
 		"created": SaveManager.read(save_id).get("created", Time.get_unix_time_from_system()),
 		"last_played": Time.get_unix_time_from_system(),
 		"play_time": play_time,
@@ -322,7 +327,7 @@ func _players_for_save(host_data: Dictionary) -> Dictionary:
 
 ## Everything a guest needs to rebuild the host's world (sent once when they join).
 ## Cells per side of the explored grid.
-static func explore_size() -> int:
+func explore_size() -> int:
 	return int(WORLD_SIZE / EXPLORE_CELL)
 
 
@@ -362,7 +367,7 @@ func is_explored(p: Vector3) -> bool:
 
 func snapshot() -> Dictionary:
 	return {
-		"seed": world_seed, "name": save_name if save_name != "" else world_name,
+		"seed": world_seed, "world_size": WORLD_SIZE, "name": save_name if save_name != "" else world_name,
 		"play_time": play_time, "time_of_day": time_of_day, "day": day,
 		"removed": removed_resources, "resource_hp": resource_hp, "harvested": harvested,
 		"looted": looted, "pickups": pickups, "structures": structures,
@@ -374,7 +379,7 @@ func snapshot() -> Dictionary:
 
 ## Guest side: become a copy of the host's world.
 func apply_snapshot(s: Dictionary) -> void:
-	new_world(int(s.seed))
+	new_world(int(s.seed), float(s.get("world_size", OLD_WORLD_SIZE)))
 	net_client = true
 	save_name = String(s.get("name", world_name))
 	play_time = float(s.play_time)
