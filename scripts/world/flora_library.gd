@@ -1781,7 +1781,7 @@ func _bramble(kit: MeshKit, rng: RandomNumberGenerator) -> void:
 		var out := Vector3(cos(a), 0, sin(a))
 		var reach := rng.randf_range(0.85, 1.15)
 		var top := rng.randf_range(0.45, 0.65)
-		var path := [Vector3(0, 0.15, 0), out * reach * 0.3 + Vector3.UP * top, out * reach * 0.65 + Vector3.UP * top * 0.75, out * reach + Vector3.UP * 0.05]
+		var path := [out * rng.randf_range(0.03, 0.08) + Vector3(0, 0.15 + rng.randf_range(0.0, 0.03), 0), out * reach * 0.3 + Vector3.UP * top, out * reach * 0.65 + Vector3.UP * top * 0.75, out * reach + Vector3.UP * 0.05]
 		kit.loft(path, [0.022, 0.018, 0.014, 0.009], 4, cane)
 		for k in range(1, 3):
 			var p: Vector3 = path[k]
