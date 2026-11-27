@@ -10,6 +10,7 @@ const FIRE_FX := {
 	"forge": [Vector3(0, 0.98, -0.05), 0.8, Vector3(0, 1.8, 0.15)],   # coals; smoke out of the chimney
 	"brazier": [Vector3(0, 0.78, 0), 0.7, Vector3(0, 0.35, 0)],
 	"standing_torch": [Vector3(0, 1.55, 0), 0.4, Vector3(0, 0.25, 0)],
+	"wall_torch": [Vector3(0, 0.44, 0.29), 0.32, Vector3(0, 0.25, 0)],
 }
 const FIRE_FX_RANGE := 55.0
 var _corners := {}  # wall corners -> the wall pieces ending there (StructureModels.corner_index), for butt joints
@@ -327,7 +328,7 @@ func _make(st: Dictionary) -> Node3D:
 	var pos: Array = st.pos
 	root.position = Vector3(pos[0], pos[1], pos[2])
 	# Things standing on a floor stand on its top (older saves put them on its collider, a little lower).
-	if not GameActions.is_building(st.kind) or GameActions.is_decor(st.kind):
+	if (not GameActions.is_building(st.kind) or GameActions.is_decor(st.kind)) and not GameActions.is_mounted(st.kind):
 		var under := GameActions.floor_under(root.position)
 		if not under.is_empty():
 			root.position.y = float(under.pos[1]) + GameActions.FLOOR_TOP
@@ -382,7 +383,21 @@ func _make(st: Dictionary) -> Node3D:
 			light.distance_fade_begin = 45.0
 			light.distance_fade_length = 12.0
 		root.add_child(light)
-	if st.kind == "campfire" or (st.kind in ["brazier", "standing_torch"] and not blueprint):
+	if st.kind == "candle_sconce" and not blueprint:
+		# Three little flames, one on each candle's wick (one node flickers them together).
+		var flames := Node3D.new()
+		flames.name = "Flame"
+		flames.position = Vector3(0, 0.12, 0.09)
+		flames.set_meta("size", 1.0)
+		for c: Vector3 in [Vector3(-0.1, 0.03, 0), Vector3(0, 0.09, 0), Vector3(0.1, 0.0, 0)]:
+			var f := MeshInstance3D.new()
+			f.mesh = _flame_mesh
+			f.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+			f.position = c
+			f.scale = Vector3.ONE * 0.18
+			flames.add_child(f)
+		root.add_child(flames)
+	if st.kind == "campfire" or (st.kind in ["brazier", "standing_torch", "wall_torch"] and not blueprint):
 		var flame := MeshInstance3D.new()
 		flame.name = "Flame"
 		flame.mesh = _flame_mesh
@@ -390,6 +405,9 @@ func _make(st: Dictionary) -> Node3D:
 		if st.kind == "standing_torch":
 			flame.position = Vector3(0, 1.48, 0)
 			flame.set_meta("size", 0.45)
+		elif st.kind == "wall_torch":
+			flame.position = Vector3(0, 0.41, 0.29)
+			flame.set_meta("size", 0.36)
 		elif st.kind == "brazier":
 			flame.position = Vector3(0, 0.72, 0)
 			flame.set_meta("size", 0.85)
@@ -461,7 +479,14 @@ func _add_piece_colliders(body: StaticBody3D, kind: String) -> CollisionShape3D:
 			_box_collider(body, Vector3(GameActions.CELL, 1.1, 0.2), Vector3(0, 0.55, 0))
 		"decor":
 			var size: Vector3 = GameActions.DECOR[kind].box
-			if size != Vector3.ZERO:
+			if GameActions.is_mounted(kind):
+				# Something to aim at (to take it down), nothing to bump into: you walk under a hanging lantern.
+				body.collision_layer = TerrainChunk.LAYER_INTERACT
+				if GameActions.DECOR[kind].mount == "ceiling":
+					_box_collider(body, Vector3(0.34, 0.95, 0.34), Vector3(0, -0.5, 0))
+				else:
+					_box_collider(body, Vector3(0.34, 0.6, 0.38), Vector3(0, 0.12, 0.19))
+			elif size != Vector3.ZERO:
 				_box_collider(body, size, Vector3(0, size.y * 0.5, 0))
 			else:   # a rug: something to aim at (to take it up), nothing to bump into
 				body.collision_layer = TerrainChunk.LAYER_INTERACT

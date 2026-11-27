@@ -288,6 +288,10 @@ const PIECES := {
 	"brazier": {"shape": "decor", "mat": "stone"},
 	"lantern_post": {"shape": "decor", "mat": "wood"},
 	"standing_torch": {"shape": "decor", "mat": "wood"},
+	"wall_torch": {"shape": "decor", "mat": "wood"},
+	"wall_lantern": {"shape": "decor", "mat": "wood"},
+	"candle_sconce": {"shape": "decor", "mat": "wood"},
+	"hanging_lantern": {"shape": "decor", "mat": "wood"},
 	"chest": {"shape": "decor", "mat": "wood"},
 	"large_chest": {"shape": "decor", "mat": "wood"},
 }
@@ -312,6 +316,16 @@ const DECOR := {
 		"desc": "A lantern hung from a timber post."},
 	"standing_torch": {"name": "Standing Torch", "page": "lights", "r": 0.18, "box": Vector3(0.18, 1.5, 0.18), "light": Color(1.0, 0.62, 0.3), "light_y": 1.6, "range": 6.5,
 		"desc": "A torch on a stake, burning bright."},
+	# Lights that hang on the building itself ("mount"): on set spots on a wall, door, window or arch ("wall"), or
+	# from the underside of a roof or upper floor ("ceiling"); see mount_spots. "warm": a little warmth close by.
+	"wall_torch": {"name": "Wall Torch", "page": "lights", "r": 0.0, "box": Vector3.ZERO, "mount": "wall", "light": Color(1.0, 0.6, 0.28),
+		"light_at": Vector3(0, 0.36, 0.26), "range": 7.0, "warm": 0.5, "desc": "A torch in an iron bracket on a wall. Burns bright and warms you a little."},
+	"wall_lantern": {"name": "Wall Lantern", "page": "lights", "r": 0.0, "box": Vector3.ZERO, "mount": "wall", "light": Color(1.0, 0.8, 0.52),
+		"light_at": Vector3(0, -0.06, 0.3), "range": 8.0, "desc": "A glass lantern on an iron hook: a steady, soft light."},
+	"candle_sconce": {"name": "Candle Sconce", "page": "lights", "r": 0.0, "box": Vector3.ZERO, "mount": "wall", "light": Color(1.0, 0.74, 0.44),
+		"light_at": Vector3(0, 0.2, 0.16), "range": 4.5, "warm": 0.3, "desc": "A little shelf of candles on a wall. Dim and cosy, and a touch of warmth."},
+	"hanging_lantern": {"name": "Hanging Lantern", "page": "lights", "r": 0.0, "box": Vector3.ZERO, "mount": "ceiling", "light": Color(1.0, 0.8, 0.5),
+		"light_at": Vector3(0, -0.78, 0), "range": 9.5, "desc": "A lantern on a chain from a roof or an upper floor, lighting the room from the middle."},
 	"chest": {"name": "Chest", "page": "storage", "r": 0.48, "box": Vector3(0.95, 0.7, 0.6), "slots": 16, "desc": "Holds 16 stacks. Interact to open it."},
 	"large_chest": {"name": "Iron-Bound Chest", "page": "storage", "r": 0.6, "box": Vector3(1.2, 0.8, 0.7), "slots": 32, "desc": "Holds 32 stacks, bound in iron. Interact to open it."},
 }
@@ -358,7 +372,9 @@ const PIECE_COSTS := {
 	"table": {"plank": 4}, "chair": {"plank": 2}, "bench": {"plank": 3}, "bed": {"plank": 4, "hide": 2}, "shelf": {"plank": 4},
 	"rug": {"fiber": 12, "hide": 1}, "barrel": {"plank": 4, "rope": 1}, "crate": {"plank": 3}, "flower_pot": {"stone": 2, "fiber": 2},
 	"banner": {"sticks": 2, "fiber": 6}, "brazier": {"stone": 6, "charcoal": 2}, "lantern_post": {"plank": 2, "resin": 2},
-	"standing_torch": {"sticks": 3, "resin": 2, "fiber": 2}, "chest": {"plank": 6, "rope": 1}, "large_chest": {"plank": 8, "ingot_t2": 2},
+	"standing_torch": {"sticks": 3, "resin": 2, "fiber": 2},
+	"wall_torch": {"sticks": 2, "resin": 1, "fiber": 1}, "wall_lantern": {"plank": 1, "resin": 2, "ingot_t2": 1},
+	"candle_sconce": {"plank": 1, "resin": 2}, "hanging_lantern": {"rope": 1, "resin": 2, "ingot_t2": 1}, "chest": {"plank": 6, "rope": 1}, "large_chest": {"plank": 8, "ingot_t2": 2},
 }
 
 
@@ -672,6 +688,103 @@ static func deck_supported(cell: Vector2i, k: int, is_floor: bool, skip := "") -
 	return false
 
 
+# --- Lights on the building --------------------------------------------------------------------
+
+## A light that hangs on the building (a wall torch, a sconce, a hanging lantern), not one that stands on the ground.
+static func is_mounted(kind: String) -> bool:
+	return DECOR.get(kind, {}).has("mount")
+
+
+## Where on a wall piece lights go, by its shape: [x along it, height up it, which face (0 both, 1 front only, -1
+## back only)]. A plain wall: its middle. A door, doorway or window: either side of the opening, and over it. An
+## arch: either side and over its crown. (Shutters open across the front's sides: only the back has those.)
+const WALL_MOUNTS := {
+	"wall": [[0.0, 2.0, 0]],
+	"window": [[-1.05, 1.9, 0], [1.05, 1.9, 0], [0.0, 2.6, 0]],
+	"shutters": [[-1.05, 1.9, -1], [1.05, 1.9, -1], [0.0, 2.6, 0]],
+	"doorway": [[-1.08, 1.95, 0], [1.08, 1.95, 0], [0.0, 2.78, 0]],
+	"door": [[-1.08, 1.95, 0], [1.08, 1.95, 0], [0.0, 2.78, 0]],
+	"arch": [[-1.12, 1.85, 0], [1.12, 1.85, 0], [0.0, 3.0, 0]],
+}
+
+static var _undersides := {}
+
+
+## How far below its origin a roof's or floor's underside is (where a hanging lantern's chain is fixed).
+static func _underside(kind: String) -> float:
+	if not _undersides.has(kind):
+		var m: Dictionary = StructureModels.shared_model(kind, StandardMaterial3D.new())
+		_undersides[kind] = (m.body as Mesh).get_aabb().position.y
+	return float(_undersides[kind])
+
+
+## The set spots on a piece where a light of a mount type ("wall" or "ceiling") can hang: [{pos, yaw}] in the
+## world, yaw facing out from the face (a light's model faces +Z).
+static func mount_spots(st: Dictionary, mount: String) -> Array:
+	var out := []
+	if mount == "wall" and st.kind in WALL_KINDS:
+		var spots: Array = WALL_MOUNTS.get(shape_of(st.kind), [])
+		var yaw := float(st.get("yaw", 0.0))
+		var b := Basis(Vector3.UP, yaw)
+		var ext := StructureModels._extent(st.kind)
+		for l: Array in spots:
+			for side: int in [1, -1]:
+				if int(l[2]) != 0 and int(l[2]) != side:
+					continue
+				var face := (ext.y + 0.005) if side > 0 else (ext.x - 0.005)
+				out.append({"pos": _pos(st) + b * Vector3(float(l[0]), float(l[1]), face), "yaw": fposmod(yaw + (0.0 if side > 0 else PI), TAU)})
+	elif mount == "ceiling" and deck_k(st) >= 1:
+		out.append({"pos": _pos(st) + Vector3(0, _underside(st.kind), 0), "yaw": 0.0})
+	return out
+
+
+## The spot on piece `st` nearest where the crosshair hit it, on the face it hit ({pos, yaw, mount: id}), or {}.
+static func nearest_mount(kind: String, st: Dictionary, hit: Vector3, normal: Vector3) -> Dictionary:
+	var mount := String(DECOR.get(kind, {}).get("mount", ""))
+	if mount == "ceiling" and normal.y > -0.5:
+		return {}   # (a lantern hangs from underneath)
+	var best := {}
+	var best_d := 1.8
+	for sp: Dictionary in mount_spots(st, mount):
+		var facing := Basis(Vector3.UP, float(sp.yaw)) * Vector3.BACK
+		if mount == "wall" and facing.dot(normal) < 0.5:
+			continue   # the other face
+		var d := (sp.pos as Vector3).distance_to(hit)
+		if d < best_d or mount == "ceiling":
+			best_d = d
+			best = {"pos": sp.pos, "yaw": sp.yaw, "mount": st.id}
+	return best
+
+
+## The piece and spot a light at `pos` hangs on ({st, yaw}), or {}.
+static func mount_at(kind: String, pos: Vector3) -> Dictionary:
+	var mount := String(DECOR.get(kind, {}).get("mount", ""))
+	var c := cell_of(pos)
+	for dj in [-1, 0, 1]:
+		for di in [-1, 0, 1]:
+			for st: Dictionary in _cell_list(Vector2i(c.x + di, c.y + dj)):
+				for sp: Dictionary in mount_spots(st, mount):
+					if (sp.pos as Vector3).distance_to(pos) < 0.06:
+						return {"st": st, "yaw": sp.yaw}
+	return {}
+
+
+## Why a light can't hang at `pos` ("" if it can).
+static func _mount_problem(kind: String, pos: Vector3) -> String:
+	var m := mount_at(kind, pos)
+	if m.is_empty():
+		return "Aim at the underside of a roof or upper floor" if DECOR[kind].mount == "ceiling" else "Aim at a wall, or a door, window or arch frame"
+	if is_blueprint(m.st):
+		return "Finish building the %s first" % ItemDB.display_name(m.st.kind).to_lower()
+	var c := cell_of(pos)
+	for dj in [-1, 0, 1]:
+		for di in [-1, 0, 1]:
+			for o: Dictionary in _cell_list(Vector2i(c.x + di, c.y + dj)):
+				if is_mounted(o.kind) and _pos(o).distance_to(pos) < 0.3:
+					return "There's already a light there"
+	return ""
+
+
 # --- What a building is good for ---------------------------------------------------------------
 
 ## Ground taken by building pieces: a floor, or a wall, fence or other edge piece on one of its edges, or stairs.
@@ -848,6 +961,8 @@ static func placement_problem(pos: Vector3, kind := "", yaw := 0.0) -> String:
 			if o.kind in EDGE_KINDS and _pos(o).distance_to(pos) < 0.5:
 				return "There's already a wall here"
 		return ""
+	if is_mounted(kind):
+		return _mount_problem(kind, pos)
 	# Stations, furniture, lights and storage: on the ground, or on top of a finished floor.
 	var on_floor := not floor_under(pos).is_empty()
 	if not on_floor and Game.world_gen.get_normal(pos.x, pos.z).y < 0.8:
@@ -974,6 +1089,10 @@ static func place_blueprint(player_id: int, kind: String, pos: Vector3, yaw: flo
 		pos = sn_s.pos
 		yaw = sn_s.yaw
 		level = int(sn_s.level)
+	elif is_mounted(kind):
+		var m := mount_at(kind, pos)
+		yaw = float(m.yaw)
+		level = int(m.st.get("level", 0))
 	elif is_decor(kind):
 		level = 0
 		pos = on_floor_top(pos)
@@ -984,6 +1103,8 @@ static func place_blueprint(player_id: int, kind: String, pos: Vector3, yaw: flo
 		"built": 0.0, "hp": 0.0, "max_hp": float(MAT_HP[piece_mat(kind)]), "spent": {}}
 	if kind in DOOR_KINDS:
 		st["open"] = false
+	if is_mounted(kind):
+		st["mount"] = String(mount_at(kind, pos).st.id)
 	Game.structures[id] = st
 	Game.structures_changed.emit()
 	return {"ok": true, "id": id, "kind": kind, "level": level, "pos": pos, "yaw": yaw}
@@ -1190,8 +1311,27 @@ static func _shortfall(inv: Inventory, need: Dictionary) -> String:
 	return ", ".join(parts)
 
 
+## The floor or ground under a point (the top of the highest floor below it in its cell, else the terrain).
+static func _ground_below(p: Vector3) -> Vector3:
+	var y := Game.world_gen.get_height(p.x, p.z)
+	for f: Dictionary in foundations_in(cell_of(p)):
+		if not is_blueprint(f) and _pos(f).y + FLOOR_TOP <= p.y + 0.1:
+			y = maxf(y, _pos(f).y + FLOOR_TOP)
+	return Vector3(p.x, y, p.z)
+
+
 static func _remove_piece(st: Dictionary) -> void:
 	Game.structures.erase(st.id)
+	# Lights hung on it come down with it, whole: what they cost (or what went into a half-built one) drops there.
+	for id: String in Game.structures.keys():
+		var o: Dictionary = Game.structures[id]
+		if String(o.get("mount", "")) != String(st.id):
+			continue
+		var back: Dictionary = o.get("spent", {}) if is_blueprint(o) else PIECE_COSTS.get(o.kind, {})
+		for item: String in back:
+			if int(back[item]) > 0:
+				spawn_pickup(item, int(back[item]), -1, _ground_below(_pos(o)))
+		Game.structures.erase(id)
 	Game.structures_changed.emit()
 
 

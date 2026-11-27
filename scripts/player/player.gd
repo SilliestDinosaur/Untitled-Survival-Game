@@ -1062,7 +1062,16 @@ func _update_placement() -> void:
 	if pos == Vector3.INF:
 		var flat := Vector3(dir.x, 0, dir.z).normalized()
 		pos = global_position + flat * 3.0
-	if not GameActions.is_building(kind_now) or GameActions.is_decor(kind_now):
+	var mount_spot := {}
+	if GameActions.is_mounted(kind_now):
+		# A wall light or hanging lantern: the set spot nearest the crosshair on the wall face (or ceiling) aimed at.
+		if is_instance_valid(aimed) and (aimed as Node).has_meta("structure") and ray.get_collision_point().distance_to(from) <= REACH + 2.0:
+			var ast: Dictionary = Game.structures.get(String((aimed as Node).get_meta("structure")), {})
+			if not ast.is_empty():
+				mount_spot = GameActions.nearest_mount(kind_now, ast, ray.get_collision_point(), ray.get_collision_normal())
+		if not mount_spot.is_empty():
+			pos = mount_spot.pos
+	elif not GameActions.is_building(kind_now) or GameActions.is_decor(kind_now):
 		# A station (or furniture, a light...) stands on the ground, or on the top of a floor when that's what you're
 		# aiming at.
 		pos.y = Game.world_gen.get_height(pos.x, pos.z)
@@ -1090,10 +1099,12 @@ func _update_placement() -> void:
 		else:
 			yaw += _place_turns * PI * 0.5
 		_snapped_level = int(snap.get("level", 0))
+	if not mount_spot.is_empty():
+		yaw = float(mount_spot.yaw)   # facing out from the wall it hangs on
 	yaw = fposmod(yaw, TAU)
 	var flat_dist := Vector2(pos.x - global_position.x, pos.z - global_position.z).length()
 	var reason := GameActions.placement_problem(pos, kind, yaw)
-	if reason == "" and flat_dist < 1.2:
+	if reason == "" and flat_dist < 1.2 and not GameActions.is_mounted(kind):
 		reason = "Too close to you"
 	if reason == "" and GameActions.is_building(kind) and not GameActions.is_decor(kind) and _overlaps_player(pos, kind, yaw):
 		reason = "You're standing there"
@@ -1203,6 +1214,13 @@ func _update_exposure() -> void:
 		_heat += 0.45
 	for id: String in Game.structures:
 		var st: Dictionary = Game.structures[id]
+		var warm := float(GameActions.DECOR.get(st.kind, {}).get("warm", 0.0))
+		if warm > 0.0 and not GameActions.is_blueprint(st):
+			# A wall torch or candles: a little warmth close by (kept in by the room, like a fire's).
+			var wd := p.distance_to(Vector3(st.pos[0], st.pos[1], st.pos[2]))
+			if wd < 3.5:
+				_heat += warm * (1.0 - wd / 3.5) * (1.0 + maxf(shelter - 0.5, 0.0))
+			continue
 		if not st.kind in ["campfire", "forge"]:
 			continue
 		var sp: Array = st.pos

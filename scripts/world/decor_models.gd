@@ -34,6 +34,10 @@ static func build(kind: String, k: MeshKit, glow: MeshKit, rng: RandomNumberGene
 		"brazier": _brazier(k, glow, rng)
 		"lantern_post": _lantern_post(k, glow)
 		"standing_torch": _standing_torch(k, glow)
+		"wall_torch": _wall_torch(k, glow)
+		"wall_lantern": _wall_lantern(k, glow)
+		"candle_sconce": _candle_sconce(k, glow, rng)
+		"hanging_lantern": _hanging_lantern(k, glow)
 		"chest": _chest(k, rng, false)
 		"large_chest": _chest(k, rng, true)
 
@@ -249,6 +253,84 @@ static func _standing_torch(k: MeshKit, glow: MeshKit) -> void:
 		func(t: float, a: float) -> Color: return Color(0.42, 0.3, 0.2) if fposmod(a * 2.0 + t * 9.0, 1.0) < 0.5 else Color(0.3, 0.22, 0.15),
 		Callable(), true, true)
 	glow.add_primitive(MeshKit.sphere(0.05, 8, 5), Transform3D(Basis.from_scale(Vector3(1.0, 0.6, 1.0)), Vector3(0, 1.53, 0)), EMBER, 0.0, 0.05)
+
+
+# --- Lights on the building: origin on the wall's face (or a ceiling's underside), facing out along +Z -------
+
+## An iron back plate fixed to the wall with two rivets (every wall light starts from one).
+static func _wall_plate(k: MeshKit, w: float, h: float, y: float) -> void:
+	k.add_primitive(StructureModels._box(Vector3(w, h, 0.02)), Transform3D(Basis(), Vector3(0, y, 0.012)), IRON, 0.0, 0.02)
+	for sy in [-1.0, 1.0]:
+		k.add_primitive(MeshKit.sphere(0.014, 6, 4), Transform3D(Basis(), Vector3(0, y + sy * (h * 0.5 - 0.03), 0.026)), IRON.lightened(0.25), 0.0, 0.02)
+
+
+## A lantern: iron top and base, four corner rods, a pyramid cap and a ring, glowing glass between (centred on c).
+static func _lantern(k: MeshKit, glow: MeshKit, c: Vector3, s: float) -> void:
+	k.add_primitive(StructureModels._box(Vector3(0.18, 0.025, 0.18) * s), Transform3D(Basis(), c + Vector3(0, 0.11 * s, 0)), IRON, 0.0, 0.03)
+	k.add_primitive(StructureModels._box(Vector3(0.16, 0.025, 0.16) * s), Transform3D(Basis(), c - Vector3(0, 0.11 * s, 0)), IRON, 0.0, 0.03)
+	k.add_primitive(MeshKit.cylinder(0.0, 0.11 * s, 0.08 * s, 4), Transform3D(Basis(Vector3.UP, PI * 0.25), c + Vector3(0, 0.162 * s, 0)), IRON, 0.0, 0.03)
+	k.loft([c + Vector3(0, 0.2, -0.018) * s, c + Vector3(0, 0.235, 0) * s, c + Vector3(0, 0.2, 0.018) * s], [0.006, 0.006, 0.006], 4, IRON)
+	for sx in [-1.0, 1.0]:
+		for sz in [-1.0, 1.0]:
+			k.add_primitive(StructureModels._box(Vector3(0.018, 0.2, 0.018) * s), Transform3D(Basis(), c + Vector3(sx * 0.07, 0, sz * 0.07) * s), IRON, 0.0, 0.02)
+	glow.add_primitive(StructureModels._box(Vector3(0.11, 0.17, 0.11) * s), Transform3D(Basis(), c), Color(1.0, 0.82, 0.5), 0.0, 0.0)
+
+
+## A torch in an iron bracket: a back plate, an arm out to a ring, the torch leaning out through it.
+static func _wall_torch(k: MeshKit, glow: MeshKit) -> void:
+	_wall_plate(k, 0.09, 0.26, 0.0)
+	# The arm: out from the plate and up a little to the ring the torch sits in, and a stay under it.
+	k.loft([Vector3(0, 0.04, 0.02), Vector3(0, 0.07, 0.12), Vector3(0, 0.1, 0.19)], [0.012, 0.011, 0.01], 5, IRON)
+	k.loft([Vector3(0, -0.09, 0.02), Vector3(0, -0.02, 0.12), Vector3(0, 0.08, 0.19)], [0.009, 0.009, 0.008], 5, IRON)
+	k.loft([Vector3(-0.035, 0.1, 0.2), Vector3(0, 0.1, 0.235), Vector3(0.035, 0.1, 0.2), Vector3(0, 0.1, 0.165), Vector3(-0.035, 0.1, 0.2)],
+		[0.008, 0.008, 0.008, 0.008, 0.008], 4, IRON.lightened(0.1))
+	# The torch: a stick leaning out, a resin-soaked head of wrapped rags, its middle glowing.
+	var lean := Vector3(0, 1.0, 0.28).normalized()
+	var foot := Vector3(0, 0.1, 0.2) - lean * 0.2
+	k.loft([foot, foot + lean * 0.25, foot + lean * 0.42], [0.024, 0.022, 0.02], 7, WOOD_DARK)
+	var h0 := foot + lean * 0.4
+	k.loft([h0, h0 + lean * 0.07, h0 + lean * 0.14], [0.038, 0.048, 0.04], 9, Color(0.36, 0.26, 0.18),
+		func(t: float, a: float) -> Color: return Color(0.42, 0.3, 0.2) if fposmod(a * 2.0 + t * 9.0, 1.0) < 0.5 else Color(0.3, 0.22, 0.15),
+		Callable(), true, true)
+	glow.add_primitive(MeshKit.sphere(0.034, 8, 5), Transform3D(Basis.from_scale(Vector3(1.0, 0.6, 1.0)), h0 + lean * 0.15), EMBER, 0.0, 0.05)
+
+
+## A lantern on a hook: a back plate, a curled iron arm out over it, the lantern hanging from its end.
+static func _wall_lantern(k: MeshKit, glow: MeshKit) -> void:
+	_wall_plate(k, 0.08, 0.24, 0.16)
+	k.loft([Vector3(0, 0.2, 0.02), Vector3(0, 0.26, 0.12), Vector3(0, 0.25, 0.24), Vector3(0, 0.21, 0.3)], [0.012, 0.011, 0.01, 0.009], 6, IRON)
+	k.loft([Vector3(0, 0.08, 0.02), Vector3(0, 0.14, 0.12), Vector3(0, 0.24, 0.2)], [0.008, 0.008, 0.008], 5, IRON)   # its stay
+	k.loft([Vector3(0, 0.2, 0.3), Vector3(0, 0.14, 0.3)], [0.005, 0.005], 4, IRON)   # the short chain
+	_lantern(k, glow, Vector3(0, -0.06, 0.3), 1.0)
+
+
+## A candle sconce: a backboard, a little shelf on a bracket, three candles of different heights burning on it.
+static func _candle_sconce(k: MeshKit, glow: MeshKit, rng: RandomNumberGenerator) -> void:
+	_post(k, Vector3(0.36, 0.34, 0.022), Vector3(0, 0.1, 0.012), _wood(rng, WOOD_DARK))
+	_post(k, Vector3(0.38, 0.03, 0.14), Vector3(0, -0.005, 0.085), _wood(rng))
+	k.loft([Vector3(0, -0.12, 0.026), Vector3(0, -0.06, 0.08), Vector3(0, -0.025, 0.13)], [0.012, 0.011, 0.01], 5, WOOD_DARK)   # bracket
+	for i in 3:
+		var x := (i - 1) * 0.1 + rng.randf_range(-0.01, 0.01)
+		var h := [0.13, 0.19, 0.1][i] as float
+		var at := Vector3(x, 0.011, 0.09 + rng.randf_range(-0.01, 0.01))
+		k.add_primitive(MeshKit.cylinder(0.03, 0.038, 0.012, 8), Transform3D(Basis(), at + Vector3(0, 0.006, 0)), IRON.lightened(0.15), 0.0, 0.02)   # dish
+		k.add_primitive(MeshKit.cylinder(0.024, 0.026, h, 8), Transform3D(Basis(), at + Vector3(0, 0.012 + h * 0.5, 0)), Color(0.93, 0.88, 0.74), 0.0, 0.02)
+		# Drips of wax down its side, and the wick's glow.
+		k.add_primitive(MeshKit.sphere(0.009, 5, 3), Transform3D(Basis.from_scale(Vector3(1.0, 2.2, 1.0)), at + Vector3(0.022, h * 0.7, 0.006)), Color(0.95, 0.91, 0.78), 0.0, 0.01)
+		# The flame itself, a bright teardrop over the wick (an additive flame alone washes out on a lit wall).
+		k.add_primitive(MeshKit.cylinder(0.0015, 0.0015, 0.012, 4), Transform3D(Basis(), at + Vector3(0, 0.018 + h, 0)), Color(0.15, 0.12, 0.1), 0.0, 0.0)
+		glow.add_primitive(MeshKit.sphere(0.015, 6, 4), Transform3D(Basis.from_scale(Vector3(1.0, 2.4, 1.0)), at + Vector3(0, 0.05 + h, 0)), Color(1.0, 0.8, 0.4), 0.0, 0.0)
+
+
+## A lantern hanging on a chain from a ceiling: a ring fixed to the underside, the chain, the lantern below.
+static func _hanging_lantern(k: MeshKit, glow: MeshKit) -> void:
+	k.add_primitive(MeshKit.cylinder(0.07, 0.07, 0.04, 10), Transform3D(Basis(), Vector3(0, 0.0, 0)), IRON, 0.0, 0.02)
+	for i in 8:   # the chain: links turned alternately
+		var y := -0.04 - i * 0.07
+		var b := Basis(Vector3.UP, PI * 0.5 * (i % 2))
+		k.loft([Vector3(0, y, 0), b * Vector3(0.018, y - 0.03, 0) + Vector3(0, 0, 0), Vector3(0, y - 0.06, 0), b * Vector3(-0.018, y - 0.03, 0), Vector3(0, y, 0)],
+			[0.005, 0.005, 0.005, 0.005, 0.005], 4, IRON)
+	_lantern(k, glow, Vector3(0, -0.78, 0), 1.25)
 
 
 ## A chest: planks on a frame, iron straps over it, a lock plate; the large one is longer and taller, iron-bound,
