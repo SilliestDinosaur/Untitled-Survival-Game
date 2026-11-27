@@ -37,7 +37,20 @@ var mult_damage := 1.0
 var mult_regen := 1.0
 
 
+## A gentle start (Easy and Normal): hunger and cold run at about half speed for the first ten minutes or so of a world,
+## easing up to their full rate by half an hour in, so a new player has time to find food and make a fire before the
+## first night. Hard has none.
+var gentle_start := true
+
+
+func _start_ease() -> float:
+	if not gentle_start:
+		return 1.0
+	return lerpf(0.55, 1.0, smoothstep(600.0, 1800.0, Game.play_time))
+
+
 func apply_difficulty(level: int) -> void:
+	gentle_start = level != Difficulty.HARD
 	var p := Difficulty.preset(level)
 	mult_hunger = float(p.hunger)
 	mult_cold = float(p.cold)
@@ -64,7 +77,8 @@ func tick(delta: float, sprinting: bool, cold_now := 0.0, heat_now := 0.0) -> vo
 	cold = cold_now
 	heat = heat_now
 	# Warmth: night, cold biomes and water drain it; fires and torches restore it.
-	var net := heat_now - cold_now * cold_rate * mult_cold
+	var ease := _start_ease()
+	var net := heat_now - cold_now * cold_rate * mult_cold * ease
 	if cold_now <= 0.05 and net >= 0.0:
 		net = maxf(net, warm_up_rate)
 	warmth = clampf(warmth + net * delta, 0.0, max_warmth)
@@ -78,7 +92,7 @@ func tick(delta: float, sprinting: bool, cold_now := 0.0, heat_now := 0.0) -> vo
 		health = minf(max_health, health + 2.5 * delta)
 	if effects.has("poison"):
 		take_damage(1.6 * delta, false)
-	var drain := hunger_drain * mult_hunger * (1.6 if sprinting else 1.0) * (0.35 if effects.has("satiate") else 1.0)
+	var drain := hunger_drain * mult_hunger * ease * (1.6 if sprinting else 1.0) * (0.35 if effects.has("satiate") else 1.0)
 	hunger = maxf(0.0, hunger - drain * delta)
 	if hunger <= 0.0:
 		take_damage(starve_damage * delta, false)

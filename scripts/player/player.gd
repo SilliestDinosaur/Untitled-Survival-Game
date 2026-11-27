@@ -106,6 +106,7 @@ func _ready() -> void:
 
 ## Places marked on the map: [{"pos": [x, z], "name", "color" (index)}], and where you last fell ([x, y, z] or []).
 var markers: Array = []
+var progress := {}   ## first steps and journal milestones (see progress.gd)
 var death_pos: Array = []
 const MAX_MARKERS := 24
 
@@ -124,6 +125,7 @@ func to_save_data() -> Dictionary:
 		"inventory": inventory.to_data(),
 		"markers": markers.duplicate(true),
 		"death": death_pos,
+		"progress": progress,
 	}
 
 
@@ -143,6 +145,7 @@ func apply_save_data(d: Dictionary) -> void:
 	stats.effects = d.get("effects", {})
 	markers = d.get("markers", [])
 	death_pos = d.get("death", [])
+	progress = d.get("progress", {})
 	if d.has("inventory"):
 		inventory.from_data(d.inventory)
 	elif d.has("items"):   # older saves: item counts only

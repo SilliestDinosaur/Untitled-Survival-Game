@@ -45,11 +45,39 @@ static func list_saves() -> Array[Dictionary]:
 ## A world's save. If the file is missing or unreadable (a crash, a full disk), the copy kept from the save before
 ## it is used, then a save that was written but never swapped in, so a bad write loses minutes, not the world.
 static func read(id: String) -> Dictionary:
-	for path: String in [_path(id), _path(id) + ".bak", _path(id) + ".tmp"]:
+	for path: String in _all_paths(id):
 		var data := _read_file(path)
 		if not data.is_empty():
 			return data
 	return {}
+
+
+## A world's file and its fallbacks, newest first: the last good save, a half-written one, then the older snapshots.
+static func _all_paths(id: String) -> Array:
+	var out := [_path(id), _path(id) + ".bak", _path(id) + ".tmp"]
+	for k in range(1, SNAPSHOTS + 1):
+		out.append(_path(id) + ".old%d" % k)
+	return out
+
+
+## Older snapshots kept besides the last save (a save that loads but went wrong, not just a broken file, can be
+## gone back from by hand): one every SNAPSHOT_EVERY seconds, the oldest dropped.
+const SNAPSHOTS := 3
+const SNAPSHOT_EVERY := 600
+
+
+static func _snapshot(id: String) -> void:
+	var path := _path(id)
+	if not FileAccess.file_exists(path):
+		return
+	var newest := path + ".old1"
+	if FileAccess.file_exists(newest) and Time.get_unix_time_from_system() - FileAccess.get_modified_time(newest) < SNAPSHOT_EVERY:
+		return
+	for k in range(SNAPSHOTS, 1, -1):
+		var from := path + ".old%d" % (k - 1)
+		if FileAccess.file_exists(from):
+			DirAccess.copy_absolute(from, path + ".old%d" % k)
+	DirAccess.copy_absolute(path, newest)
 
 
 static func _read_file(path: String) -> Dictionary:
@@ -75,6 +103,7 @@ static func write(id: String, data: Dictionary) -> bool:
 	f.close()
 	var path := _path(id)
 	if FileAccess.file_exists(path):
+		_snapshot(id)
 		DirAccess.copy_absolute(path, path + ".bak")   # the last good save, in case this one is ever unreadable
 	var err := DirAccess.rename_absolute(tmp, path)
 	if err != OK and FileAccess.file_exists(path):
@@ -103,7 +132,7 @@ static func create(seed_value: int, display_name: String) -> String:
 
 
 static func delete(id: String) -> void:
-	for path: String in [_path(id), _path(id) + ".bak", _path(id) + ".tmp"]:
+	for path: String in _all_paths(id):
 		if FileAccess.file_exists(path):
 			DirAccess.remove_absolute(path)
 

@@ -39,6 +39,9 @@ var _cave_features: CaveFeatures
 var _landmarks: LandmarkModels
 var _cave_check := 0.0            ## counts down to the next look at whether the player is underground
 var _map: WorldMap
+const Progress := preload("res://scripts/gameplay/progress.gd")
+var _journal: Control    ## the journal page (see journal_ui.gd)
+var _progress_t := 0.0
 var _reveal_timer := 0.0          ## counts down to the next uncovering of the map around the player
 
 
@@ -65,6 +68,9 @@ func _ready() -> void:
 	_map = WorldMap.new()
 	root.add_child(_map)
 	_map.player = player
+	_journal = preload("res://scripts/ui/journal_ui.gd").new()
+	root.add_child(_journal)
+	_journal.player = player
 	_debug_items = Menus.DebugItems.new()
 	root.add_child(_debug_items)
 	_debug_items.setup(player.inventory)
@@ -356,6 +362,9 @@ func _start_loading(at: Vector3, heading := "Generating") -> void:
 	if _pending_player.is_empty():
 		player.rotation = Vector3(0, randf() * TAU, 0)
 		player.stats.reset()
+		player.markers = []      # a fresh start: nothing carried over from the last world
+		player.death_pos = []
+		player.progress = {}
 	_set_focus(player)
 
 
@@ -387,12 +396,25 @@ func _start_playing() -> void:
 	_hud.show()
 	_hud.show_arrival(Game.world_name)
 	_hud.sync_time()
+	if player.progress.is_empty():
+		player.progress = Progress.blank()
+	Progress.update(player.progress, player, [])   # what's already done (an old save) counts without fanfare
+	_hud.guide.refresh([])
 	if Net.host_on_start and not Net.is_online():
 		Net.host()
 	_autosave = AUTOSAVE_SECONDS
 	var tw := create_tween()
 	tw.tween_property(_loading, "modulate:a", 0.0, 0.8)
 	tw.tween_callback(_loading.hide)
+
+
+func _toggle_journal(open: bool) -> void:
+	if open:
+		_journal.open()
+	else:
+		_journal.visible = false
+	Audio.play(Audio.sfx.open if open else Audio.sfx.close, -6.0)
+	Input.mouse_mode = Input.MOUSE_MODE_VISIBLE if open else Input.MOUSE_MODE_CAPTURED
 
 
 func _toggle_map(open: bool) -> void:
@@ -446,7 +468,11 @@ func _unhandled_input(event: InputEvent) -> void:
 		_toggle_inventory(not _inventory.visible)
 		get_viewport().set_input_as_handled()
 		return
-	if event.is_action_pressed("map") and state == State.PLAYING and not _inventory.visible:
+	if event.is_action_pressed("journal") and state == State.PLAYING and not _inventory.visible and not _map.visible:
+		_toggle_journal(not _journal.visible)
+		get_viewport().set_input_as_handled()
+		return
+	if event.is_action_pressed("map") and state == State.PLAYING and not _inventory.visible and not _journal.visible:
 		_toggle_map(not _map.visible)
 		get_viewport().set_input_as_handled()
 		return
@@ -461,6 +487,8 @@ func _unhandled_input(event: InputEvent) -> void:
 		_toggle_inventory(false)
 	elif _map.visible:
 		_toggle_map(false)
+	elif _journal.visible:
+		_toggle_journal(false)
 	elif _new_world.visible or _load.visible or _multiplayer.visible:
 		_back_to_title_menu()
 	elif state == State.PLAYING:
@@ -498,11 +526,20 @@ func _process(delta: float) -> void:
 					_warmup = null
 					_start_playing()
 		State.PLAYING:
+			_progress_t -= delta
+			if _progress_t <= 0.0:
+				_progress_t = 0.5
+				var steps: Array = []
+				for id: String in Progress.update(player.progress, player, steps):
+					_hud.toast.show_milestone(id)
+				if not steps.is_empty():
+					_hud.guide.refresh(steps)
 			_autosave -= delta
 			if _autosave <= 0.0:
 				save_now()
 				_hud.show_hint("Game saved")
-	if state == State.PLAYING and Input.mouse_mode != Input.MOUSE_MODE_CAPTURED and not _settings.visible and not _inventory.visible and not _debug_items.visible:
+	if state == State.PLAYING and Input.mouse_mode != Input.MOUSE_MODE_CAPTURED and not _settings.visible and not _inventory.visible and not _debug_items.visible \
+			and not _map.visible and not _journal.visible:
 		# Clicking back into the game window recaptures the mouse.
 		if Input.is_mouse_button_pressed(MOUSE_BUTTON_LEFT):
 			Input.mouse_mode = Input.MOUSE_MODE_CAPTURED

@@ -42,6 +42,12 @@ var _clock: Label
 var _time_banner: Label
 var _was_night := false
 var _dusk_warned := false
+var _hunger_nudged := false
+var _hint_tw: Tween
+var _cold_nudged := false
+const JournalUI := preload("res://scripts/ui/journal_ui.gd")
+var guide: JournalUI.Guide     ## the first-steps checklist (top left)
+var toast: JournalUI.Toast     ## "New in your journal" (under the compass)
 
 
 func setup(p: CharacterBody3D, w: Node) -> void:
@@ -52,6 +58,10 @@ func setup(p: CharacterBody3D, w: Node) -> void:
 	player.inventory.item_added.connect(_feed.add_item)
 	player.hint.connect(show_hint)
 	player.hit_landed.connect(hit_marker)
+	guide.player = p
+	Settings.changed.connect(func() -> void:
+		if not player.progress.is_empty():
+			guide.refresh([]))
 
 
 func _ready() -> void:
@@ -107,6 +117,7 @@ func _ready() -> void:
 	add_child(bars)
 	_health = StatBar.new(Color(0.90, 0.30, 0.30), "HEALTH")
 	_hunger = StatBar.new(Color(0.93, 0.62, 0.25), "FOOD")
+	_hunger.warn_below = 0.25
 	_stamina = StatBar.new(Color(0.55, 0.85, 0.45), "STAM")
 	_stamina.auto_hide = true
 	_stamina.warn_below = 0.15
@@ -175,6 +186,12 @@ func _ready() -> void:
 	_debug = UITheme.label("", 14, UITheme.TEXT, 4)
 	_debug.position = Vector2(14, 10)
 	add_child(_debug)
+	guide = JournalUI.Guide.new()
+	UITheme.place(guide, Control.PRESET_TOP_LEFT, Vector2(24, 150))
+	add_child(guide)
+	toast = JournalUI.Toast.new()
+	UITheme.place(toast, Control.PRESET_CENTER_TOP, Vector2(-210, 112), Vector2(420, 0))
+	add_child(toast)
 
 
 ## The screen-mood pass: only drawn while something's showing (it reads the whole screen back).
@@ -209,12 +226,14 @@ func _overlay(tint: Color, intensity: float, softness: float) -> ColorRect:
 	return r
 
 
-func show_hint(text: String) -> void:
+func show_hint(text: String, hold := 1.6) -> void:
 	_hint.text = text
 	_hint.modulate.a = 1.0
-	var tw := create_tween()
-	tw.tween_interval(1.6)
-	tw.tween_property(_hint, "modulate:a", 0.0, 0.6)
+	if _hint_tw:
+		_hint_tw.kill()   # (a hint still fading out mustn't fade this one)
+	_hint_tw = create_tween()
+	_hint_tw.tween_interval(hold)
+	_hint_tw.tween_property(_hint, "modulate:a", 0.0, 0.6)
 
 
 func show_arrival(world_name: String) -> void:
@@ -350,10 +369,25 @@ func _process(delta: float) -> void:
 	var eff: Array[String] = []
 	for e: String in player.stats.effects:
 		eff.append("%s %ds" % [ItemDB.EFFECTS[e].name, ceili(player.stats.effects[e])])
+	if s.hunger <= 0.0:
+		eff.append("Starving! Eat something")
+	elif s.hunger < s.max_hunger * 0.25:
+		eff.append("Hungry")
 	if s.warmth <= 0.0:
 		eff.append("Freezing! Find a fire")
 	elif s.is_cold():
 		eff.append("Cold")
+	# A nudge once, well before either starts to hurt (again only after things have been put right).
+	if s.hunger < s.max_hunger * 0.3 and not _hunger_nudged:
+		_hunger_nudged = true
+		show_hint("You're getting hungry: berries, fruit or cooked meat", 4.5)
+	elif s.hunger > s.max_hunger * 0.5:
+		_hunger_nudged = false
+	if s.warmth < s.max_warmth * 0.35 and not _cold_nudged:
+		_cold_nudged = true
+		show_hint("You're getting cold: get to a fire, or out of the wind and water", 4.5)
+	elif s.warmth > s.max_warmth * 0.6:
+		_cold_nudged = false
 	elif s.heat > 1.0 and s.warmth < s.max_warmth:
 		eff.append("Warming up")
 	_effects.text = "   ".join(eff)

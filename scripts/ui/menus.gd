@@ -322,7 +322,9 @@ class PauseMenu extends Control:
 	signal settings_pressed
 	signal quit_to_title_pressed
 	signal quit_game_pressed
+	signal help_pressed
 
+	var _help: Control
 	var _sub: Label
 	var _status: Label
 	var _mp: MultiplayerBox
@@ -346,11 +348,20 @@ class PauseMenu extends Control:
 		col.add_theme_constant_override("separation", 10)
 		cols.add_child(col)
 		for entry in [["Resume", resume_pressed, true], ["Save Game", save_pressed, false], ["Settings", settings_pressed, false],
-				["Save & Quit to Title", quit_to_title_pressed, false], ["Save & Quit Game", quit_game_pressed, false]]:
+				["How to Play", help_pressed, false], ["Save & Quit to Title", quit_to_title_pressed, false], ["Save & Quit Game", quit_game_pressed, false]]:
 			var b := UITheme.button(entry[0], entry[2], 340)
 			var sig: Signal = entry[1]
 			b.pressed.connect(func() -> void: sig.emit())
 			col.add_child(b)
+		help_pressed.connect(func() -> void:
+			if _help:
+				_help.queue_free()
+			_help = HelpCard.new()
+			add_child(_help))
+		visibility_changed.connect(func() -> void:
+			if not visible and _help:
+				_help.queue_free()
+				_help = null)
 		_status = UITheme.label("", 15, UITheme.ACCENT)
 		_status.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 		col.add_child(_status)
@@ -377,12 +388,29 @@ class SettingsPanel extends Control:
 	var _waiting_action := ""
 	var _bind_buttons := {}
 
+	var _tabs: TabContainer
+	var _preset_ob: OptionButton
+
 	func _ready() -> void:
 		set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
+		_build()
+
+	## Build the panel afresh (after a preset changes many options at once), on the same tab.
+	func _rebuild() -> void:
+		var tab := _tabs.current_tab if _tabs else 0
+		for c in get_children():
+			remove_child(c)
+			c.queue_free()
+		_bind_buttons.clear()
+		_build()
+		_tabs.current_tab = tab
+
+	func _build() -> void:
 		Menus._dim(self, 0.5)
 		var col := Menus._card(self, Vector2(720, 600), 6)
 		col.add_child(UITheme.heading("Settings", 40))
 		var tabs := TabContainer.new()
+		_tabs = tabs
 		tabs.size_flags_vertical = Control.SIZE_EXPAND_FILL
 		col.add_child(tabs)
 
@@ -392,8 +420,18 @@ class SettingsPanel extends Control:
 		_check(game, "Invert mouse Y", Settings.invert_y, func(on: bool) -> void: Settings.invert_y = on)
 		_slider(game, "Field of view", 60.0, 110.0, 1.0, Settings.fov, "%d°", func(v: float) -> void: Settings.fov = v)
 		_check(game, "Show FPS", Settings.show_fps, func(on: bool) -> void: Settings.show_fps = on)
+		_check(game, "Show first-steps guide", Settings.show_guide, func(on: bool) -> void: Settings.show_guide = on)
 
 		var gfx := _tab(tabs, "Graphics", true)
+		var presets: Array = Settings.PRESETS.keys()
+		var now := Settings.current_preset()
+		if now == "Custom":
+			presets.append("Custom")
+		_options(gfx, "Preset", presets, now, func(v: String) -> void:
+			if v != "Custom":
+				Settings.apply_preset(v)
+				_rebuild.call_deferred())
+		_preset_ob = gfx.get_child(gfx.get_child_count() - 1)
 		_options(gfx, "View distance", Settings.VIEW_DISTANCES.keys(), Settings.view_distance,
 			func(v: String) -> void: Settings.view_distance = v)
 		_options(gfx, "Model detail", Settings.MODEL_DETAIL.keys(), Settings.model_detail,
@@ -477,6 +515,17 @@ class SettingsPanel extends Control:
 	func _changed() -> void:
 		Settings.apply()
 		Settings.save_settings()
+		# The preset shown follows the options (one changed by hand makes it "Custom").
+		if _preset_ob:
+			var now := Settings.current_preset()
+			var found := -1
+			for i in _preset_ob.item_count:
+				if _preset_ob.get_item_text(i) == now:
+					found = i
+			if found < 0:
+				_preset_ob.add_item(now)
+				found = _preset_ob.item_count - 1
+			_preset_ob.select(found)
 
 	func _slider(grid: GridContainer, title: String, lo: float, hi: float, step: float, value: float, fmt: String, setter: Callable, display_mul := 1.0) -> void:
 		grid.add_child(UITheme.label(title, 18))
@@ -871,3 +920,71 @@ class MultiplayerPanel extends Control:
 		_join.disabled = true
 		if not Net.join(_code.text):
 			_join.disabled = false
+
+
+## How to play: the controls (as the player has them bound) and the few things worth knowing to get going.
+class HelpCard extends Control:
+	const TIPS := [
+		"Food and warmth run down over time. Eat, and keep near a fire at night and in the cold.",
+		"Harvest bushes and plants by hand; swing a tool (or your fists) to chop, mine and break things.",
+		"Your satchel shows what you can make by hand. Stand at a campfire, workbench or forge and use it to make more.",
+		"Better tools come from better materials: stone, then a workbench, then a forge and metal.",
+		"To build: hold a building plan and the building wheel key, place free blueprints, then build them up with a hammer.",
+		"If you fall, your things stay where you dropped. It's marked on your map and compass.",
+		"Caves hold ore and crystals, and they're dark: bring a torch.",
+		"Your journal has things to aim for once you've found your feet.",
+	]
+
+	func _ready() -> void:
+		set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
+		mouse_filter = Control.MOUSE_FILTER_STOP
+		Menus._dim(self)
+		var card := Menus._card(self, Vector2(980, 0), 11)
+		var title := UITheme.heading("How to Play", 40)
+		title.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+		card.add_child(title)
+		card.add_child(UITheme.divider())
+		var cols := HBoxContainer.new()
+		cols.add_theme_constant_override("separation", 36)
+		card.add_child(cols)
+		var keys := VBoxContainer.new()
+		keys.custom_minimum_size = Vector2(360, 0)
+		keys.add_theme_constant_override("separation", 3)
+		cols.add_child(keys)
+		keys.add_child(UITheme.label("Controls", 24, UITheme.ACCENT, 0, true))
+		var progress_script := preload("res://scripts/gameplay/progress.gd")
+		for entry: Array in Settings.ACTIONS:
+			var action: String = entry[0]
+			if action.begins_with("slot_") or action.begins_with("debug") or action == "toggle_debug":
+				continue
+			var row := HBoxContainer.new()
+			var l := UITheme.label(entry[1], 17, UITheme.INK)
+			l.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+			row.add_child(l)
+			var k := UITheme.label(progress_script.key_name(action), 17, UITheme.INK)
+			k.add_theme_font_override("font", UITheme.BOLD_FONT)
+			row.add_child(k)
+			keys.add_child(row)
+		var hot := HBoxContainer.new()
+		var hl := UITheme.label("Hotbar", 17, UITheme.INK)
+		hl.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+		hot.add_child(hl)
+		var hk := UITheme.label("1 - 8, mouse wheel", 17, UITheme.INK)
+		hk.add_theme_font_override("font", UITheme.BOLD_FONT)
+		hot.add_child(hk)
+		keys.add_child(hot)
+		var tips := VBoxContainer.new()
+		tips.custom_minimum_size = Vector2(500, 0)
+		tips.add_theme_constant_override("separation", 8)
+		cols.add_child(tips)
+		tips.add_child(UITheme.label("Getting by", 24, UITheme.ACCENT, 0, true))
+		for t: String in TIPS:
+			var l := UITheme.label("•  " + t, 17, UITheme.INK)
+			l.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+			l.custom_minimum_size = Vector2(500, 0)
+			tips.add_child(l)
+		card.add_child(UITheme.divider())
+		var back := UITheme.button("Back", true, 260)
+		back.size_flags_horizontal = Control.SIZE_SHRINK_CENTER
+		back.pressed.connect(queue_free)
+		card.add_child(back)

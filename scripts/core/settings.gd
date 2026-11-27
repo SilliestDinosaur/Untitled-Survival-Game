@@ -15,6 +15,18 @@ const AA_MODES := ["Off", "FXAA", "MSAA 2x", "MSAA 4x", "MSAA 8x", "TAA"]
 const RENDER_SCALES := [0.5, 0.67, 0.75, 0.85, 1.0]
 const FPS_CAPS := [0, 30, 60, 90, 120, 144, 165, 240]
 const GRASS_LEVELS := {"Off": 0.0, "Low": 0.45, "Medium": 1.0, "High": 1.5, "Ultra": 2.0}
+## Graphics presets: every graphics option at once. "Low" is for older or integrated graphics: no shadows, short view,
+## lighter models and grass, rendered at 75% and upscaled.
+const PRESETS := {
+	"Low": {"view_distance": "Low", "model_detail": "Low", "shadow_quality": "Off", "anti_aliasing": "FXAA", "grass": "Low",
+		"render_scale": 0.75, "leaf_detail": false, "ambient_occlusion": false, "glow": false, "quality": "Low"},
+	"Medium": {"view_distance": "Medium", "model_detail": "Medium", "shadow_quality": "Low", "anti_aliasing": "FXAA", "grass": "Medium",
+		"render_scale": 1.0, "leaf_detail": true, "ambient_occlusion": false, "glow": true, "quality": "Medium"},
+	"High": {"view_distance": "High", "model_detail": "High", "shadow_quality": "High", "anti_aliasing": "MSAA 2x", "grass": "High",
+		"render_scale": 1.0, "leaf_detail": true, "ambient_occlusion": true, "glow": true, "quality": "High"},
+	"Ultra": {"view_distance": "Ultra", "model_detail": "Ultra", "shadow_quality": "Ultra", "anti_aliasing": "MSAA 4x", "grass": "Ultra",
+		"render_scale": 1.0, "leaf_detail": true, "ambient_occlusion": true, "glow": true, "quality": "High"},
+}
 
 ## Remappable actions, in the order the Controls tab lists them: [action, label, default events].
 ## Events are "key:<keycode>" or "mouse:<button index>".
@@ -32,6 +44,7 @@ const ACTIONS := [
 	["build_menu", "Building wheel (hold)", ["mouse:%d" % MOUSE_BUTTON_RIGHT]],
 	["inventory", "Satchel", ["key:%d" % KEY_TAB]],
 	["map", "Map", ["key:%d" % KEY_M]],
+	["journal", "Journal", ["key:%d" % KEY_J]],
 	["slot_1", "Hotbar 1", ["key:%d" % KEY_1]],
 	["slot_2", "Hotbar 2", ["key:%d" % KEY_2]],
 	["slot_3", "Hotbar 3", ["key:%d" % KEY_3]],
@@ -68,6 +81,7 @@ var master_volume := 0.8
 var music_volume := 0.6
 var sfx_volume := 1.0
 var show_fps := false
+var show_guide := true           ## the first-steps checklist in the corner
 var bindings := {}               ## action -> Array[String] overrides
 ## Multiplayer identity: shown to friends; the id lets a host remember your character.
 var player_name := ""
@@ -119,6 +133,7 @@ func load_settings() -> void:
 	quality = cfg.get_value("video", "quality", quality)
 	model_detail = cfg.get_value("video", "model_detail", model_detail)
 	show_fps = cfg.get_value("video", "show_fps", show_fps)
+	show_guide = cfg.get_value("game", "show_guide", show_guide)
 	shadow_quality = cfg.get_value("video", "shadow_quality", shadow_quality)
 	anti_aliasing = cfg.get_value("video", "anti_aliasing", anti_aliasing)
 	render_scale = cfg.get_value("video", "render_scale", render_scale)
@@ -149,6 +164,7 @@ func save_settings() -> void:
 	cfg.set_value("video", "quality", quality)
 	cfg.set_value("video", "model_detail", model_detail)
 	cfg.set_value("video", "show_fps", show_fps)
+	cfg.set_value("game", "show_guide", show_guide)
 	for k: String in ["shadow_quality", "anti_aliasing", "render_scale", "ambient_occlusion", "glow", "camera_shake", "screen_effects", "depth_of_field", "vsync", "fps_cap", "grass", "leaf_detail"]:
 		cfg.set_value("video", k, get(k))
 	cfg.set_value("audio", "master_volume", master_volume)
@@ -171,6 +187,26 @@ func apply() -> void:
 
 
 # --- Key bindings -----------------------------------------------------------------
+
+## Which preset the graphics options match now ("Custom" if none).
+func current_preset() -> String:
+	for name: String in PRESETS:
+		var ok := true
+		for k: String in PRESETS[name]:
+			if get(k) != PRESETS[name][k]:
+				ok = false
+				break
+		if ok:
+			return name
+	return "Custom"
+
+
+func apply_preset(name: String) -> void:
+	if not PRESETS.has(name):
+		return
+	for k: String in PRESETS[name]:
+		set(k, PRESETS[name][k])
+
 
 ## Rebuild the InputMap from defaults + the player's overrides.
 func apply_bindings() -> void:
