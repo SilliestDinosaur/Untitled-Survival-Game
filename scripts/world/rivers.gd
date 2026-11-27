@@ -756,6 +756,8 @@ static func _dress(gen: WorldGen, plan: Dictionary, line: Dictionary, i0: int, i
 	mi.mesh = kit.commit(mat)
 	mi.position = centre
 	mi.visibility_range_end = 160.0
+	mi.visibility_range_end_margin = 15.0
+	mi.visibility_range_fade_mode = GeometryInstance3D.VISIBILITY_RANGE_FADE_SELF
 	return mi
 
 
@@ -776,6 +778,8 @@ static func _dress_pond(gen: WorldGen, pd: Array, rng: RandomNumberGenerator, ma
 	mi.mesh = kit.commit(mat)
 	mi.position = centre
 	mi.visibility_range_end = 160.0
+	mi.visibility_range_end_margin = 15.0
+	mi.visibility_range_fade_mode = GeometryInstance3D.VISIBILITY_RANGE_FADE_SELF
 	return mi
 
 

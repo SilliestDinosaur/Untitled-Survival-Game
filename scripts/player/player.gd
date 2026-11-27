@@ -733,9 +733,9 @@ func _on_strike() -> void:
 		var smat := GameActions.piece_mat(String(Game.structures.get(look.structure, {}).get("kind", "")))
 		var scol: Color = Effects.MAT_DUST.get(smat, Game.palette.bark.lightened(0.2))
 		if smat == "wood":
-			Effects.splinters(get_parent(), point, scol.lightened(0.1), scol.darkened(0.2), 5)
+			Effects.splinters(get_parent(), point, scol.lightened(0.1), scol.darkened(0.2), 6, 1.0, global_position - point)
 		else:
-			Effects.shards(get_parent(), point, scol, 6)
+			Effects.shards(get_parent(), point, scol, 7, global_position - point)
 		Net.request("hit_structure", {"structure": look.structure, "slot": inventory.selected}, func(res: Dictionary) -> void:
 			if res.get("packed", false):
 				hint.emit("Packed up the %s" % ItemDB.display_name(res.kind))
@@ -754,16 +754,31 @@ func _on_strike() -> void:
 
 func _hit_resource(_chunk: TerrainChunk, r: Dictionary, point: Vector3) -> void:
 	var args := {"id": r.id, "kind": r.kind, "key": r.key, "slot": inventory.selected, "pos": point, "from": global_position}
-	Net.request("hit_resource", args, func(res: Dictionary) -> void: _on_hit_resource(res, r, point))
+	# A guest's swing waits a round trip for the host's answer; when it's plain the blow lands (the right tool, tough
+	# enough), its chips and sound go off now, as they would playing alone. (Anything doubtful waits for the answer.)
+	var early := Net.is_client() and _hit_will_land(r)
+	if early:
+		_hit_feedback(ItemDB.target_type(r.kind), r, point)
+	Net.request("hit_resource", args, func(res: Dictionary) -> void: _on_hit_resource(res, r, point, early))
+
+
+## Whether a swing at r with what's in hand does something (the same tests the host makes: see hit_resource_r).
+func _hit_will_land(r: Dictionary) -> bool:
+	if r.get("removed", false) or r.kind == "cache":
+		return false
+	var tool := ItemDB.tool_stats(inventory.selected_item())
+	if float(tool.get(ItemDB.target_type(r.kind), 0.0)) <= 0.0:
+		return false
+	var need: int = FloraLibrary.KINDS[r.kind].get("min_tier", -1)
+	return need < 0 or (tool.get("type", "") == "pickaxe" and int(tool.get("tier", 0)) >= need)
 
 
 ## The result of a swing at a tree / rock / plant: sounds, chips and hints. (How the thing
 ## itself changes, wobbling or falling, is applied by World for everyone who can see it.)
-func _on_hit_resource(res: Dictionary, r: Dictionary, point: Vector3) -> void:
+func _on_hit_resource(res: Dictionary, r: Dictionary, point: Vector3, shown := false) -> void:
 	if not res.has("target"):
 		return
 	var target: String = res.target
-	var pal: WorldPalette = Game.palette
 	if res.blocked:
 		Audio.play_3d("clink", point, -6.0, 0.7)
 		if res.get("use_interact", false):
@@ -775,14 +790,21 @@ func _on_hit_resource(res: Dictionary, r: Dictionary, point: Vector3) -> void:
 		return
 	if not res.get("ok", false):
 		return
+	_drop_overflow(res.items, point)
+	if not shown:
+		_hit_feedback(target, r, point)
+
+
+## What a landed blow on a tree / rock / plant looks and sounds like where you hit it.
+func _hit_feedback(target: String, r: Dictionary, point: Vector3) -> void:
+	var pal: WorldPalette = Game.palette
 	hit_landed.emit()
 	_blow(1.0 if target in ["tree", "rock"] else 0.4)
-	_drop_overflow(res.items, point)
 	match target:
 		"tree":
 			Audio.play_3d("chop", point)
 			var bark := Effects.bark_color(r.kind)
-			Effects.splinters(get_parent(), point, bark.lightened(0.45), bark, 7)
+			Effects.splinters(get_parent(), point, bark.lightened(0.45), bark, 10, 1.0, global_position - point)
 			if Effects.has_leaves(r.kind) and FloraLibrary.category_of(r.kind) == "tree":
 				var top := Vector3(point.x, (r.transform as Transform3D).origin.y + 3.5, point.z)
 				if randf() < 0.5:   # now and then a leaf or two comes down, not a shower every blow
@@ -792,13 +814,13 @@ func _on_hit_resource(res: Dictionary, r: Dictionary, point: Vector3) -> void:
 			var col := pal.rock.lightened(0.1)
 			if r.kind.begins_with("ore") or r.kind.begins_with("gem"):
 				col = ItemDB.tier_info(int(r.kind.right(1))).color
-			Effects.shards(get_parent(), point, col, 11)
+			Effects.shards(get_parent(), point, col, 13, global_position - point)
 			if r.kind.begins_with("ore") or r.kind.begins_with("gem"):
 				Effects.sparks(get_parent(), point, col.lightened(0.3), 5, 3.0)
 		_:
 			Audio.play_3d("rustle", point)
 			Effects.leaves(get_parent(), point, Effects.leaf_color(r.kind), 7, 0.3)
-			Effects.chips(get_parent(), point, Effects.leaf_color(r.kind), 5, 0.05, 2.0)
+			Effects.chips(get_parent(), point, Effects.leaf_color(r.kind), 6, 0.06, 2.4, global_position - point)
 
 
 ## Interact: the viewmodel's hand reached out.
@@ -997,6 +1019,7 @@ func _update_placement() -> void:
 		_ghost_ok_mat = _ghost_material(Color(0.55, 1.0, 0.6, 0.45))
 		_ghost_bad_mat = _ghost_material(Color(1.0, 0.4, 0.35, 0.45))
 		get_parent().add_child(_ghost)
+	var fresh := _ghost_kind != kind or not _ghost.visible
 	if _ghost_kind != kind:
 		_ghost_kind = kind
 		_ghost.mesh = StructureModels.shared_model(kind, _ghost_ok_mat).body   # (its colour comes from material_override)
@@ -1006,8 +1029,15 @@ func _update_placement() -> void:
 		_ghost_wait_mat = _ghost_material(Color(1.0, 0.78, 0.3, 0.45))
 	var you := reason in ["Too close to you", "You're standing there"]
 	_ghost.material_override = _ghost_ok_mat if placement.ok else (_ghost_wait_mat if you else _ghost_bad_mat)
-	_ghost.global_position = pos
-	_ghost.rotation = Vector3(0, yaw, 0)
+	# It glides to each new spot and turns smoothly (a quick ease, a few hundredths of a second), rather than jumping
+	# from grid cell to grid cell; a new piece, or a big jump, puts it straight there.
+	if fresh or _ghost.global_position.distance_to(pos) > 4.0:
+		_ghost.global_position = pos
+		_ghost.rotation = Vector3(0, yaw, 0)
+	else:
+		var k := 1.0 - exp(-28.0 * get_process_delta_time())
+		_ghost.global_position = _ghost.global_position.lerp(pos, k)
+		_ghost.rotation = Vector3(0, lerp_angle(_ghost.rotation.y, yaw, k), 0)
 
 
 ## Would a piece at pos overlap the player's body (feet to head, about 0.4 m around)?

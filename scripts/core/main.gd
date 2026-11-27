@@ -410,6 +410,7 @@ func _start_playing() -> void:
 
 func _toggle_journal(open: bool) -> void:
 	if open:
+		_fade_in(_journal)
 		_journal.open()
 	else:
 		_journal.visible = false
@@ -417,7 +418,15 @@ func _toggle_journal(open: bool) -> void:
 	Input.mouse_mode = Input.MOUSE_MODE_VISIBLE if open else Input.MOUSE_MODE_CAPTURED
 
 
+## A panel opening eases in over a moment rather than popping up (closing stays instant).
+func _fade_in(c: CanvasItem) -> void:
+	c.modulate.a = 0.0
+	create_tween().tween_property(c, "modulate:a", 1.0, 0.12)
+
+
 func _toggle_map(open: bool) -> void:
+	if open and not _map.visible:
+		_fade_in(_map)
 	_map.visible = open
 	Input.mouse_mode = Input.MOUSE_MODE_VISIBLE if open else Input.MOUSE_MODE_CAPTURED
 
@@ -428,6 +437,8 @@ func _toggle_inventory(open: bool, station := "") -> void:
 		Audio.play(Audio.sfx.open if open else Audio.sfx.close, -6.0)
 	if open:
 		_inventory.show_for(station)
+		if not _inventory.visible:
+			_fade_in(_inventory)
 	else:
 		_inventory.close_chest()
 		if station != "":

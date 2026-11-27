@@ -185,6 +185,11 @@ func _apply_time(_force := false) -> void:
 	environment.ambient_light_sky_contribution = lerpf(SKY_AMBIENT_NIGHT, SKY_AMBIENT_DAY, day)
 	environment.fog_sun_scatter = 0.35 + golden * 0.4
 	environment.adjustment_saturation = lerpf(0.55, 1.1, day)
+	# Dust, smoke and mist take on the light of the hour (dim blue at night, warm at dusk; darker underground).
+	var puff_light := Color(0.24, 0.27, 0.36).lerp(Color.WHITE.lerp(sun.light_color, 0.4), day)
+	if Game.in_cave:
+		puff_light = puff_light * 0.4
+	Effects.set_daylight(Color(puff_light, 1.0))
 	_regrade(day, golden)
 	var water := get_tree().get_first_node_in_group("water") as MeshInstance3D
 	if water and water.mesh:

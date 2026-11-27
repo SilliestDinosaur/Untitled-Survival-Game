@@ -119,10 +119,14 @@ func _build_multimeshes(buffers: Dictionary, flora: FloraLibrary) -> void:
 		if vis > 0.0:
 			mmi.visibility_range_end = vis
 			mmi.visibility_range_end_margin = 10.0
+			mmi.visibility_range_fade_mode = GeometryInstance3D.VISIBILITY_RANGE_FADE_SELF   # dissolve out over the margin, not a hard cut
 		# Shadows only where they read: tiny ground clutter and far bushes don't need them.
 		var small: bool = FloraLibrary.KINDS[kind].get("shape", "") == "small"
 		# Trees a little way off skip shadows too: the sun's shadow only reaches 100-160 m, and they are re-drawn into it.
-		if cat in ["grass", "flower", "fern"] or small or (cat in ["bush", "clutter"] and tier > 0) or (cat == "tree" and tier > 0):
+		# (With long shadows, High and Ultra, the next ring of trees keeps casting them, from these far twins: else
+		# tree shadows would pop onto the ground as you walk up, where the full-detail ring begins, well inside them.)
+		var far_shadows: bool = Settings.shadow_quality in ["High", "Ultra"] and tier == 1
+		if cat in ["grass", "flower", "fern"] or small or (cat in ["bush", "clutter"] and tier > 0) or (cat == "tree" and tier > 0 and not far_shadows):
 			mmi.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
 		add_child(mmi)
 		# Near trees cast their shadow from their low-poly twin: the shadow can't show the difference, and the sun's
@@ -166,6 +170,8 @@ func _build_own_meshes(flora: FloraLibrary) -> void:
 		xf.origin -= position
 		mi.transform = xf
 		mi.visibility_range_end = FloraLibrary.VIS_RANGE[FloraLibrary.category_of(r.kind)]
+		mi.visibility_range_end_margin = 10.0
+		mi.visibility_range_fade_mode = GeometryInstance3D.VISIBILITY_RANGE_FADE_SELF
 		mi.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
 		add_child(mi)
 		_own[k] = mi
