@@ -74,11 +74,9 @@ func hold(item_id: String) -> void:
 	_item.scale = Vector3.ONE * float(HELD_SCALE.get(_held_type, 1.0))
 	# Long tools lean in toward the middle of the screen; small things sit a little higher.
 	# A head's blade runs along the model's -Z, so it's turned a quarter turn to put the blade's face toward you.
-	if _held_type == "pickaxe":
-		# The arms point away and the broad face turns a little toward you, so the blade reads as wide.
-		_pose_tool(Vector3(0.05, -0.1, 0.0), TOOL_LEAN, 0.7, TOOL_TIP)
-	elif _held_type in ["hatchet", "hammer"]:
-		# The head points away from you, as a Minecraft tool does, and tips up a little.
+	if _held_type in ["hatchet", "hammer", "pickaxe"]:
+		# The head points away from you, as a Minecraft tool does, and tips up a little (the pickaxe the same as the
+		# hatchet: one way of holding every hafted tool).
 		_pose_tool(Vector3(0.05, -0.1, 0.0), TOOL_LEAN, 0.0, TOOL_TIP)
 	elif _held_type in ["knife", "torch", "plan"]:
 		# Turned so you see the face of the head, not just its edge.

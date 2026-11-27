@@ -408,5 +408,6 @@ func _remove_visual(chunk: TerrainChunk, r: Dictionary, from: Vector3) -> void:
 			if r.kind.begins_with("ore") or r.kind.begins_with("gem"):
 				col = ItemDB.tier_info(int(r.kind.right(1))).color
 			Effects.crumble(get_parent(), mesh, xf, col, true)
+			Audio.play_3d("rubble", xf.origin + Vector3(0, 0.5, 0), 0.0, 1.0 / clampf(xf.basis.get_scale().y, 0.7, 1.5))
 		else:
 			Effects.crumble(get_parent(), mesh, xf, Effects.leaf_color(r.kind), false)

@@ -803,7 +803,8 @@ func _on_strike() -> void:
 		hit_landed.emit()
 		_blow(0.6)
 		var hammer: bool = ItemDB.tool_stats(inventory.selected_item()).get("type", "") == "hammer"
-		Audio.play_3d("hammer" if hammer else "chop", point, -2.0, 1.0 if hammer else 0.8)
+		var pmat := GameActions.piece_mat(String(Game.structures.get(look.structure, {}).get("kind", "")))
+		Audio.play_3d("hammer" if hammer else ("chop" if pmat in ["wood", ""] else "clink"), point, -2.0, 1.0 if hammer else 0.85)
 		if hammer and Input.is_key_pressed(KEY_SHIFT):
 			# Shift + hammer: a share of repair on everything damaged around you.
 			Net.request("repair_all", {"pos": global_position}, func(res: Dictionary) -> void:

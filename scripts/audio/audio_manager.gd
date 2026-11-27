@@ -66,7 +66,7 @@ func _ready() -> void:
 
 ## name -> how many takes to make.
 const VARIANTS := {"chop": 4, "clink": 4, "ore": 3, "rustle": 4, "thud": 3, "swoosh": 4, "tool_break": 2, "hurt": 3,
-	"tree_fall": 2, "munch": 3, "gulp": 2, "place_wood": 3, "place_stone": 3, "hammer": 3, "creak": 2, "chest": 2,
+	"tree_fall": 2, "munch": 3, "chew": 2, "apply": 2, "rubble": 2, "gulp": 2, "place_wood": 3, "place_stone": 3, "hammer": 3, "creak": 2, "chest": 2,
 	"splash": 3, "stroke": 4, "drip": 3, "rumble": 3, "squeak": 3}
 
 
@@ -121,6 +121,9 @@ func _make(name: String, rng: RandomNumberGenerator) -> AudioStreamWAV:
 		"hurt": return SoundGen.hurt(_rng)
 		"tree_fall": return SoundGen.tree_fall(_rng)
 		"munch": return SoundGen.munch(_rng)
+		"chew": return SoundGen.chew(_rng)
+		"apply": return SoundGen.apply(_rng)
+		"rubble": return SoundGen.rubble(_rng)
 		"gulp": return SoundGen.gulp(_rng)
 		"place_wood": return SoundGen.place_wood(_rng)
 		"place_stone": return SoundGen.place_stone(_rng)
@@ -254,8 +257,10 @@ func slot() -> void:
 
 ## The sound of eating a food: soft and wet things are gulped, bandages rustle, the rest is crunched.
 func eat_sound(id: String) -> String:
-	if id == "bandage":
-		return "rustle"
+	if id in ["bandage", "aloe"]:
+		return "apply"
 	if id in ["stew", "cactus_flesh"] or id.contains("soup") or id.contains("tea") or id.contains("water"):
 		return "gulp"
+	if id.contains("meat") or id == "roast_fruit":
+		return "chew"
 	return "munch"

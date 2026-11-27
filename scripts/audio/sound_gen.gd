@@ -136,6 +136,23 @@ static func _glide(out: PackedFloat32Array, at: float, dur: float, f0: float, f1
 		out[o + i] += sin(ph) * amp * exp(-decay * t) * minf(t / 0.002, 1.0)
 
 
+## Weight: a short low kick whose pitch drops fast (what makes a hit feel heavy rather than just loud).
+static func _kick(out: PackedFloat32Array, at: float, f0: float, amp: float, length := 0.12) -> void:
+	_glide(out, at, length, f0, f0 * 0.45, amp, 1.0 / length * 3.2)
+
+
+## The contact: a very short, bright burst of noise (a few milliseconds), the "tock" at the front of every hit.
+static func _crack(out: PackedFloat32Array, at: float, amp: float, rng: RandomNumberGenerator, hp := 1800.0, ms := 6.0) -> void:
+	_mix(out, _filter(_noise(int(RATE * ms / 1000.0), rng), "hp", hp), at, amp, 1000.0 / ms * 1.5)
+
+
+## Gentle saturation (soft clipping): thickens a sound and lets it sit louder without spiking.
+static func _saturate(out: PackedFloat32Array, drive: float) -> void:
+	var norm := 1.0 / tanh(drive)
+	for i in out.size():
+		out[i] = tanh(out[i] * drive) * norm
+
+
 ## A short tail of the space around (a few combs and an all-pass, lightly mixed in), a soft fade at the end and the
 ## loudness evened out, then the stream.
 static func _finish(out: PackedFloat32Array, wet := 0.12, peak := 0.85) -> AudioStreamWAV:
@@ -284,39 +301,49 @@ static func _svf_sweep(x: PackedFloat32Array, f0: float, f1: float, q: float) ->
 
 # --- Gathering, hitting, tools -------------------------------------------------------------------------------------
 
-## An axe or rock into wood: a crisp crack, the trunk's dull knock ringing low, bark crunching off.
+## An axe or rock into wood: a crisp crack and a heavy low kick (the weight of the blow), the trunk's dull knock
+## ringing, then chips of bark and wood pattering off just after.
 static func chop(rng: RandomNumberGenerator) -> AudioStreamWAV:
-	var out := _buf(int(RATE * 0.5))
-	_mix(out, _filter(_noise(int(RATE * 0.01), rng), "hp", 2000.0), 0.0, 1.0, 400.0)
+	var out := _buf(int(RATE * 0.55))
+	_crack(out, 0.0, 1.4, rng, 2200.0, 5.0)
+	_kick(out, 0.0, rng.randf_range(95.0, 120.0), 1.1, 0.11)
 	var f := rng.randf_range(150.0, 210.0)
-	_modes(out, 0.0, [[f, 0.9, 26.0], [f * 2.31, 0.5, 38.0], [f * 3.87, 0.28, 55.0], [f * 5.6, 0.14, 75.0]], rng)
-	_glide(out, 0.0, 0.12, 110.0, 70.0, 0.6, 28.0)
-	_mix(out, _filter(_noise(int(RATE * 0.15), rng), "bp", rng.randf_range(1900.0, 2600.0), 1.2), 0.002, 0.55, 28.0)
-	_grains(out, rng, 10, 0.004, 0.07, 1800.0, 4500.0, 0.14, 0.002)
-	return _finish(out, 0.14, 0.9)
+	_modes(out, 0.0, [[f, 1.0, 24.0], [f * 2.31, 0.55, 36.0], [f * 3.87, 0.3, 52.0], [f * 5.6, 0.15, 72.0]], rng)
+	# The thwack: a mid-range slap of the blade biting in.
+	_mix(out, _filter(_noise(int(RATE * 0.05), rng), "bp", rng.randf_range(700.0, 1000.0), 1.4), 0.001, 0.9, 60.0)
+	_mix(out, _filter(_noise(int(RATE * 0.15), rng), "bp", rng.randf_range(1900.0, 2600.0), 1.2), 0.003, 0.45, 30.0)
+	_grains(out, rng, 8, 0.004, 0.05, 1800.0, 4500.0, 0.16, 0.002)
+	_grains(out, rng, 10, 0.06, 0.22, 2500.0, 6000.0, 0.07, 0.0015)   # chips landing
+	_saturate(out, 1.8)
+	return _finish(out, 0.12, 0.95)
 
 
-## A rock or pick into stone: a hard snap, the stone's short inharmonic ring, a knock low down, grit trickling.
+## A rock or pick into stone: a hard snap with a solid low knock behind it, the stone's short inharmonic ring, then
+## grit and flakes trickling down.
 static func clink(rng: RandomNumberGenerator) -> AudioStreamWAV:
-	var out := _buf(int(RATE * 0.5))
-	_mix(out, _filter(_noise(int(RATE * 0.008), rng), "hp", 2500.0), 0.0, 1.2, 600.0)
+	var out := _buf(int(RATE * 0.6))
+	_crack(out, 0.0, 1.6, rng, 2800.0, 4.0)
+	_kick(out, 0.0, rng.randf_range(130.0, 160.0), 1.0, 0.09)
 	var f := rng.randf_range(620.0, 880.0)
-	_modes(out, 0.0, [[f, 0.5, 34.0], [f * 1.83, 0.35, 46.0], [f * 2.67, 0.25, 58.0], [f * 3.9, 0.16, 72.0], [f * 5.1, 0.08, 90.0]], rng)
-	_glide(out, 0.0, 0.09, 160.0, 120.0, 0.5, 40.0)
-	_grains(out, rng, 16, 0.02, 0.3, 2000.0, 5500.0, 0.1, 0.0018)
-	return _finish(out, 0.16, 0.85)
+	_modes(out, 0.0, [[f, 0.55, 32.0], [f * 1.83, 0.38, 44.0], [f * 2.67, 0.26, 56.0], [f * 3.9, 0.17, 70.0], [f * 5.1, 0.08, 88.0]], rng)
+	_mix(out, _filter(_noise(int(RATE * 0.04), rng), "bp", rng.randf_range(1200.0, 1600.0), 1.3), 0.001, 0.7, 70.0)
+	_grains(out, rng, 22, 0.03, 0.42, 2000.0, 6000.0, 0.11, 0.0016)   # grit trickling down
+	_saturate(out, 1.7)
+	return _finish(out, 0.15, 0.92)
 
 
-## A pick into ore or crystal: the stone's hit with a bright metallic ring hanging after it.
+## A pick into ore or crystal: the stone's hit, with a bright metallic ring hanging after it.
 static func ore_hit(rng: RandomNumberGenerator) -> AudioStreamWAV:
 	var out := _buf(int(RATE * 0.9))
-	_mix(out, _filter(_noise(int(RATE * 0.008), rng), "hp", 2500.0), 0.0, 1.0, 600.0)
+	_crack(out, 0.0, 1.5, rng, 2800.0, 4.0)
+	_kick(out, 0.0, rng.randf_range(130.0, 160.0), 0.9, 0.09)
 	var f := rng.randf_range(650.0, 850.0)
-	_modes(out, 0.0, [[f, 0.4, 36.0], [f * 1.83, 0.28, 48.0], [f * 2.67, 0.2, 60.0]], rng)
+	_modes(out, 0.0, [[f, 0.42, 36.0], [f * 1.83, 0.3, 48.0], [f * 2.67, 0.2, 60.0]], rng)
 	var m := rng.randf_range(1500.0, 2100.0)
-	_modes(out, 0.0, [[m, 0.32, 6.0], [m * 2.76, 0.18, 9.0], [m * 5.4, 0.09, 14.0], [m * 8.9, 0.04, 20.0]], rng)
-	_grains(out, rng, 12, 0.02, 0.25, 2500.0, 6000.0, 0.08, 0.0015)
-	return _finish(out, 0.18, 0.85)
+	_modes(out, 0.0, [[m, 0.36, 6.0], [m * 2.76, 0.2, 9.0], [m * 5.4, 0.1, 14.0], [m * 8.9, 0.05, 20.0]], rng)
+	_grains(out, rng, 14, 0.03, 0.3, 2500.0, 6000.0, 0.09, 0.0015)
+	_saturate(out, 1.5)
+	return _finish(out, 0.18, 0.9)
 
 
 ## Into a bush: leaves crinkling, a swish, now and then a twig snapping.
@@ -335,13 +362,35 @@ static func rustle(rng: RandomNumberGenerator) -> AudioStreamWAV:
 	return _finish(out, 0.1, 0.75)
 
 
-## Hitting an animal: a deep body blow, a muffled thump and a wet slap.
+## Hitting an animal: a deep, punchy body blow (a kick you feel), a wet slap on the hide, and a short meaty squelch.
 static func thud(rng: RandomNumberGenerator) -> AudioStreamWAV:
-	var out := _buf(int(RATE * 0.4))
-	_glide(out, 0.0, 0.22, rng.randf_range(85.0, 105.0), 50.0, 1.0, 16.0)
-	_mix(out, _filter(_noise(int(RATE * 0.2), rng), "lp", rng.randf_range(300.0, 450.0)), 0.0, 1.4, 22.0, 0.002)
-	_mix(out, _filter(_noise(int(RATE * 0.06), rng), "bp", rng.randf_range(800.0, 1100.0), 1.8), 0.002, 0.5, 55.0)
-	return _finish(out, 0.1, 0.9)
+	var out := _buf(int(RATE * 0.45))
+	_kick(out, 0.0, rng.randf_range(80.0, 100.0), 1.3, 0.16)
+	_crack(out, 0.0, 0.6, rng, 1200.0, 7.0)
+	_mix(out, _filter(_noise(int(RATE * 0.2), rng), "lp", rng.randf_range(320.0, 450.0)), 0.0, 1.3, 20.0, 0.002)
+	# The slap: a short burst high in the middle range.
+	_mix(out, _filter(_noise(int(RATE * 0.03), rng), "bp", rng.randf_range(1500.0, 2200.0), 1.6), 0.001, 0.9, 90.0)
+	# The squelch: a little wet, falling tone a moment after.
+	_glide(out, 0.02, 0.1, rng.randf_range(420.0, 520.0), 160.0, 0.22, 30.0)
+	_mix(out, _filter(_noise(int(RATE * 0.12), rng), "bp", rng.randf_range(500.0, 750.0), 2.0), 0.015, 0.35, 28.0, 0.01)
+	_saturate(out, 2.0)
+	return _finish(out, 0.08, 0.95)
+
+
+## A rock or deposit breaking apart: a deep crack, a rumble, and stones tumbling and clattering away.
+static func rubble(rng: RandomNumberGenerator) -> AudioStreamWAV:
+	var out := _buf(int(RATE * 1.1))
+	_crack(out, 0.0, 1.6, rng, 1500.0, 9.0)
+	_kick(out, 0.0, 85.0, 1.3, 0.22)
+	_mix(out, _filter(_noise(int(RATE * 0.8), rng), "lp", 260.0), 0.0, 1.4, 5.0, 0.004)
+	for k in 9:   # chunks landing and rolling
+		var at := 0.05 + pow(rng.randf(), 1.3) * 0.65
+		var f := rng.randf_range(400.0, 1100.0)
+		_modes(out, at, [[f, 0.35, 40.0], [f * 1.9, 0.2, 55.0]], rng)
+		_crack(out, at, 0.35, rng, 2000.0, 3.0)
+	_grains(out, rng, 40, 0.02, 0.9, 1800.0, 5500.0, 0.12, 0.0018)
+	_saturate(out, 1.6)
+	return _finish(out, 0.2, 0.95)
 
 
 ## A tool swung through the air: a whoosh that rises and falls with the swing.
@@ -373,16 +422,23 @@ static func tool_break(rng: RandomNumberGenerator) -> AudioStreamWAV:
 	return _finish(out, 0.15, 0.85)
 
 
-## Being hurt: a heavy blow to the body and the breath knocked out.
+## Being hurt: a heavy blow you feel in the chest (a hard kick and a muffled crack), and the breath knocked out of
+## you in a rough gasp.
 static func hurt(rng: RandomNumberGenerator) -> AudioStreamWAV:
-	var out := _buf(int(RATE * 0.45))
-	_glide(out, 0.0, 0.2, 120.0, 55.0, 1.0, 18.0)
-	_mix(out, _filter(_noise(int(RATE * 0.12), rng), "lp", 500.0), 0.0, 1.2, 30.0)
-	var puff := _filter(_noise(int(RATE * 0.2), rng), "bp", rng.randf_range(700.0, 1000.0), 1.4)
-	for i in puff.size():
-		puff[i] *= sin(PI * float(i) / puff.size())
-	_mix(out, puff, 0.06, 0.45, 6.0, 0.02)
-	return _finish(out, 0.08, 0.8)
+	var out := _buf(int(RATE * 0.5))
+	_kick(out, 0.0, rng.randf_range(110.0, 130.0), 1.4, 0.18)
+	_crack(out, 0.0, 0.7, rng, 900.0, 8.0)
+	_mix(out, _filter(_noise(int(RATE * 0.14), rng), "lp", 520.0), 0.0, 1.3, 26.0)
+	# The gasp: breathy noise through two "vowel" bands, rising then falling.
+	var n := int(RATE * 0.24)
+	var puff := _filter(_noise(n, rng), "bp", rng.randf_range(650.0, 800.0), 2.2)
+	var puff2 := _filter(_noise(n, rng), "bp", rng.randf_range(1150.0, 1400.0), 2.5)
+	for i in n:
+		var t := float(i) / n
+		puff[i] = (puff[i] + puff2[i] * 0.6) * sin(PI * pow(t, 0.6))
+	_mix(out, puff, 0.05, 0.7, 4.0, 0.015)
+	_saturate(out, 2.2)
+	return _finish(out, 0.06, 0.9)
 
 
 ## A felled tree: the trunk creaking as it goes, then the crash, branches cracking, leaves rushing, the ground
@@ -408,13 +464,53 @@ static func tree_fall(rng: RandomNumberGenerator) -> AudioStreamWAV:
 	return _finish(out, 0.22, 0.95)
 
 
-## Eating: a few crunchy bites and chewing.
+## Eating something crisp (berries, fruit, roots, leaves): two or three crunchy bites, each a jaw thump with a
+## crackle and a wet burst, a quick chew, and a swallow.
 static func munch(rng: RandomNumberGenerator) -> AudioStreamWAV:
-	var out := _buf(int(RATE * 0.6))
+	var out := _buf(int(RATE * 0.85))
+	var bites := rng.randi_range(2, 3)
+	var at := 0.0
+	for b in bites:
+		_kick(out, at, rng.randf_range(140.0, 180.0), 0.5, 0.05)
+		_grains(out, rng, 26, at, at + 0.06, 1800.0, 5500.0, 0.36, 0.0025)
+		_mix(out, _filter(_noise(int(RATE * 0.06), rng), "bp", rng.randf_range(2500.0, 3500.0), 1.2), at, 0.5, 60.0)
+		_mix(out, _filter(_noise(int(RATE * 0.09), rng), "lp", rng.randf_range(500.0, 700.0)), at + 0.01, 0.5, 30.0, 0.004)   # juice
+		at += rng.randf_range(0.16, 0.2)
+	_grains(out, rng, 10, at, at + 0.12, 900.0, 2500.0, 0.12, 0.004)   # chewing
+	_glide(out, at + 0.16, 0.1, rng.randf_range(300.0, 340.0), 140.0, 0.45, 22.0)   # the swallow
+	_saturate(out, 1.5)
+	return _finish(out, 0.03, 0.7)
+
+
+## Eating something soft and meaty: big wet chews, a squish of each, and a swallow.
+static func chew(rng: RandomNumberGenerator) -> AudioStreamWAV:
+	var out := _buf(int(RATE * 0.9))
+	var at := 0.0
 	for b in 3:
-		var at := b * rng.randf_range(0.15, 0.19)
-		_grains(out, rng, 22, at, at + 0.05, 1500.0, 4500.0, 0.3, 0.003)
-		_mix(out, _filter(_noise(int(RATE * 0.08), rng), "lp", 350.0), at, 0.6, 30.0, 0.005)
+		_kick(out, at, rng.randf_range(110.0, 140.0), 0.55, 0.07)
+		var sq := _filter(_noise(int(RATE * 0.12), rng), "bp", rng.randf_range(600.0, 900.0), 1.8)
+		for i in sq.size():
+			sq[i] *= sin(PI * float(i) / sq.size())
+		_mix(out, sq, at + 0.01, 0.7, 6.0, 0.01)
+		_glide(out, at + 0.02, 0.08, rng.randf_range(380.0, 460.0), 200.0, 0.16, 28.0)
+		_grains(out, rng, 6, at, at + 0.05, 1200.0, 2800.0, 0.1, 0.003)
+		at += rng.randf_range(0.18, 0.22)
+	_glide(out, at + 0.05, 0.11, rng.randf_range(280.0, 320.0), 130.0, 0.5, 20.0)
+	_saturate(out, 1.5)
+	return _finish(out, 0.03, 0.7)
+
+
+## Putting on a dressing or salve: cloth wrapped round with a soft rustle, a squeeze of something cool, a pat.
+static func apply(rng: RandomNumberGenerator) -> AudioStreamWAV:
+	var out := _buf(int(RATE * 0.8))
+	for k in 2:
+		var sw := _filter(_noise(int(RATE * 0.2), rng), "bp", rng.randf_range(2500.0, 3500.0), 0.8)
+		for i in sw.size():
+			sw[i] *= sin(PI * float(i) / sw.size())
+		_mix(out, sw, k * 0.22, 0.4, 2.0, 0.02)
+	_mix(out, _filter(_noise(int(RATE * 0.1), rng), "bp", 700.0, 2.0), 0.45, 0.45, 18.0, 0.01)   # the squish
+	_kick(out, 0.6, 160.0, 0.35, 0.05)   # a pat
+	_mix(out, _filter(_noise(int(RATE * 0.02), rng), "lp", 900.0), 0.6, 0.4, 80.0)
 	return _finish(out, 0.04, 0.6)
 
 
