@@ -566,7 +566,9 @@ static func snap_piece(kind: String, aim: Vector3, prefer_yaw := -1.0, facing :=
 			# (a balcony, an upper storey reaching over), not one down on the ground.
 			var base := base_y(cell)
 			var k := clampi(roundi((aim.y - base) / STACK_H), 1, MAX_LEVEL)
-			if aim.y > Game.world_gen.get_height(c.x, c.z) + 1.5 and _deck_nearby(cell, k):
+			# (The top part of a wall or higher: aimed at a wall's middle, it's a floor beside it on the ground.)
+			if aim.y > Game.world_gen.get_height(c.x, c.z) + 1.5 and aim.y > base + (k - 1) * STACK_H + STACK_H * 0.75 \
+					and _deck_nearby(cell, k):
 				level = k
 				y = base + k * STACK_H
 		return {"pos": Vector3(c.x, y, c.z), "yaw": 0.0, "level": level}

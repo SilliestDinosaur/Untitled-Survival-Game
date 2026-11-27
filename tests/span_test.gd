@@ -106,6 +106,10 @@ func _process(_d: float) -> bool:
 			_check(bal.get("ok", false) and int(bal.get("level", 0)) == 1, "a balcony out over the ground beside it (%s, level %s)" % [bal.get("reason", "ok"), bal.get("level", "?")])
 			if bal.get("ok", false):
 				_check(absf(float(bal.pos.y) - (base + 3.5)) < 0.01, "the balcony is level with the upper floor")
+			# Aimed at the middle of a wall, a floor plan means a floor on the ground beside it, not up in the air.
+			var by_wall: Dictionary = _GA.snap_piece("wood_floor", t + Vector3(0, base - t.y + 1.8, -3.0))
+			_check(int(by_wall.level) == 0 or not _GA.foundation_at(_GA.cell_of(t + Vector3(0, 0, -3.0)), 1).is_empty(),
+				"aimed at a wall's middle, a floor goes on the ground (level %d)" % int(by_wall.level))
 			var far := _place("wood_floor", t + Vector3(0, 3.6, -9.0))
 			_check(not far.get("ok", false) or int(far.get("level", 0)) == 0, "a floor far out in the air isn't an upper floor")
 			print("RESULT: ", "PASS" if _fails.is_empty() else "FAIL")
