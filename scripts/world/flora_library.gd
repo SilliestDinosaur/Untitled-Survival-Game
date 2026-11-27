@@ -775,7 +775,7 @@ func _fallen_log(kit: MeshKit, rng: RandomNumberGenerator, giant: bool) -> void:
 		var x := lerpf(-length * 0.5, length * 0.5, t)
 		var rr := r * lerpf(1.06, 0.82, t)
 		if giant:
-			rr *= 1.0 + 0.45 * pow(1.0 - smoothstep(0.0, 0.14, t), 2.0)   # the foot flares out
+			rr *= 1.0 + 0.12 * pow(1.0 - smoothstep(0.0, 0.14, t), 2.0)   # a touch wider at the foot
 		path.append(Vector3(x, 0.0, 0.0) + bend * sin(t * PI) + Vector3(0, rr * 0.78, 0))   # settled a fifth into the ground
 		radii.append(rr)
 	# Bark: deep fissures running along the trunk, wandering a little, and broad plates between them.
@@ -800,36 +800,21 @@ func _fallen_log(kit: MeshKit, rng: RandomNumberGenerator, giant: bool) -> void:
 		return c
 	kit.loft(path, radii, 26, bark, colour, shape, false, false, r * 0.06)
 
-	# The snapped end: the broken face of pale wood.
-	var tip: Vector3 = path[steps]
-	var tr: float = radii[steps]
-	var ax := ((path[steps] as Vector3) - (path[steps - 1] as Vector3)).normalized()
-	var side := ax.cross(Vector3.UP).normalized()
-	kit.loft([tip - ax * 0.02, tip + ax * tr * 0.25], [tr * 0.98, tr * 0.35], 14, wood.darkened(0.15), func(t: float, _a: float) -> Color:
-		return wood.darkened(0.25).lerp(wood, t), Callable(), false, true, tr * 0.08)
-
-	# The other end.
-	var foot: Vector3 = path[0]
-	var fr: float = radii[0]
 	if giant:
-		# The foot it was torn up by: a clod of earth and root bound together on the end, and roots twisting out of it
-		# and down into the ground, thick ones and thin.
-		var soil := Color(0.27, 0.2, 0.14)
-		kit.loft([foot + Vector3(0.05, 0, 0), foot - Vector3(fr * 0.22, 0, 0)], [fr * 1.0, fr * 0.55], 14, soil, func(t: float, ang: float) -> Color:
-			return soil.lerp(bark.darkened(0.2), 0.4 * absf(sin(ang * 5.0))).lerp(moss.darkened(0.3), smoothstep(0.5, 1.0, cos(ang)) * 0.5), Callable(), false, true, fr * 0.12)
-		for i in rng.randi_range(9, 13):
-			var a := rng.randf() * TAU
-			var out := (Vector3.UP * cos(a) + Vector3.BACK * sin(a)).normalized()
-			var thick := rng.randf() < 0.4
-			var start := foot + out * fr * rng.randf_range(0.3, 0.85) - Vector3(fr * 0.1, 0, 0)
-			var span := rng.randf_range(0.8, 1.6) * fr * (1.3 if thick else 1.0)
-			var reach := start - Vector3(span * 0.55, 0, 0) + Vector3(0, 0, out.z) * span * 0.8
-			var end := Vector3(reach.x, -0.12, reach.z) if (thick or out.y < 0.3) else reach + out * span * 0.3   # thick ones dive into the ground; thin ones hang in the air
-			var mid := start.lerp(end, 0.45) + out * span * 0.25 + Vector3(rng.randf_range(-0.1, 0.1), 0, rng.randf_range(-0.1, 0.1))
-			var rr0 := fr * (0.2 if thick else 0.07)
-			kit.loft([start, mid, end], [rr0, rr0 * 0.65, rr0 * 0.2], 6, bark.darkened(0.1), Callable(), Callable(), true, true, rr0 * 0.15)
+		# An old jungle trunk, rotted hollow: both ends open on a dark hollow inside a crumbly rim (see _hollow_end).
+		var rot := Color(0.36, 0.25, 0.16)
+		_hollow_end(kit, rng, path[steps], ((path[steps] as Vector3) - (path[steps - 1] as Vector3)).normalized(), radii[steps], rot, moss)
+		_hollow_end(kit, rng, path[0], ((path[0] as Vector3) - (path[1] as Vector3)).normalized(), radii[0], rot, moss)
 	else:
-		# Old weathered end: grey wood, rings, cracks running in from the edge.
+		# The snapped end: the broken face of pale wood.
+		var tip: Vector3 = path[steps]
+		var tr: float = radii[steps]
+		var ax := ((path[steps] as Vector3) - (path[steps - 1] as Vector3)).normalized()
+		kit.loft([tip - ax * 0.02, tip + ax * tr * 0.25], [tr * 0.98, tr * 0.35], 14, wood.darkened(0.15), func(t: float, _a: float) -> Color:
+			return wood.darkened(0.25).lerp(wood, t), Callable(), false, true, tr * 0.08)
+		# The other end: old weathered wood, grey, with rings.
+		var foot: Vector3 = path[0]
+		var fr: float = radii[0]
 		var rings := func(t: float, _a: float) -> Color:
 			return wood.lerp(Color(0.6, 0.57, 0.52), 0.55).darkened(0.12 * float(int(t * 6.0) % 2))
 		kit.loft([foot + Vector3(0.01, 0, 0), foot - Vector3(fr * 0.05, 0, 0)], [fr * 0.99, 0.0], 16, wood, rings, Callable(), false, false, 0.008)
@@ -898,6 +883,86 @@ func _fallen_log(kit: MeshKit, rng: RandomNumberGenerator, giant: bool) -> void:
 			var fc := fern.lightened(rng.randf_range(-0.06, 0.08))
 			kit.loft(fpath, fw, 4, fc, func(t: float, _ang: float) -> Color: return fc.darkened(0.25 * (1.0 - t)),
 				func(_t: float, _ang: float) -> Vector2: return Vector2(0.18, 1.0), true, true)
+
+
+## One end of a log rotted hollow, at `e`, opening along `d` (out of the log), the shell's radius `r` there: a soft,
+## crumbly rim of rotten wood a sixth of the radius thick (wavering, but no sharp points), and inside it a hollow going
+## back into the log, darkening the deeper it goes; moss creeping over the top of the rim, crumbs of rot spilled on the
+## ground at the mouth.
+func _hollow_end(kit: MeshKit, rng: RandomNumberGenerator, e: Vector3, d: Vector3, r: float, rot: Color, moss: Color) -> void:
+	var u := d.cross(Vector3.UP).normalized()
+	var v := u.cross(d).normalized()   # (up, across the end)
+	var sides := 22
+	var ph := rng.randf() * TAU
+	var ph2 := rng.randf() * TAU
+	var wall := r * 0.17
+	var depth := r * rng.randf_range(1.3, 1.9)
+	var jag := func(a: float) -> float:
+		return 1.0 - 0.07 * absf(sin(a * 3.0 + ph)) - 0.05 * absf(sin(a * 7.0 + ph2))
+	var ring := func(rad: float, along: float, ragged: bool) -> PackedVector3Array:
+		var out := PackedVector3Array()
+		for k in sides:
+			var a := TAU * k / sides
+			var m: float = float(jag.call(a)) if ragged else 1.0
+			out.append(e + d * along + (u * cos(a) + v * sin(a)) * rad * m)
+		return out
+	# A quad as two triangles, wound to face `want`.
+	var quad := func(p0: Vector3, p1: Vector3, p2: Vector3, p3: Vector3, c: Color, want: Vector3) -> void:
+		for t: Array in [[p0, p1, p2], [p0, p2, p3]]:
+			var a: Vector3 = t[0]
+			var b: Vector3 = t[1]
+			var c2: Vector3 = t[2]
+			if (c2 - a).cross(b - a).dot(want) < 0.0:
+				kit.add_tri(a, c2, b, c)
+			else:
+				kit.add_tri(a, b, c2, c)
+	# The rim: from just outside the shell's edge (hiding it) in to the hollow, sloping down into it a little.
+	var outer: PackedVector3Array = ring.call(r * 1.05, 0.015, false)
+	var lip: PackedVector3Array = ring.call((r - wall * 0.5) * 1.0, 0.03, true)
+	var inner: PackedVector3Array = ring.call(r - wall, -0.03, true)
+	for k in sides:
+		var k2 := (k + 1) % sides
+		var crumb := rot.lightened(0.12 + 0.1 * absf(sin(k * 1.7 + ph)))
+		quad.call(outer[k], outer[k2], lip[k2], lip[k], crumb.darkened(0.08), d)
+		quad.call(lip[k], lip[k2], inner[k2], inner[k], crumb, d)
+	# The hollow: its wall, facing in, going back and narrowing, darker deeper in; a dark back to it.
+	var rings: Array = [inner]
+	var rows := 4
+	for q in range(1, rows + 1):
+		var t := float(q) / rows
+		rings.append(ring.call((r - wall) * lerpf(1.0, 0.72, t), -0.03 - depth * t, true))
+	for q in rows:
+		var col := rot.darkened(lerpf(0.25, 0.8, float(q) / rows))
+		var ra: PackedVector3Array = rings[q]
+		var rb: PackedVector3Array = rings[q + 1]
+		for k in sides:
+			var k2 := (k + 1) % sides
+			var mid := (ra[k] + rb[k2]) * 0.5
+			var axis_pt := e + d * d.dot(mid - e)
+			quad.call(ra[k], ra[k2], rb[k2], rb[k], col, (axis_pt - mid).normalized())
+	var back: PackedVector3Array = rings[rows]
+	var bc := e - d * (0.03 + depth)
+	for k in sides:
+		var k2 := (k + 1) % sides
+		var a := bc
+		var b2: Vector3 = back[k]
+		var c3: Vector3 = back[k2]
+		if (c3 - a).cross(b2 - a).dot(d) < 0.0:
+			kit.add_tri(a, c3, b2, rot.darkened(0.88))
+		else:
+			kit.add_tri(a, b2, c3, rot.darkened(0.88))
+	# Moss creeping over the top of the rim.
+	for k in rng.randi_range(2, 3):
+		var a := PI * 0.5 + rng.randf_range(-0.7, 0.7)
+		var at := e + d * rng.randf_range(-0.05, 0.03) + (u * cos(a) + v * sin(a)) * r * 0.97
+		var cr := r * rng.randf_range(0.16, 0.24)
+		kit.add_primitive(MeshKit.sphere(cr, 8, 4), Transform3D(Basis.looking_at(d, (u * cos(a) + v * sin(a))).scaled(Vector3(1.5, 0.45, 1.1)), at), moss.lightened(rng.randf_range(-0.05, 0.08)), 0.15, 0.06)
+	# Crumbs of rotten wood spilled out on the ground at the mouth.
+	for k in rng.randi_range(3, 5):
+		var at := e + d * rng.randf_range(0.08, r * 0.8) + u * rng.randf_range(-r * 0.8, r * 0.8)
+		at.y = 0.03
+		var cr := r * rng.randf_range(0.06, 0.12)
+		kit.add_primitive(MeshKit.sphere(cr, 6, 3), Transform3D(Basis(Vector3.UP, rng.randf() * TAU).scaled(Vector3(1.3, 0.5, 1.0)), at), rot.lightened(rng.randf_range(0.0, 0.15)), 0.2, 0.05)
 
 
 ## Stump: flaring base, pale cut top with rings, roots curving into the ground.
