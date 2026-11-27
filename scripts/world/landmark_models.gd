@@ -59,17 +59,17 @@ func _stones(kit: MeshKit, gen: WorldGen, at: Vector3, rng: RandomNumberGenerato
 			var axis := (a1 - a0).normalized()
 			var mid := (a0 + a1) * 0.5
 			mid.y = minf(mid.y, surf.call(mid.x, mid.z))   # (over a rise, it bridges it: bed it at the low side)
-			var roll := Basis(axis, rng.randf() * TAU)
-			kit.add_primitive(MeshKit.cylinder(w * 0.8, w, h, 6), Transform3D(roll * Basis(Quaternion(Vector3.UP, axis)), mid + Vector3(0, lie_r * 0.5, 0)), c, 0.15, 0.05)
+			var lift := Vector3(0, lie_r * 0.42, 0)
+			_megalith(kit, a0 + lift, a1 + lift, w, h, rng, c, false)
 			continue
 		# Upright (a touch of lean): from well under the lowest ground round its foot up to its full height.
-		var yaw_b := Basis(Vector3.UP, a)
 		var low := ChunkGenerator.lowest_ground(gen, p.x, p.z, w * 1.05, w * 1.05, 0.0, ground)
 		var bottom := low - 0.35
 		var top := p.y + h
 		var tall := top - bottom
 		var tilt := Basis(Vector3(rng.randf() - 0.5, 0, rng.randf() - 0.5).normalized(), rng.randf_range(0.0, 0.07))
-		kit.add_primitive(MeshKit.cylinder(w * 0.7, w, tall, 6), Transform3D(tilt * yaw_b.scaled(Vector3(1.0, 1.0, 0.55)), Vector3(p.x, bottom + tall * 0.5, p.z)), c, 0.15, 0.05)
+		var foot := Vector3(p.x, bottom, p.z)
+		_megalith(kit, foot, foot + tilt * Vector3(0, tall, 0), w * 1.15, tall, rng, c, true, a + PI * 0.5)
 		_solid(p + Vector3(0, h * 0.5, 0), Vector3(w * 1.6, h, w * 1.0), a)
 	# The slab in the middle: tipped to the ground under it, its whole rim bedded in.
 	var mid := at
@@ -87,6 +87,47 @@ func _stones(kit: MeshKit, gen: WorldGen, at: Vector3, rng: RandomNumberGenerato
 	kit.add_primitive(MeshKit.cylinder(1.3, 1.5, 0.75, 7), Transform3D(slab.scaled(Vector3(1.0, 1.0, 0.7)), mid + slab * Vector3(0, 0.27, 0)), stone.darkened(0.1), 0.15, 0.05)
 	_solid(mid + Vector3(0, 0.3, 0), Vector3(2.4, 0.55, 1.8), 0.0)
 	return count
+
+
+## One standing stone, from `a` (its foot) to `b` (its top): a broad, flattish slab (its wide faces turned across
+## `face`, a world angle), lumpy and a little irregular, narrowing a touch and rounding over at the top. Lichen in
+## patches, darker and damp low down. Lying (`upright` false), it rests along a to b with its wide face down.
+func _megalith(kit: MeshKit, a: Vector3, b: Vector3, w: float, length: float, rng: RandomNumberGenerator, c: Color, upright: bool, face := 0.0) -> void:
+	var along := b - a
+	var path: Array = []
+	var radii: Array = []
+	var ts := [0.0, 0.25, 0.5, 0.72, 0.86, 0.94, 0.985, 1.0]
+	var rs := [1.0, 0.97, 0.93, 0.88, 0.8, 0.62, 0.36, 0.08]
+	var swell := rng.randf_range(-0.06, 0.08)
+	for i in ts.size():
+		var t: float = ts[i]
+		path.append(a + along * t)
+		radii.append(w * float(rs[i]) * (1.0 + swell * sin(t * PI)) * rng.randf_range(0.96, 1.04))
+	var ph := rng.randf() * TAU
+	var ph2 := rng.randf() * TAU
+	var thin := rng.randf_range(0.5, 0.62)
+	var lichen := Color(0.6, 0.66, 0.38)
+	var lichen2 := Color(0.78, 0.74, 0.5)
+	var damp := c.darkened(0.3)
+	var foot_t := clampf(0.5 / maxf(length, 0.5), 0.0, 0.4)   # the first half metre or so: low down, in the grass
+	kit.loft(path, radii, 14, c, func(t: float, ang: float) -> Color:
+			var col := c.lightened(0.07 * smoothstep(0.6, 1.0, t))   # paler, weathered top
+			var patch := sin(ang * 2.0 + ph + t * 9.0) * cos(ang * 3.0 - ph2 + t * 5.0)
+			if patch > 0.42:
+				col = col.lerp(lichen if patch < 0.7 else lichen2, 0.55)
+			if upright:
+				col = col.lerp(damp, (1.0 - smoothstep(foot_t, foot_t * 2.2, t)) * 0.6)
+			return col,
+		func(t: float, ang: float) -> Vector2:
+			# A flattened, lumpy section, its broad axis along `face` (the ring's angle 0 looks down -X for an
+			# upright loft, so the world angle there is PI - ang).
+			var wa := PI - ang - face
+			var e := 1.0 / sqrt(pow(cos(wa), 2.0) + pow(sin(wa) / thin, 2.0))
+			var lump := 1.0 + 0.1 * sin(ang * 3.0 + ph + t * 4.0) + 0.05 * sin(ang * 5.0 - ph2 + t * 7.0)
+			if not upright:
+				return Vector2(lump, lump * thin)
+			return Vector2(e * lump, e * lump),
+		true, true, 0.06)
 
 
 ## A natural rock arch: two weathered legs and a span between them, layered in bands.
@@ -110,13 +151,39 @@ func _arch(kit: MeshKit, gen: WorldGen, at: Vector3, yaw: float, rng: RandomNumb
 		var y := lerpf(g - 1.0, at.y + height, arc) if i > 0 and i < steps else g - 1.0
 		path.append(Vector3(p.x, y, p.z))
 		radii.append(thick * (1.0 + 0.9 * pow(1.0 - sin(t * PI), 2.0)) * (1.0 + rng.randf_range(-0.08, 0.08)))
-	kit.loft(path, radii, 9, base_col, func(t: float, _ang: float) -> Color:
-		var band := sin(t * 23.0) * 0.5 + 0.5
-		return base_col.lightened(0.1 * band).darkened(0.08 * (1.0 - band)),
+	# Laid down in level beds like the hills round it, by height (not along the span), so they run straight across
+	# both legs and the top. In the badlands, the very bands the cliffs are painted with (WorldGen's ground colour),
+	# so the arch reads as cut from them; elsewhere, warm sandstone beds.
+	# In the desert, warm sandstone; anywhere else, the island's own grey rock in quieter beds.
+	var biome := gen.get_biome(at.x, at.z)
+	var bad := biome == WorldGen.Biome.BADLANDS
+	var warm := pal.badlands_ochre
+	var pale := pal.badlands_cream
+	var deep := pal.badlands_red
+	var freq := 1.25
+	if not bad:
+		freq = 1.9
+		if biome == WorldGen.Biome.DESERT:
+			warm = Color(0.88, 0.63, 0.42)
+			pale = Color(0.94, 0.87, 0.75)
+			deep = Color(0.66, 0.38, 0.27)
+		else:
+			warm = pal.rock.lerp(pal.rock_light, 0.5)
+			pale = pal.rock_light.lightened(0.08)
+			deep = pal.rock.darkened(0.15)
+	kit.loft(path, radii, 12, base_col, func(t: float, ang: float) -> Color:
+		var f := t * steps
+		var i0 := mini(int(f), steps - 1)
+		var q: Vector3 = (path[i0] as Vector3).lerp(path[i0 + 1], f - i0)
+		var y := q.y + sin(ang) * thick * 0.6
+		var band := sin(y * freq + sin(q.x * 0.02) * 1.5) * 0.5 + 0.5
+		var band2 := sin(y * 0.45 + 1.7) * 0.5 + 0.5
+		var col := deep.lerp(warm, band).lerp(pale, smoothstep(0.75, 0.95, band2))
+		return col.darkened(0.08 * (1.0 - band)),
 		func(t: float, ang: float) -> Vector2:
 			# Weathered across, not a tube: a lumpy outline that changes along the span.
-			var f := 1.0 + 0.18 * sin(ang * 3.0 + phase + t * 5.0) + 0.08 * sin(ang * 5.0 - t * 7.0)
-			return Vector2(f * 1.1, f * 0.9), true, true, 0.22)
+			var f := 1.0 + 0.24 * sin(ang * 3.0 + phase + t * 5.0) + 0.1 * sin(ang * 5.0 - t * 7.0)
+			return Vector2(f * 1.1, f * 0.9), true, true, 0.3)
 	for sgn: float in [-1.0, 1.0]:
 		var leg := at + dir * sgn * span * 0.45
 		leg.y = gen.get_height(leg.x, leg.z)
