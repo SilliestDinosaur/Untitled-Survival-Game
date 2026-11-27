@@ -352,7 +352,8 @@ static func _hatchet(k: MeshKit, tier: int, col: Color) -> void:
 	var top := 0.34
 	var m := _metal(tier, col)
 	var hr := 0.016
-	_handle(k, top + 0.045, 1, hr * 1.25)
+	# The haft ends inside the eye (out at the top edge, where the head thins, it showed through its faces).
+	_handle(k, top + 0.02, 1, hr * 1.25)
 	if _s("head") < 0.0:
 		return
 	# A chunky block of a head: a squared poll behind the eye, a flat top, and a blade that flares out and down
@@ -368,7 +369,8 @@ static func _hatchet(k: MeshKit, tier: int, col: Color) -> void:
 	var xf := Transform3D(FORWARD_PLANE, Vector3(0, top, 0))
 	k.flat_shading = tier == 4   # crystal: crisp facets
 	# (A segment length of 0.005 left duplicate faces in one head; 0.0055 is clean.)
-	k.sculpt(_stage_outline(outline), xf, _stage_thick(_head_thickness(ridge, 0.029, 0.014, 0.034, 0.022, 0.001), 0.029),
+	# The eye swells thicker than the haft, so the head wraps round it rather than the haft showing through its faces.
+	k.sculpt(_stage_outline(outline), xf, _stage_thick(_head_thickness(ridge, 0.029, 0.014, 0.06, 0.028, 0.001), 0.029),
 		_stage_color(_head_color(tier, m, ridge, 0.014), tier, m), 3, 0.0055)
 	k.flat_shading = false
 
@@ -382,13 +384,15 @@ static func _pickaxe(k: MeshKit, tier: int, col: Color) -> void:
 	_handle(k, top + 0.04, 1, 0.02)   # the same round branch as the axe
 	if _s("head") < 0.0:
 		return
-	var outline := _knap(PackedVector2Array([Vector2(-0.045, 0.0), Vector2(-0.02, -0.04), Vector2(0.06, -0.038), Vector2(0.17, 0.0), Vector2(0.06, 0.04), Vector2(-0.02, 0.04)]), 41, 0.004)
-	for i in outline.size():   # broad
-		outline[i] = Vector2(outline[i].x, outline[i].y * 1.8)
+	# A pick: a long point curving down and forward from the eye, a short squared poll behind it.
+	var outline := _knap(PackedVector2Array([Vector2(-0.062, 0.024), Vector2(-0.07, 0.0), Vector2(-0.062, -0.024),
+		Vector2(-0.02, -0.032), Vector2(0.05, -0.034), Vector2(0.12, -0.042), Vector2(0.185, -0.06), Vector2(0.215, -0.078),
+		Vector2(0.175, -0.044), Vector2(0.11, -0.012), Vector2(0.045, 0.02), Vector2(-0.02, 0.032)]), 41, 0.0025)
 	var ridge := PackedVector2Array(outline)
 	ridge.append(outline[0])
 	k.flat_shading = tier == 4   # crystal: crisp facets
-	k.sculpt(_stage_outline(outline), Transform3D(FORWARD_PLANE, Vector3(0, top, 0)), _stage_thick(_head_thickness(ridge, 0.03, 0.02, 0.0, 0.0, 0.003), 0.03),
+	# Thick through the eye (wrapping the haft), tapering out along the point.
+	k.sculpt(_stage_outline(outline), Transform3D(FORWARD_PLANE, Vector3(0, top, 0)), _stage_thick(_head_thickness(ridge, 0.034, 0.018, 0.06, 0.028, 0.004), 0.034),
 		_stage_color(_head_color(tier, m, ridge, 0.02), tier, m), 3, 0.006)
 	k.flat_shading = false
 
