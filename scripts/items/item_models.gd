@@ -354,7 +354,6 @@ static func _hatchet(k: MeshKit, tier: int, col: Color) -> void:
 	var hr := 0.016
 	_handle(k, top + 0.045, 1, hr * 1.25)
 	if _s("head") < 0.0:
-		_wedge(k, Vector3(0.03, 0.012, 0.014), Vector3(0, top + 0.046, 0), WOOD.darkened(0.15))
 		return
 	# A chunky block of a head: a squared poll behind the eye, a flat top, and a blade that flares out and down
 	# to a straight-edged bit.
@@ -372,9 +371,6 @@ static func _hatchet(k: MeshKit, tier: int, col: Color) -> void:
 	k.sculpt(_stage_outline(outline), xf, _stage_thick(_head_thickness(ridge, 0.029, 0.014, 0.034, 0.022, 0.001), 0.029),
 		_stage_color(_head_color(tier, m, ridge, 0.014), tier, m), 3, 0.0055)
 	k.flat_shading = false
-	# The haft's end: a wooden wedge driven into the top of it, standing proud of the head.
-	if _s("handle") >= 0.0:
-		_wedge(k, Vector3(0.03, 0.012, 0.014), Vector3(0, top + 0.046, 0), WOOD.darkened(0.15))
 
 
 # --- Pickaxes ---------------------------------------------------------------------------

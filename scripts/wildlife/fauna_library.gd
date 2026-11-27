@@ -443,11 +443,14 @@ func _make_quadruped(rng: RandomNumberGenerator, arch: String, home := -1, look 
 	var torso: Array = []
 	var torso_r: Array = []
 	# Radius profile from rump (t=0) to the base of the neck (t=1).
-	var profile := [0.55, 0.88, 0.95, 0.86, 0.92, 1.0, 0.97, 0.82, 0.62]
+	# A round rump, a waist tucked in behind the ribs, a deep chest and the shoulders: an animal, not a loaf.
+	var profile := [0.5, 0.86, 0.93, 0.8, 0.84, 0.98, 1.03, 0.9, 0.62]
 	for i in profile.size():
 		var t := float(i) / (profile.size() - 1)
 		var z := lerpf(L * 0.5, -L * 0.5, t)
-		var y := sin(t * PI) * H * 0.04 + hump_h * exp(-pow((t - 0.72) / 0.16, 2.0))
+		# The back dips a little behind the shoulders, and the chest hangs lower than the belly.
+		var y := sin(t * PI) * H * 0.04 + hump_h * exp(-pow((t - 0.72) / 0.16, 2.0)) - H * 0.05 * exp(-pow((t - 0.42) / 0.14, 2.0)) \
+			- H * 0.05 * exp(-pow((t - 0.72) / 0.12, 2.0))
 		torso.append(Vector3(0, y, z))
 		torso_r.append(H * 0.5 * float(profile[i]) * (1.0 + hump_h / H * exp(-pow((t - 0.72) / 0.16, 2.0))))
 	var w_ratio := W / H
@@ -457,7 +460,7 @@ func _make_quadruped(rng: RandomNumberGenerator, arch: String, home := -1, look 
 	var torso_bumps := 0.012 if arch == "bulky" else 0.0
 	if fur:
 		torso_bumps = maxf(torso_bumps, H * 0.05)   # thick shaggy winter coat
-	kit.loft(torso, torso_r, 14, coat, torso_coat, func(t: float, a: float) -> Vector2: return Vector2(1.0, w_ratio), true, true, torso_bumps)
+	kit.loft(torso, torso_r, 18, coat, torso_coat, func(t: float, a: float) -> Vector2: return Vector2(1.0, w_ratio), true, true, torso_bumps)
 	if arch == "bulky" or (fur and role != "critter" and arch != "shellback"):   # shaggy chest ruff
 		kit.loft([chest + Vector3(0, -H * 0.1, -L * 0.1), chest + Vector3(0, -H * 0.35, -L * 0.2), chest + Vector3(0, -H * 0.55, -L * 0.18)], [H * 0.35, H * 0.3, H * 0.12], 10, accent.lerp(coat, 0.5), Callable(), Callable(), true, true, 0.03)
 	if arch == "shellback":
@@ -615,14 +618,17 @@ func _make_quadruped(rng: RandomNumberGenerator, arch: String, home := -1, look 
 		hoof = Color(0.3, 0.26, 0.2)
 	var ll := s.leg_len
 	kit = MeshKit.new(rng.randi())
-	kit.add_primitive(MeshKit.sphere(leg_r * 1.4, 9, 6), Transform3D(Basis.from_scale(Vector3(1, 1.4, 1.2)), Vector3(0, -leg_r * 0.4, 0)), thigh_col, 0.0, 0.04)
+	# The shoulder: a big muscle that runs up into the body's side (so the leg grows out of it, not pinned on).
+	var bulk := 0.85 if arch in ["heron", "wader", "strider"] else 1.0
+	kit.add_primitive(MeshKit.sphere(leg_r * 1.45 * bulk, 10, 7), Transform3D(Basis.from_scale(Vector3(0.7, 1.7, 1.05)), Vector3(0, leg_r * 0.6, 0)), thigh_col, 0.0, 0.04, null, coat_fn)
 	var knee := Vector3(0, -ll * 0.5, -ll * 0.04)
 	_segment(kit, Vector3(0, -leg_r, 0), knee, leg_r * 1.35, leg_r, thigh_col, Callable())
 	_segment(kit, knee, Vector3(0, -ll + leg_r * 0.5, 0), leg_r, leg_r * 0.72, shin_col, Callable())
 	kit.add_primitive(MeshKit.cylinder(leg_r * 0.85, leg_r * 0.95, leg_r * 1.3, 8), Transform3D(Basis(), Vector3(0, -ll + leg_r * 0.55, -leg_r * 0.1)), hoof, 0.0, 0.0)
 	s.leg_mesh = kit.commit(material)
 	kit = MeshKit.new(rng.randi())
-	kit.add_primitive(MeshKit.sphere(leg_r * 1.7, 9, 6), Transform3D(Basis.from_scale(Vector3(1, 1.4, 1.3)), Vector3(0, -leg_r * 0.5, 0)), thigh_col, 0.0, 0.04, null, coat_fn)
+	# The haunch: the hind leg's big rounded thigh, running up into the rump.
+	kit.add_primitive(MeshKit.sphere(leg_r * 1.7 * bulk, 10, 7), Transform3D(Basis.from_scale(Vector3(0.7, 1.65, 1.2)), Vector3(0, leg_r * 0.6, leg_r * 0.15)), thigh_col, 0.0, 0.04, null, coat_fn)
 	var stifle := Vector3(0, -ll * 0.4, -ll * 0.1)
 	var hock := Vector3(0, -ll * 0.68, ll * 0.1)
 	_segment(kit, Vector3(0, -leg_r, 0), stifle, leg_r * 1.6, leg_r * 1.1, thigh_col, Callable())

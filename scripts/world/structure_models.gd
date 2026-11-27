@@ -27,6 +27,7 @@ static func shared_model(kind: String, fallback: Material) -> Dictionary:
 
 static func clear_cache() -> void:
 	_cache.clear()
+	_roof_cache.clear()
 	_extents.clear()
 
 
@@ -232,7 +233,11 @@ static func _build_piece(kind: String, ends := Vector2.ZERO) -> Dictionary:
 		"stairs":
 			_stairs(k, mat)
 		"roof":
-			_roof(k, mat, rng)
+			# On its own (the ghost, the building wheel): a one-cell roof, open all round.
+			var lone := PackedByteArray()
+			lone.resize(25)
+			lone[12] = 1
+			_roof_into(k, kind, lone)
 		"fence":
 			_fence(k, mat, rng, x0, x1)
 		"arch":
@@ -921,3 +926,233 @@ static func _stone_box(k: MeshKit, size: Vector3, center: Vector3, stone: Color,
 				var local := Vector3((x0 + x1) * 0.5, y0 + rh * (row + 0.5), sgn * out)
 				k.extrude(_rounded_rect((x1 - x0) * 0.5 - 0.012, rh * 0.5 - 0.012, 0.04, 2), Transform3D(basis, Vector3(center.x, 0, center.z) + basis * local),
 					0.05, 0.015, c, c.darkened(0.14))
+
+
+# --- Pitched roofs -------------------------------------------------------------------------------------------------
+
+## How steeply a roof rises (metres up for each metre in from its edge), how high it can get, how far the eaves reach
+## out past the walls, and where the tiles start (just above the flat ceiling deck).
+const ROOF_PITCH := 0.66
+const ROOF_CAP := 4.5        ## metres in from the edge at most (a big hall's roof flattens off on top)
+const EAVE := 0.38
+const EAVE_Y := 0.07
+const ROOF_GRID := 12
+
+static var _roof_cache := {}
+
+
+## Which of the cells round a roof (5 x 5, this one in the middle) have a roof at the same level: the roof's shape key.
+static func roof_window(st: Dictionary, structures: Dictionary) -> PackedByteArray:
+	var w := PackedByteArray()
+	w.resize(25)
+	var p: Array = st.pos
+	var c := GameActions.cell_of(Vector3(p[0], 0, p[2]))
+	var level := int(st.get("level", 0))
+	for dz in range(-2, 3):
+		for dx in range(-2, 3):
+			if not GameActions.cover_in(Vector2i(c.x + dx, c.y + dz), level).is_empty():
+				w[(dz + 2) * 5 + (dx + 2)] = 1
+	return w
+
+
+## A roof piece as part of the roof it belongs to: a hipped roof, rising from every open edge of the roofed area at
+## ROOF_PITCH (so one cell is a little pyramid, a long room has a ridge, an L-shaped one valleys and hips), tiled in
+## rows, with eaves overhanging the open edges and a fascia board under them. The flat ceiling deck and its beams stay
+## underneath (the room's ceiling). `window`: see roof_window. Returns {body, glow: null, light, radius, top} (top: the
+## roof's faces, for its collider).
+static func roof_model(kind: String, material: Material, window: PackedByteArray) -> Dictionary:
+	var key := kind + str(material.get_instance_id()) + window.hex_encode()
+	if _roof_cache.has(key):
+		return _roof_cache[key]
+	var k := MeshKit.new(hash(key))
+	var top := _roof_into(k, kind, window)
+	var out_d := {"body": k.commit(material), "glow": null, "light": Vector3.ZERO, "radius": 1.0, "top": top}
+	_roof_cache[key] = out_d
+	return out_d
+
+
+## Builds a roof piece into `k` (see roof_model); returns the faces of its top.
+static func _roof_into(k: MeshKit, kind: String, window: PackedByteArray) -> PackedVector3Array:
+	var mat: String = GameActions.PIECES[kind].mat
+	var rng := RandomNumberGenerator.new()
+	rng.seed = hash(kind + window.hex_encode())
+	var tile: Color
+	match mat:
+		"wood": tile = Color(0.46, 0.32, 0.22)
+		"stone": tile = Color(0.4, 0.42, 0.47)
+		_: tile = Color(0.62, 0.34, 0.26)
+	var frame := tile.darkened(0.3) if mat == "stone" else WOOD_DARK
+	_roof_frame(k, frame)
+	var h := GameActions.CELL * 0.5
+	var cell := GameActions.CELL
+	# The open edges near this cell (an edge of a roofed cell with no roof beyond it), in this cell's own space.
+	var segs: Array = []   # [a: Vector2, b: Vector2, outward: Vector2]
+	var has := func(dx: int, dz: int) -> bool:
+		if absi(dx) > 2 or absi(dz) > 2:
+			return true   # beyond what we know: count it roofed (the edge is far enough off not to matter)
+		return window[(dz + 2) * 5 + (dx + 2)] == 1
+	for dz in range(-2, 3):
+		for dx in range(-2, 3):
+			if not has.call(dx, dz):
+				continue
+			var cx := dx * cell
+			var cz := dz * cell
+			for d: Vector2i in [Vector2i(1, 0), Vector2i(-1, 0), Vector2i(0, 1), Vector2i(0, -1)]:
+				if has.call(dx + d.x, dz + d.y):
+					continue
+				var mid := Vector2(cx + d.x * h, cz + d.y * h)
+				var along := Vector2(-d.y, d.x) * h
+				segs.append([mid - along, mid + along, Vector2(d.x, d.y)])
+	var depth := func(x: float, z: float) -> float:
+		var best := ROOF_CAP
+		var q := Vector2(x, z)
+		for sg: Array in segs:
+			var a: Vector2 = sg[0]
+			var b: Vector2 = sg[1]
+			var ab := b - a
+			var t := clampf((q - a).dot(ab) / ab.length_squared(), 0.0, 1.0)
+			best = minf(best, q.distance_to(a + ab * t))
+		return best
+	var height := func(x: float, z: float) -> float:
+		return EAVE_Y + ROOF_PITCH * float(depth.call(x, z))
+	var top := PackedVector3Array()
+	var band := func(d: float) -> Color:
+		var row := floori(d / 0.27)
+		var c := tile.lightened(0.07) if row % 2 == 0 else tile.darkened(0.06)
+		return c.lightened(rng.randf_range(-0.04, 0.04))
+	# The surface: a grid over the cell, each square cut along whichever diagonal follows the roof's fold there.
+	var n := ROOF_GRID
+	var step := cell / n
+	var grid: Array = []
+	for j in n + 1:
+		var row: Array = []
+		for i in n + 1:
+			var x := -h + i * step
+			var z := -h + j * step
+			row.append(Vector3(x, float(height.call(x, z)), z))
+		grid.append(row)
+	k.flat_shading = true
+	for j in n:
+		for i in n:
+			var p00: Vector3 = grid[j][i]
+			var p10: Vector3 = grid[j][i + 1]
+			var p01: Vector3 = grid[j + 1][i]
+			var p11: Vector3 = grid[j + 1][i + 1]
+			var cx := -h + (i + 0.5) * step
+			var cz := -h + (j + 0.5) * step
+			var true_mid: float = height.call(cx, cz)
+			var d1 := absf((p00.y + p11.y) * 0.5 - true_mid)   # cut 00-11
+			var d2 := absf((p10.y + p01.y) * 0.5 - true_mid)   # cut 10-01
+			var col: Color = band.call(float(depth.call(cx, cz)))
+			var tris: Array = [[p00, p10, p11], [p00, p11, p01]] if d1 <= d2 else [[p00, p10, p01], [p10, p11, p01]]
+			for t: Array in tris:
+				k.add_tri(t[0], t[1], t[2], col)
+				top.append_array(PackedVector3Array([t[0], t[1], t[2]]))
+	# Eaves: past each open edge of this cell, the roof carries on down and out (from the grid's own edge points, so
+	# the two join exactly), with a fascia board along its end.
+	var drop := EAVE * ROOF_PITCH
+	var fascia := frame.darkened(0.1)
+	var open := {}
+	var boards: Array = []   # fascia boards, added after the tiles (MeshKit nudges each part apart: the skin is one part)
+	var lip := func(p: Vector3, out: Vector3) -> Vector3:
+		return p + out * EAVE + Vector3(0, -drop, 0)
+	for d: Vector2i in [Vector2i(1, 0), Vector2i(-1, 0), Vector2i(0, 1), Vector2i(0, -1)]:
+		if has.call(d.x, d.y):
+			continue
+		open[d] = true
+		var out := Vector3(d.x, 0, d.y)
+		var pts: Array = []   # along the edge, in grid order
+		for m in n + 1:
+			if d.x == 1:
+				pts.append(grid[m][n])
+			elif d.x == -1:
+				pts.append(grid[m][0])
+			elif d.y == 1:
+				pts.append(grid[n][m])
+			else:
+				pts.append(grid[0][m])
+		var col := tile.darkened(0.08)
+		for m in n:
+			var t0: Vector3 = pts[m]
+			var t1: Vector3 = pts[m + 1]
+			var b0: Vector3 = lip.call(t0, out)
+			var b1: Vector3 = lip.call(t1, out)
+			# Wound so the slope faces up and out.
+			if (b0 - t0).cross(t1 - t0).y > 0.0:
+				k.add_tri(t0, t1, b0, col)
+				k.add_tri(t1, b1, b0, col)
+			else:
+				k.add_tri(t0, b0, t1, col)
+				k.add_tri(t1, b0, b1, col)
+			top.append_array(PackedVector3Array([t0, t1, b0, t1, b1, b0]))
+		var fl := cell + EAVE * 2.0
+		var fy: float = float(height.call(out.x * h, out.z * h)) - drop - 0.08
+		boards.append([Vector3(fl, 0.12, 0.05) if absf(out.z) > 0.5 else Vector3(0.05, 0.12, fl), out * (h + EAVE + 0.03) + Vector3(0, fy, 0)])
+	# Outer corners: where two open edges meet, the eaves wrap round the corner.
+	for cd: Vector2i in [Vector2i(1, 1), Vector2i(1, -1), Vector2i(-1, 1), Vector2i(-1, -1)]:
+		if not (open.has(Vector2i(cd.x, 0)) and open.has(Vector2i(0, cd.y))):
+			continue
+		var pa: Vector3 = grid[n if cd.y == 1 else 0][n if cd.x == 1 else 0]
+		var pb: Vector3 = lip.call(pa, Vector3(cd.x, 0, 0))
+		var pd: Vector3 = lip.call(pa, Vector3(0, 0, cd.y))
+		var pc := pa + Vector3(cd.x, 0, cd.y) * EAVE + Vector3(0, -drop * 1.4, 0)
+		var col := tile.darkened(0.1)
+		for t: Array in [[pa, pb, pc], [pa, pc, pd]]:
+			var a: Vector3 = t[0]
+			var b: Vector3 = t[1]
+			var c: Vector3 = t[2]
+			if (c - a).cross(b - a).y > 0.0:
+				k.add_tri(a, b, c, col)
+			else:
+				k.add_tri(a, c, b, col)
+			top.append_array(PackedVector3Array([a, b, c]))
+	k.flat_shading = false
+	_roof_underside(k, top, tile.darkened(0.25))
+	for b: Array in boards:
+		k.add_primitive(_box(b[0]), Transform3D(Basis(), b[1]), fascia, 0.0, 0.03)
+	return top
+
+
+## The roof is a skin of tiles some centimetres thick, not a sheet: an underside under every face of `top` (seen
+## from below the eaves) and a strip down every open edge, so it's closed all round.
+static func _roof_underside(k: MeshKit, top: PackedVector3Array, col: Color) -> void:
+	var down := Vector3(0, -0.045, 0)
+	var tris: Array = []
+	var edges := {}
+	var key := func(a: Vector3, b: Vector3) -> String:
+		var ka := "%d,%d,%d" % [roundi(a.x * 2000.0), roundi(a.y * 2000.0), roundi(a.z * 2000.0)]
+		var kb := "%d,%d,%d" % [roundi(b.x * 2000.0), roundi(b.y * 2000.0), roundi(b.z * 2000.0)]
+		return ka + "|" + kb if ka < kb else kb + "|" + ka
+	for i in range(0, top.size(), 3):
+		var a := top[i]
+		var b := top[i + 1]
+		var c := top[i + 2]
+		if (c - a).cross(b - a).y < 0.0:   # (as add_tri winds an upward face)
+			var t := b
+			b = c
+			c = t
+		tris.append([a, b, c])
+		for e: Array in [[a, b], [b, c], [c, a]]:
+			var kk: String = key.call(e[0], e[1])
+			edges[kk] = int(edges.get(kk, 0)) + 1
+	for t: Array in tris:
+		var a: Vector3 = t[0]
+		var b: Vector3 = t[1]
+		var c: Vector3 = t[2]
+		k.add_tri(a + down, c + down, b + down, col)
+		for e: Array in [[a, b], [b, c], [c, a]]:
+			if int(edges[key.call(e[0], e[1])]) != 1:
+				continue
+			var p: Vector3 = e[0]
+			var q: Vector3 = e[1]
+			k.add_tri(p, q + down, q, col.lightened(0.1))
+			k.add_tri(p, p + down, q + down, col.lightened(0.1))
+
+
+## The flat ceiling deck under a roof and the beams round its edge (seen from inside).
+static func _roof_frame(k: MeshKit, frame: Color) -> void:
+	var h := GameActions.CELL * 0.5
+	k.add_primitive(_box(Vector3(GameActions.CELL - 0.004, 0.05, GameActions.CELL - 0.004)), Transform3D(), frame.darkened(0.1), 0.0, 0.03)
+	for side in [-1.0, 1.0]:
+		k.add_primitive(_box(Vector3(GameActions.CELL - 0.004, 0.16, 0.14)), Transform3D(Basis(), Vector3(0, -0.04, side * (h - 0.072))), frame, 0.0, 0.03)
+		k.add_primitive(_box(Vector3(0.14, 0.16, GameActions.CELL - 0.29)), Transform3D(Basis(), Vector3(side * (h - 0.072), -0.04, 0)), frame, 0.0, 0.03)

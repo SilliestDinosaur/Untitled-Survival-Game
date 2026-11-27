@@ -124,6 +124,9 @@ func _sync() -> void:
 	var pop := _settled and fresh <= 3
 	for id: String in Game.structures:
 		var st: Dictionary = Game.structures[id]
+		if _nodes.has(id) and is_instance_valid(_nodes[id]) and st.kind in GameActions.COVER_KINDS \
+				and _nodes[id].get_meta("roof_window", PackedByteArray()) != StructureModels.roof_window(st, Game.structures):
+			_free_node(id)   # a roof joined it or came down beside it: reshape
 		if _nodes.has(id) and is_instance_valid(_nodes[id]) and bool(_nodes[id].get_meta("blueprint", false)) != GameActions.is_blueprint(st):
 			if not GameActions.is_blueprint(st):
 				_finishing[id] = true
@@ -336,6 +339,11 @@ func _make(st: Dictionary) -> Node3D:
 	var ends := StructureModels.wall_ends(st, _corners) if st.kind in GameActions.EDGE_KINDS else Vector2.ZERO
 	root.set_meta("ends", ends)
 	var model := StructureModels.get_model(st.kind, _mat, _glow_mat, ends)
+	if st.kind in GameActions.COVER_KINDS:
+		# Shaped as part of the roof round it (see StructureModels.roof_model).
+		var window := StructureModels.roof_window(st, Game.structures)
+		root.set_meta("roof_window", window)
+		model = StructureModels.roof_model(st.kind, _mat, window)
 	var blueprint := GameActions.is_blueprint(st)
 	root.set_meta("blueprint", blueprint)
 	var mi := MeshInstance3D.new()
@@ -429,6 +437,14 @@ func _make(st: Dictionary) -> Node3D:
 	var panel: CollisionShape3D = null
 	if GameActions.is_building(st.kind):
 		panel = _add_piece_colliders(body, st.kind)
+		if model.has("top") and not (model.top as PackedVector3Array).is_empty():
+			# The sloping roof itself is solid too (you can climb about on it), not just the flat deck under it.
+			var tcs := CollisionShape3D.new()
+			var tri := ConcavePolygonShape3D.new()
+			tri.backface_collision = true
+			tri.set_faces(model.top)
+			tcs.shape = tri
+			body.add_child(tcs)
 	else:
 		var cs := CollisionShape3D.new()
 		var shape := CylinderShape3D.new()
