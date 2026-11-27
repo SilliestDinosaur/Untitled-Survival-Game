@@ -202,9 +202,15 @@ func _refresh() -> void:
 		_preview.position = Vector3(0.0, 1.2 - (aabb.position.y + aabb.size.y * 0.5) * fit, 0.0)
 	var cost := GameActions.PIECE_COSTS.get(kind, {}) as Dictionary
 	var parts: Array[String] = []
+	var short := false
 	for item: String in cost:
-		parts.append("%d %s" % [int(cost[item]), ItemDB.display_name(item)])
+		var have: int = player.inventory.count(item) if player else 0
+		var need := int(cost[item])
+		parts.append("%d %s%s" % [need, ItemDB.display_name(item), "" if have >= need else " (have %d)" % have])
+		short = short or have < need
 	_caption.text = "%s  ·  %s" % [ItemDB.display_name(kind), ", ".join(parts)]
+	# Gold when you've everything it takes; a dull red when you're short of something (you can still lay the plan).
+	_caption.add_theme_color_override("font_color", Color(1.0, 0.62, 0.5) if short else UITheme.TEXT)
 
 
 func _layout() -> void:

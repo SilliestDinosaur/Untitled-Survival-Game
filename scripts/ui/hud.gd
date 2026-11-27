@@ -21,6 +21,8 @@ var _banner: VBoxContainer
 var _banner_name: Label
 var _damage_fx: ColorRect
 var _water_fx: ColorRect
+var _sleep_fx: ColorRect   ## the screen going dark while you sleep, and the morning coming back up
+var _sleep_label: Label
 var _mood: ColorRect          ## frost / warmth / hurt / underwater, on the picture itself (screen_mood.gdshader)
 var _mood_v := Vector4.ZERO   ## frost, warm, hurt, water (eased)
 var _damage := 0.0
@@ -59,6 +61,9 @@ func setup(p: CharacterBody3D, w: Node) -> void:
 	player.inventory.item_added.connect(_feed.add_item)
 	player.hint.connect(show_hint)
 	player.hit_landed.connect(hit_marker)
+	player.woke.connect(func() -> void:
+		_sleep_fx.color.a = 1.0   # the morning fades up from black
+		_sleep_label.text = "")
 	guide.player = p
 	Settings.changed.connect(func() -> void:
 		# (Only the guide's own setting: any other change, a slider dragged, would restart its fade each step.)
@@ -82,6 +87,15 @@ func _ready() -> void:
 	_water_fx = _overlay(Color(0.05, 0.25, 0.35), 0.0, 0.9)
 	_damage_fx = _overlay(Color(0.65, 0.02, 0.02), 0.0, 0.5)
 	_cold_fx = _overlay(Color(0.7, 0.85, 1.0), 0.0, 0.75)
+	_sleep_fx = ColorRect.new()
+	_sleep_fx.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
+	_sleep_fx.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	_sleep_fx.color = Color(0.02, 0.02, 0.05, 0.0)
+	add_child(_sleep_fx)
+	_sleep_label = UITheme.label("", 26, UITheme.TEXT, 6, true)
+	_sleep_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	UITheme.place(_sleep_label, Control.PRESET_CENTER, Vector2(-300, 60), Vector2(600, 40))
+	_sleep_fx.add_child(_sleep_label)
 	_wheel = BuildWheel.new()
 	add_child(_wheel)
 
@@ -230,6 +244,7 @@ func _overlay(tint: Color, intensity: float, softness: float) -> ColorRect:
 
 
 func show_hint(text: String, hold := 1.6) -> void:
+	hold = maxf(hold, text.length() / 22.0)   # long ones stay up long enough to read
 	_hint.text = text
 	_hint.modulate.a = 1.0
 	if _hint_tw:
@@ -365,6 +380,8 @@ func _process(delta: float) -> void:
 		if holding_plan:
 			parts.clear()   # the plan only lays blueprints, whatever the crosshair is on
 		parts.append(("[%s] Place %s" % [Settings.code_label(Settings.binding_of("attack")).replace(" Click", ""), pl.name]) if pl.ok else pl.reason)
+		if holding_plan and pl.ok and pl.get("cost", "") != "":
+			parts.append(String(pl.cost))
 		parts.append("[%s] Rotate" % Settings.code_label(Settings.binding_of("rotate_piece")))
 		if holding_plan:
 			parts.append("[%s] Building wheel" % Settings.code_label(Settings.binding_of("build_menu")))
@@ -380,6 +397,10 @@ func _process(delta: float) -> void:
 		eff.append("Freezing! Find a fire")
 	elif s.is_cold():
 		eff.append("Cold")
+	if player.shelter >= 0.9:
+		eff.append("Sheltered")
+	elif player.shelter >= 0.5:
+		eff.append("Under a roof")
 	# A nudge once, well before either starts to hurt (again only after things have been put right).
 	if s.hunger < s.max_hunger * 0.3 and not _hunger_nudged:
 		_hunger_nudged = true
@@ -394,6 +415,13 @@ func _process(delta: float) -> void:
 	elif s.heat > 1.0 and s.warmth < s.max_warmth:
 		eff.append("Warming up")
 	_effects.text = "   ".join(eff)
+	# Asleep: the screen dims (waiting for the others); woken: it lightens again over a couple of seconds.
+	var dark := 0.82 if player.sleeping else 0.0
+	_sleep_fx.color.a = lerpf(_sleep_fx.color.a, dark, 1.0 - exp(-(2.5 if player.sleeping else 0.9) * delta))
+	if player.sleeping:
+		_sleep_label.text = "Sleeping...  (move to get up)"
+	elif _sleep_fx.color.a < 0.3:
+		_sleep_label.text = ""
 	var frac := _target_health(look)
 	_target_bar.visible = frac >= 0.0 and frac < 0.999
 	if _target_bar.visible:

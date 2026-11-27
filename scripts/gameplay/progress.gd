@@ -27,6 +27,7 @@ const MILESTONES := [
 	["cooked", "Survival", "A hot meal", "Cook something over a fire."],
 	["forage", "Survival", "Brave taster", "Try a wild mushroom or herb to learn what it does."],
 	["bandage", "Survival", "Patched up", "Make a bandage."],
+	["slept", "Survival", "Sound asleep", "Sleep the night away in a bed of your own."],
 	["stone_tools", "Crafting", "Stone age", "Make a stone hatchet and a stone pickaxe."],
 	["workbench", "Crafting", "Woodworker", "Build a workbench."],
 	["home", "Crafting", "A roof overhead", "Build a home: walls round you and a roof above."],
@@ -158,7 +159,8 @@ static func update(p: Dictionary, player: Node3D, guide_new: Array) -> Array:
 		"bandage": has.call("bandage"),
 		"stone_tools": (has.call("hatchet_t1") or _any_tool(seen, "hatchet")) and (has.call("pickaxe_t1") or _any_tool(seen, "pickaxe")),
 		"workbench": int(built.get("workbench", 0)) > 0,
-		"home": int(built_any.call(WALLS)) >= 4 and int(built_any.call(ROOFS)) >= 1,
+		"home": p.flags.has("home"),   # (stood in a room with a roof and walls all round: see Player._update_exposure)
+		"slept": p.flags.has("slept"),
 		"forge": int(built.get("forge", 0)) > 0,
 		"ingot": _any_prefix(seen, "ingot_t") or has.call("dusk_ingot"),
 		"metal_tool": _metal_tool(seen),

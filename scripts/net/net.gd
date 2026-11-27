@@ -20,6 +20,7 @@ signal session_ended(reason: String)         ## disconnected, kicked, or host le
 signal roster_changed                        ## someone joined or left
 signal player_message(text: String)          ## "X joined" etc. for the HUD
 signal games_changed                         ## the list of games on this network changed
+signal morning                               ## everyone slept: the night has passed (wake up)
 
 const DISCOVERY_PORT := 24681                ## LAN beacon: hosts announce here, menus listen
 const BEACON_SECONDS := 1.0
@@ -84,6 +85,32 @@ var _pose_timer := 0.0
 var _animal_timer := 0.0
 var _structures_queued := false
 var _time_timer := 0.0
+var _sleepers := {}   ## (host) peer id -> true: everyone in bed, waiting for the rest to turn in
+
+
+## Everyone here asleep? Then the night passes for all. Returns how many are still awake.
+func _sleep_check() -> int:
+	var everyone: Array = [my_id()]
+	if is_host():
+		everyone.append_array(players.keys())
+	var awake := 0
+	for p: int in everyone:
+		if not _sleepers.has(p):
+			awake += 1
+	if awake == 0:
+		_sleepers.clear()
+		GameActions.pass_night()
+		if is_host():
+			_sync_time.rpc(Game.time_of_day, Game.day, Game.play_time)
+			_morning.rpc()
+		morning.emit()
+	return awake
+
+
+## (Guests) the night passed while you slept.
+@rpc("authority", "reliable")
+func _morning() -> void:
+	morning.emit()
 var _report_timer := 0.0
 var _swings := 0
 var _inv_dirty := {}         ## peer id -> {added: {}, broke: ""}
@@ -560,6 +587,9 @@ func _on_peer_disconnected(peer: int) -> void:
 	var info: Dictionary = players[peer]
 	_store_guest(peer)
 	players.erase(peer)
+	_sleepers.erase(peer)
+	if not _sleepers.is_empty():
+		_sleep_check.call_deferred()   # the one still up has gone: the sleepers may be all there is now
 	Game.inventories.erase(peer)
 	_inv_dirty.erase(peer)
 	if avatars.has(peer):
@@ -734,6 +764,15 @@ func run_action(pid: int, peer: int, action: String, a: Dictionary) -> Dictionar
 			return GameActions.hit_structure(pid, String(a.structure))
 		"toggle_door":
 			return GameActions.toggle_door(pid, String(a.structure))
+		"sleep":
+			var why := GameActions.sleep_problem(Game.structures.get(String(a.get("structure", "")), {}))
+			if why != "":
+				return {"ok": false, "reason": why}
+			_sleepers[peer] = true
+			return {"ok": true, "waiting": _sleep_check()}
+		"wake":
+			_sleepers.erase(peer)
+			return {"ok": true}
 		"consume":
 			return GameActions.consume(pid)
 		"hit_animal":

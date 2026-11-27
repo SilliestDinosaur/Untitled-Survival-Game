@@ -453,6 +453,9 @@ func _physics_process(delta: float) -> void:
 				_threat = null
 				_enter(State.IDLE)
 		State.WARN:
+			if _player_safe():
+				_enter(State.IDLE)   # they've gone in behind walls
+				return
 			# Territorial: face the intruder, head low, snorting.
 			alert = 1.0
 			_desired_yaw = atan2(-to_player.x, -to_player.z)
@@ -464,7 +467,7 @@ func _physics_process(delta: float) -> void:
 			elif dist > (7.0 if species.body == "serpent" else 12.0) or _timer <= 0.0:
 				_enter(State.IDLE)
 		State.ATTACK:
-			if _timer <= 0.0 or dist > 30.0:
+			if _timer <= 0.0 or dist > 30.0 or _player_safe():
 				_enter(State.IDLE)
 			elif _windup >= 0.0:
 				# Rearing back before the hit: the player can see it coming and step away.
@@ -540,6 +543,8 @@ func _perceive(dist: float, sprinting: bool) -> void:
 	if state in [State.FLEE, State.ATTACK, State.DEAD]:
 		return
 	if species.role == "defensive":
+		if _player_safe():
+			return   # behind walls: no threat to it, and out of its reach
 		if state in [State.HUNT, State.EAT, State.TREE]:
 			if dist < 6.0:
 				_prey = null
@@ -618,8 +623,14 @@ func _walkable(p: Vector3, h: float) -> bool:
 		return not is_nan(h) and absf(h - position.y) < 0.7 and Vector2(p.x - home_pos.x, p.z - home_pos.z).length() < LAIR_LEASH
 	if species.swims:   # swimmers go into the water (not out to the deep sea)
 		return h > -5.0 and h < 62.0 and (h < 0.5 or Game.world_gen.get_normal(p.x, p.z).y > 0.7)
-	# Wading into a river's shallows is fine; its deep middle isn't.
-	return h > 1.3 and h < 62.0 and Game.world_gen.get_normal(p.x, p.z).y > 0.7 and h > Game.world_gen.water_level(p.x, p.z) - 0.6
+	# Wading into a river's shallows is fine; its deep middle isn't. Nor into anyone's house or walled yard.
+	return h > 1.3 and h < 62.0 and Game.world_gen.get_normal(p.x, p.z).y > 0.7 and h > Game.world_gen.water_level(p.x, p.z) - 0.6 \
+		and not GameActions.in_building(p)
+
+
+## The player is inside a building (or a walled yard): out of reach, so not worth squaring up to.
+func _player_safe() -> bool:
+	return is_instance_valid(player) and GameActions.in_building(player.global_position)
 
 
 ## The ground under p: the surface, or for a cave animal the cave floor (NAN where there's no floor to stand on).

@@ -34,6 +34,13 @@ const STEP_UP := 0.36   ## the highest ledge (a stair tread, a log) the body wal
 var player_id := Game.LOCAL_PLAYER
 var active := false
 var spawn_point := Vector3.ZERO
+## How sheltered you are where you stand, 0..1 (see GameActions.shelter_at): it keeps the cold off.
+var shelter := 0.0
+## Your bed (a structure id, "" for none): you wake there after a fall, instead of back at the island's landing.
+var bed := ""
+## In bed for the night, waiting for the morning (any move gets you up again).
+var sleeping := false
+signal woke   ## the night passed while you slept
 var swimming := false
 var underwater := false
 var climbing := false          ## on a vine-hung rock face
@@ -90,6 +97,7 @@ func _ready() -> void:
 	camera.add_child(viewmodel)
 	viewmodel.strike.connect(_on_strike)
 	viewmodel.grab.connect(_on_grab)
+	Net.morning.connect(_on_morning)
 	inventory.changed.connect(func() -> void: viewmodel.hold(inventory.selected_item()))
 	inventory.tool_broke.connect(func(id: String) -> void:
 		hint.emit("Your %s broke!" % ItemDB.display_name(id))
@@ -126,6 +134,7 @@ func to_save_data() -> Dictionary:
 		"markers": markers.duplicate(true),
 		"death": death_pos,
 		"progress": progress,
+		"bed": bed,
 	}
 
 
@@ -146,6 +155,7 @@ func apply_save_data(d: Dictionary) -> void:
 	markers = d.get("markers", [])
 	death_pos = d.get("death", [])
 	progress = d.get("progress", {})
+	bed = String(d.get("bed", ""))
 	if d.has("inventory"):
 		inventory.from_data(d.inventory)
 	elif d.has("items"):   # older saves: item counts only
@@ -265,6 +275,11 @@ func _physics_process(delta: float) -> void:
 		Effects.splash(get_parent(), Vector3(global_position.x, water_y, global_position.z), clampf(-velocity.y / 8.0, 0.6, 1.6))
 		Audio.play("splash", linear_to_db(clampf(-velocity.y / 10.0, 0.45, 1.0)), randf_range(0.9, 1.05))
 	var input := Input.get_vector("move_left", "move_right", "move_forward", "move_back") if not crafting else Vector2.ZERO
+	if sleeping:
+		if input != Vector2.ZERO or Input.is_action_just_pressed("jump"):
+			sleeping = false   # got up again
+			Net.request("wake", {})
+		input = Vector2.ZERO
 	var dir := (transform.basis * Vector3(input.x, 0.0, input.y)).normalized()
 
 	# Timers that make jumping feel forgiving.
@@ -495,7 +510,7 @@ func _piece_look(sid: String, st: Dictionary) -> Dictionary:
 		look.name = "%s blueprint" % name
 		look.label = "Blueprint · %d%% built" % roundi(float(st.get("built", 0.0)) * 100.0)
 		if tool_type == "hammer":
-			look.label += " · costs %s" % _cost_text(GameActions.PIECE_COSTS.get(st.kind, {}))
+			look.label += " · " + cost_line(GameActions.PIECE_COSTS.get(st.kind, {})).to_lower()
 			look.attack = "Build"
 		elif tool_type != "plan":
 			look.attack = "Take down"
@@ -515,7 +530,27 @@ func _piece_look(sid: String, st: Dictionary) -> Dictionary:
 		if st.kind in GameActions.DOOR_KINDS:
 			look.door = sid
 			look.interact = "Close" if bool(st.get("open", false)) else "Open"
+		if st.kind == "bed":
+			look.bed = sid
+			var night := Game.is_night() or Game.time_of_day > Game.SUNSET - 0.04
+			look.interact = "Sleep" if night else ("Make this your bed" if bed != sid else "")
+			if bed == sid:
+				look.name = "Your bed"
 	return look
+
+
+## What a piece takes to build, and what of it you're short: "Builds with 4 Plank, 2 Rope · short 2 Plank".
+## (The blueprint itself is free; the hammer takes these as it builds.)
+func cost_line(items: Dictionary) -> String:
+	if items.is_empty():
+		return ""
+	var short: Array[String] = []
+	for item: String in items:
+		var have := inventory.count(item)
+		if have < int(items[item]):
+			short.append("%d %s" % [int(items[item]) - have, ItemDB.display_name(item)])
+	var line := "Builds with %s" % _cost_text(items)
+	return line + ("  ·  short %s" % ", ".join(short) if not short.is_empty() else "  ·  you have it all")
 
 
 static func _cost_text(items: Dictionary) -> String:
@@ -619,9 +654,55 @@ func _attack_verb(r: Dictionary) -> String:
 
 
 func respawn() -> void:
-	global_position = spawn_point + Vector3.UP * 1.5
+	sleeping = false
+	var at := spawn_point + Vector3.UP * 1.5
+	var st: Dictionary = Game.structures.get(bed, {})
+	if not st.is_empty() and st.kind == "bed" and not GameActions.is_blueprint(st):
+		# Up from your own bed: beside it, on the floor it stands on.
+		var bp := Vector3(st.pos[0], st.pos[1], st.pos[2])
+		var side := Basis(Vector3.UP, float(st.get("yaw", 0.0))) * Vector3(0.95, 0, 0)
+		at = bp + side + Vector3.UP * 0.3
+	elif bed != "":
+		bed = ""   # it's gone
+		hint.emit("Your bed is gone: you woke where you first landed")
+	global_position = at
 	velocity = Vector3.ZERO
 	stats.reset()
+
+
+## Into bed: this is your bed now, and at night you sleep (when everyone playing is in bed, the night passes).
+func _use_bed(sid: String) -> void:
+	if bed != sid:
+		bed = sid
+		hint.emit("This is your bed now: you'll wake here if you fall")
+	if not (Game.is_night() or Game.time_of_day > Game.SUNSET - 0.04):
+		return
+	Net.request("sleep", {"structure": sid}, func(res: Dictionary) -> void:
+		if not res.get("ok", false):
+			hint.emit(String(res.get("reason", "")))
+			Audio.error_buzz()
+			return
+		if Game.is_night() or Game.time_of_day > Game.SUNSET - 0.04:   # (not already morning: that was everyone)
+			sleeping = true
+			velocity = Vector3.ZERO
+			var waiting := int(res.get("waiting", 0))
+			if waiting > 0:
+				hint.emit("Sleeping... waiting for %d more to turn in (move to get up)" % waiting))
+
+
+func _on_morning() -> void:
+	sleeping = false
+	# A night's sleep: warm, rested and mended a little, and hungry for breakfast.
+	stats.warmth = stats.max_warmth
+	stats.stamina = stats.max_stamina
+	stats.health = minf(stats.max_health, stats.health + stats.max_health * 0.3)
+	stats.hunger = maxf(stats.hunger - stats.max_hunger * 0.12, stats.max_hunger * 0.1)
+	hint.emit("You wake at dawn, rested")
+	if not progress.is_empty():
+		if not progress.has("flags"):
+			progress.flags = {}
+		progress.flags.slept = 1
+	woke.emit()
 
 
 # --- Actions --------------------------------------------------------------------------
@@ -832,6 +913,9 @@ func _on_grab() -> void:
 	if look.has("door"):
 		Net.request("toggle_door", {"structure": look.door})
 		return
+	if look.has("bed"):
+		_use_bed(String(look.bed))
+		return
 	if look.has("chest"):
 		open_chest.emit(String(look.chest))
 		return
@@ -959,6 +1043,13 @@ func _update_placement() -> void:
 			hit = Vector3.INF   # plants and rocks don't count: aim at the ground behind them instead
 		if hit != Vector3.INF:
 			pos = hit
+	if pos == Vector3.INF and (kind_now in GameActions.FLOOR_KINDS or kind_now in GameActions.COVER_KINDS) and dir.y < -0.05 \
+			and global_position.y > Game.world_gen.get_height(global_position.x, global_position.z) + 1.5:
+		# Up on a floor and looking out into the air: aim at the height you're standing at, so a floor (a balcony) or
+		# roof can be laid out beside you.
+		var t := (global_position.y - from.y) / dir.y
+		if t > 0.0 and t < 8.0:
+			pos = from + dir * t
 	if pos == Vector3.INF:
 		# March along the view ray until it meets the ground (max ~6 m); else 3 m ahead.
 		var d := 0.5
@@ -1013,6 +1104,8 @@ func _update_placement() -> void:
 		if level > 0:
 			label += " (level %d)" % (level + 1)
 	placement = {"ok": reason == "", "reason": reason, "pos": pos, "yaw": yaw, "name": label, "kind": kind}
+	if GameActions.is_building(kind):
+		placement.cost = cost_line(GameActions.PIECE_COSTS.get(kind, {}))
 	if not _ghost:
 		_ghost = MeshInstance3D.new()
 		_ghost.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
@@ -1078,6 +1171,7 @@ func _update_exposure() -> void:
 	var p := global_position
 	var gen: WorldGen = Game.world_gen
 	var night := 1.0 - Game.daylight()
+	shelter = 0.0
 	if Game.in_cave:
 		# Underground there is no sun; the cold and dark are worst without a light in hand.
 		_cold = 0.5 if inventory.selected_item() == "torch" else 1.3
@@ -1092,6 +1186,16 @@ func _update_exposure() -> void:
 		cold_biome += w.get(b, 0.0)
 	cold_biome = maxf(cold_biome, smoothstep(45.0, 75.0, h))   # thin, cold air up high
 	_cold = night * 0.8 + cold_biome * (0.7 + night * 1.0)
+	# Out of the wind under a roof, and more so with walls round you: a closed house keeps nearly all the chill out.
+	shelter = GameActions.shelter_at(p)
+	_cold *= 1.0 - 0.85 * shelter
+	if shelter >= 0.95 and not progress.is_empty() and not (progress.get("flags", {}) as Dictionary).has("home"):
+		# The first time you stand in a room of your own, closed all round: what it's good for.
+		if not progress.has("flags"):
+			progress.flags = {}
+		progress.flags.home = 1
+		hint.emit("A shelter of your own: the cold stays out, animals can't get in, and a bed here sleeps the night away")
+		Audio.play(Audio.sfx.chime, -6.0, 0.9)
 	if swimming:
 		_cold += 1.2
 	_heat = 0.0
@@ -1105,6 +1209,7 @@ func _update_exposure() -> void:
 		var d := p.distance_to(Vector3(sp[0], sp[1], sp[2]))
 		fire_distance = minf(fire_distance, d)
 		if d < FIRE_WARMTH_RANGE:
-			_heat += (8.0 if st.kind == "campfire" else 5.0) * (1.0 - d / FIRE_WARMTH_RANGE * 0.6)
+			# A fire's warmth stays in a room: a hearth indoors warms you half again as fast.
+			_heat += (8.0 if st.kind == "campfire" else 5.0) * (1.0 - d / FIRE_WARMTH_RANGE * 0.6) * (1.0 + 0.5 * maxf(shelter - 0.5, 0.0) * 2.0)
 	if _heat > 1.0:
 		_cold = 0.0   # standing by a fire: no chill at all

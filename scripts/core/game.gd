@@ -79,7 +79,12 @@ var save_name := ""
 var play_time := 0.0
 
 
+## Bumped whenever the structures change (see GameActions' cell index, which rebuilds when it moves on).
+var structures_version := 0
+
+
 func _ready() -> void:
+	structures_changed.connect(func() -> void: structures_version += 1)
 	Settings.apply_bindings()
 	var saves := SaveManager.list_saves()
 	new_world(saves[0].seed if not saves.is_empty() else random_seed())

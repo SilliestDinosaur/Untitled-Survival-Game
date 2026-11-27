@@ -143,6 +143,95 @@ func _sync() -> void:
 			_apply_ends(_nodes[id], Game.structures[id])
 			_apply_build(_nodes[id], st)
 	_settled = true
+	_update_supports()
+
+
+# --- Posts under overhangs ---------------------------------------------------------------------
+
+var _supports: Node3D
+var _supports_key := ""
+
+## A roof or upper floor out over open ground (a porch, a balcony) gets a post up to each outer corner that no wall
+## reaches: it's held up by the rest of the building (see GameActions.deck_supported), but a deck hanging in the air
+## with nothing under it looks wrong. One mesh and one body for all of them, rebuilt when the frame of the building
+## changes (not on every hammer blow).
+func _update_supports() -> void:
+	var parts: Array = []
+	for id: String in Game.structures:
+		var st: Dictionary = Game.structures[id]
+		if (st.kind in GameActions.WALL_KINDS or GameActions.deck_k(st) >= 1) and not GameActions.is_blueprint(st):
+			parts.append(id)
+	parts.sort()
+	var key := ",".join(parts)
+	if key == _supports_key:
+		return
+	_supports_key = key
+	if _supports:
+		_supports.queue_free()
+		_supports = null
+	# Where walls end (by level): a deck's corner that one reaches is held there already.
+	var ends := {}
+	for id: String in parts:
+		var st: Dictionary = Game.structures[id]
+		if st.kind in GameActions.WALL_KINDS:
+			var p := Vector3(st.pos[0], 0, st.pos[2])
+			var along := Vector3(cos(float(st.yaw)), 0, -sin(float(st.yaw))) * GameActions.CELL * 0.5
+			for e: Vector3 in [p + along, p - along]:
+				ends[Vector3i(roundi(e.x * 4.0), int(st.get("level", 0)), roundi(e.z * 4.0))] = true
+	var posts := {}   # corner key -> [bottom, top, material, corner, inward]
+	for id: String in parts:
+		var st: Dictionary = Game.structures[id]
+		var k := GameActions.deck_k(st)
+		if k < 1:
+			continue
+		var c := GameActions.cell_of(Vector3(st.pos[0], 0, st.pos[2]))
+		if not GameActions.foundation_at(c, k - 1).is_empty():
+			continue   # over a floor: inside the building, held by its walls
+		var top := float(st.pos[1]) - (0.12 if st.kind in GameActions.COVER_KINDS else 0.18)
+		for corner: Vector2 in [Vector2(0, 0), Vector2(1, 0), Vector2(0, 1), Vector2(1, 1)]:
+			var at := Vector3((c.x + corner.x) * GameActions.CELL, 0, (c.y + corner.y) * GameActions.CELL)
+			var ck := Vector3i(roundi(at.x * 4.0), k - 1, roundi(at.z * 4.0))
+			if ends.has(ck) or posts.has(ck):
+				continue
+			var inward := Vector3((0.5 - corner.x) * 2.0, 0, (0.5 - corner.y) * 2.0) * 0.14
+			var foot := at + inward
+			var ground := Game.world_gen.get_height(foot.x, foot.z)
+			if top - ground < 0.6:
+				continue
+			posts[ck] = [ground - 0.15, top, GameActions.piece_mat(st.kind), foot]
+	if posts.is_empty():
+		return
+	var kit := MeshKit.new(7)
+	_supports = Node3D.new()
+	_supports.name = "Supports"
+	var body := StaticBody3D.new()
+	body.collision_layer = TerrainChunk.LAYER_SOLID
+	body.collision_mask = 0
+	_supports.add_child(body)
+	for ck: Vector3i in posts:
+		var pd: Array = posts[ck]
+		var lo: float = pd[0]
+		var hi: float = pd[1]
+		var foot: Vector3 = pd[3]
+		var mat: String = pd[2]
+		var w := 0.22 if mat == "wood" else 0.32
+		var col := StructureModels.WOOD_DARK if mat == "wood" else StructureModels._mat_colour(mat).darkened(0.08)
+		var mid := Vector3(foot.x, (lo + hi) * 0.5, foot.z)
+		kit.add_primitive(StructureModels._box(Vector3(w, hi - lo, w)), Transform3D(Basis(), mid), col, 0.0, 0.03)
+		# A flat stone under it, and (wood) a little bracket at the top.
+		kit.add_primitive(StructureModels._box(Vector3(w + 0.16, 0.14, w + 0.16)), Transform3D(Basis(), Vector3(foot.x, lo + 0.2, foot.z)), Game.palette.rock, 0.0, 0.03)
+		if mat == "wood":
+			kit.add_primitive(StructureModels._box(Vector3(w + 0.1, 0.12, w + 0.1)), Transform3D(Basis(), Vector3(foot.x, hi - 0.06, foot.z)), StructureModels.WOOD_DARK.darkened(0.15), 0.0, 0.03)
+		var cs := CollisionShape3D.new()
+		var box := BoxShape3D.new()
+		box.size = Vector3(w, hi - lo, w)
+		cs.shape = box
+		cs.position = mid
+		body.add_child(cs)
+	var mi := MeshInstance3D.new()
+	mi.mesh = kit.commit(_mat)
+	_supports.add_child(mi)
+	add_child(_supports)
 
 
 ## Something just put down: it drops the last few centimetres and settles with a little squash.
