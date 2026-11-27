@@ -41,6 +41,8 @@ func apply(c: Vector2i, t: int, data: Dictionary, flora: FloraLibrary) -> void:
 	_build_terrain(data, flora)
 	_build_multimeshes(data.multimesh, flora)
 	_build_own_meshes(flora)
+	if data.has("drape"):
+		_build_drape(data.drape, flora)
 	if tier == 0:
 		_build_resource_colliders(flora)
 	# Plants that were hand-harvested recently show their bare look.
@@ -175,6 +177,25 @@ func _build_own_meshes(flora: FloraLibrary) -> void:
 		mi.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
 		add_child(mi)
 		_own[k] = mi
+
+
+## The chunk's mud patches, each laid over the ground it's on (see ChunkGenerator._drape): one mesh for them all.
+func _build_drape(arr: Array, flora: FloraLibrary) -> void:
+	var arrays := []
+	arrays.resize(Mesh.ARRAY_MAX)
+	arrays[Mesh.ARRAY_VERTEX] = arr[0]
+	arrays[Mesh.ARRAY_NORMAL] = arr[1]
+	arrays[Mesh.ARRAY_COLOR] = arr[2]
+	var mesh := ArrayMesh.new()
+	mesh.add_surface_from_arrays(Mesh.PRIMITIVE_TRIANGLES, arrays)
+	mesh.surface_set_material(0, flora.mud_material)
+	var mi := MeshInstance3D.new()
+	mi.name = "Mud"
+	mi.mesh = mesh
+	# (No fade: mud is only made for the chunks right round the player, and one range would fade a whole chunk's
+	# patches at once.)
+	mi.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+	add_child(mi)
 
 
 func _build_resource_colliders(flora: FloraLibrary) -> void:

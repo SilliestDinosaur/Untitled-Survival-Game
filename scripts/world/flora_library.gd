@@ -164,10 +164,17 @@ var meshes := {}         # built so far: "pine_0" -> ArrayMesh, "pine_0_lod" -> 
 var variants := {}       # "pine" -> ["pine_0", "pine_1", ...]
 var species_names := {}  # "pine" -> "Ember Spire"
 var shapes := {}         # shape name -> Shape3D
+## Mesh key -> a couple of dozen points round the foot of the model (its lowest few cm, round the outline and
+## halfway in), local to it. The chunks fit each thing to the ground by these (see ChunkGenerator._settle).
+var feet := {}
+## Mud key -> [verts, normals, colors] of its upward faces and rims (the underside never shows), for draping each
+## patch over the ground it lies on (see ChunkGenerator._drape).
+var drape_src := {}
 
 var foliage_material: ShaderMaterial
 var grass_material: ShaderMaterial
 var rock_material: ShaderMaterial
+var mud_material: ShaderMaterial   ## the grass look, held still (mud is draped over the ground, see drape_src)
 var terrain_material: ShaderMaterial
 
 var _pal: WorldPalette
@@ -239,6 +246,10 @@ func mesh(key: String) -> ArrayMesh:
 		_bare = spec.bare
 		_lod = key.ends_with("_lod")
 		meshes[key] = _build_mesh(spec.kind, spec.index, spec.seed)
+		if not spec.bare and not key.ends_with("_lod"):
+			feet[key] = _feet_of(meshes[key], spec.kind)
+		if spec.kind == "mud":
+			drape_src[key] = _drape_source(meshes[key])
 		MeshKit.detail = kept_detail
 		_bare = kept_bare
 		_lod = false
@@ -250,6 +261,81 @@ func mesh(key: String) -> ArrayMesh:
 func prebuild() -> void:
 	for key: String in _specs:
 		mesh(key)
+
+
+## How far out from a tree's axis its foot reaches (the rest of its lowest band is drooping leaves): buttressed
+## trunks spread wide, the rest are a trunk and its root flare.
+const FOOT_REACH := {"kapok": 5.0, "jungle_tree": 4.0, "giant_mushroom": 2.0}
+
+
+## The foot of a model: its lowest few centimetres, thinned to the farthest point in each of 12 directions round
+## its middle and the point nearest halfway out (so a wide flat thing like mud is held at its middle too).
+func _feet_of(m: ArrayMesh, kind: String) -> PackedVector3Array:
+	var out := PackedVector3Array()
+	if m == null or m.get_surface_count() == 0:
+		return out
+	var verts: PackedVector3Array = m.surface_get_arrays(0)[Mesh.ARRAY_VERTEX]
+	if verts.is_empty():
+		return out
+	var lo := INF
+	var hi := -INF
+	for v in verts:
+		lo = minf(lo, v.y)
+		hi = maxf(hi, v.y)
+	var band := clampf((hi - lo) * 0.1, 0.02, 0.15)
+	var reach := float(FOOT_REACH.get(kind, 1.5)) if KINDS[kind].category == "tree" else INF
+	var far: Array = []
+	far.resize(12)
+	var far_d := PackedFloat32Array()
+	far_d.resize(12)
+	far_d.fill(-1.0)
+	var pts: Array = []
+	for v in verts:
+		if v.y > lo + band:
+			continue
+		var d := Vector2(v.x, v.z).length()
+		if d > reach:
+			continue
+		var s := int(fposmod(atan2(v.z, v.x), TAU) / TAU * 12.0) % 12
+		pts.append([v, d, s])
+		if d > far_d[s]:
+			far_d[s] = d
+			far[s] = v
+	var half: Array = []
+	half.resize(12)
+	var half_e := PackedFloat32Array()
+	half_e.resize(12)
+	half_e.fill(INF)
+	for p: Array in pts:
+		var s: int = p[2]
+		var e := absf(float(p[1]) - far_d[s] * 0.5)
+		if e < half_e[s]:
+			half_e[s] = e
+			half[s] = p[0]
+	for s in 12:
+		if far_d[s] >= 0.0:
+			out.append(far[s])
+			if half_e[s] < INF and half[s] != far[s]:
+				out.append(half[s])
+	return out
+
+
+func _drape_source(m: ArrayMesh) -> Array:
+	var a := m.surface_get_arrays(0)
+	var v: PackedVector3Array = a[Mesh.ARRAY_VERTEX]
+	var n: PackedVector3Array = a[Mesh.ARRAY_NORMAL]
+	var c: PackedColorArray = a[Mesh.ARRAY_COLOR]
+	var ov := PackedVector3Array()
+	var on := PackedVector3Array()
+	var oc := PackedColorArray()
+	for t in range(0, v.size() - 2, 3):
+		if (n[t] + n[t + 1] + n[t + 2]).y < -1.5:
+			continue   # an underside
+		for k in 3:
+			ov.append(v[t + k])
+			on.append(n[t + k])
+			oc.append(c[t + k])
+	return [ov, on, oc]
 
 
 ## Whether a mesh key exists (it may not be built yet).
@@ -298,6 +384,7 @@ func _build_materials() -> void:
 	foliage_material = ArtStyle.material(preload("res://shaders/foliage.gdshader"))
 	grass_material = ArtStyle.material(preload("res://shaders/grass.gdshader"), {"brush_strength": 0.15})
 	rock_material = ArtStyle.painted({"brush_strength": 0.4, "rim_amount": 0.1, "stroke_scale": 0.3})
+	mud_material = ArtStyle.material(preload("res://shaders/grass.gdshader"), {"brush_strength": 0.15, "sway_strength": 0.0})
 	terrain_material = ArtStyle.material(preload("res://shaders/terrain.gdshader"), {"stroke_scale": 0.12, "brush_strength": 0.32})
 
 
@@ -387,6 +474,8 @@ func _build_mesh(kind: String, index: int, variant_seed: int) -> ArrayMesh:
 	var mat: Material = foliage_material
 	if cat == "rock" or kind in ["pebbles", "scree"]:
 		mat = rock_material
+	elif kind == "mud":
+		mat = mud_material
 	elif cat in ["grass", "flower", "fern"]:
 		mat = grass_material
 	return kit.commit(mat)

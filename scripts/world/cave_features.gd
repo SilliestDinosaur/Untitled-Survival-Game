@@ -174,7 +174,7 @@ func _build_mouths(plan: Dictionary, rng: RandomNumberGenerator) -> void:
 			var p := mouth + side * sgn * (r + size * 0.9) - inward * rng.randf_range(0.8, 1.8)
 			if Caves.void_distance(plan, p) < size:
 				continue
-			p.y = gen.get_height(p.x, p.z) + size * 0.25
+			p.y = ChunkGenerator.lowest_ground(gen, p.x, p.z, size * 1.1, size * 1.1) + size * 0.25   # (its downhill side too)
 			kit.add_primitive(MeshKit.sphere(1.0, 9, 6), Transform3D(Basis(Vector3.UP, rng.randf() * TAU).scaled(Vector3(size * 1.2, size * 0.85, size)), p),
 				Color(stone.darkened(rng.randf_range(0.05, 0.2)), 1.0), 0.3, 0.06)
 			_solid(self, p + Vector3(0, size * 0.2, 0), Vector3(size * 1.6, size * 1.2, size * 1.4))

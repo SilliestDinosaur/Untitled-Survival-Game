@@ -32,29 +32,60 @@ func build(list: Array) -> void:
 		add_child(mi)
 
 
-## A ring of old standing stones on a hilltop, a few fallen, one big flat one in the middle.
+## A ring of old standing stones on a hilltop, a few fallen, one big flat one in the middle. Each is fitted to the
+## ground it stands on (the drawn ground, see ChunkGenerator.surface_height): a standing stone reaches down past
+## the lowest ground round its foot, a fallen one lies along the slope under it, and the slab is tipped to the
+## ground and bedded in all round, so none of them shows a gap underneath.
 func _stones(kit: MeshKit, gen: WorldGen, at: Vector3, rng: RandomNumberGenerator, pal: WorldPalette) -> int:
 	var count := rng.randi_range(7, 11)
 	var ring := rng.randf_range(5.0, 7.0)
 	var stone := pal.rock.lerp(Color(0.62, 0.6, 0.55), 0.4)
+	var ground := {}
+	var surf := func(x: float, z: float) -> float: return ChunkGenerator.surface_height(gen, x, z, ground)
 	for k in count:
 		var a := TAU * k / count + rng.randf_range(-0.08, 0.08)
-		var p := at + Vector3(cos(a) * ring, 0, sin(a) * ring)
-		p.y = gen.get_height(p.x, p.z)
+		var out := Vector3(cos(a), 0, sin(a))
+		var p := at + out * ring
+		p.y = surf.call(p.x, p.z)
 		var h := rng.randf_range(2.4, 3.8)
 		var w := rng.randf_range(0.85, 1.2)
 		var c := stone.darkened(rng.randf_range(0.0, 0.2)).lerp(Color(0.42, 0.5, 0.34), rng.randf_range(0.0, 0.25))   # lichen
-		if rng.randf() < 0.18:   # fallen over
-			var lie := Basis(Vector3(-sin(a), 0, cos(a)), PI * 0.5 * rng.randf_range(0.85, 1.0)) * Basis(Vector3.UP, a)
-			kit.add_primitive(MeshKit.cylinder(w * 0.8, w, h, 6), Transform3D(lie, p + Vector3(0, w * 0.55, 0) + Vector3(cos(a), 0, sin(a)) * h * 0.4), c, 0.15, 0.05)
+		if rng.randf() < 0.18:   # fallen over, outward, lying along the slope under it
+			var lie_r := w * 0.9
+			var a0 := p - out * h * 0.1
+			var a1 := p + out * h * 0.9
+			a0.y = surf.call(a0.x, a0.z)
+			a1.y = surf.call(a1.x, a1.z)
+			var axis := (a1 - a0).normalized()
+			var mid := (a0 + a1) * 0.5
+			mid.y = minf(mid.y, surf.call(mid.x, mid.z))   # (over a rise, it bridges it: bed it at the low side)
+			var roll := Basis(axis, rng.randf() * TAU)
+			kit.add_primitive(MeshKit.cylinder(w * 0.8, w, h, 6), Transform3D(roll * Basis(Quaternion(Vector3.UP, axis)), mid + Vector3(0, lie_r * 0.5, 0)), c, 0.15, 0.05)
 			continue
-		var tilt := Basis(Vector3(rng.randf() - 0.5, 0, rng.randf() - 0.5).normalized(), rng.randf_range(0.0, 0.1))
-		kit.add_primitive(MeshKit.cylinder(w * 0.7, w, h + 0.5, 6), Transform3D(tilt * Basis(Vector3.UP, a).scaled(Vector3(1.0, 1.0, 0.55)), p + Vector3(0, h * 0.5 - 0.25, 0)), c, 0.15, 0.05)
+		# Upright (a touch of lean): from well under the lowest ground round its foot up to its full height.
+		var yaw_b := Basis(Vector3.UP, a)
+		var low := ChunkGenerator.lowest_ground(gen, p.x, p.z, w * 1.05, w * 1.05, 0.0, ground)
+		var bottom := low - 0.35
+		var top := p.y + h
+		var tall := top - bottom
+		var tilt := Basis(Vector3(rng.randf() - 0.5, 0, rng.randf() - 0.5).normalized(), rng.randf_range(0.0, 0.07))
+		kit.add_primitive(MeshKit.cylinder(w * 0.7, w, tall, 6), Transform3D(tilt * yaw_b.scaled(Vector3(1.0, 1.0, 0.55)), Vector3(p.x, bottom + tall * 0.5, p.z)), c, 0.15, 0.05)
 		_solid(p + Vector3(0, h * 0.5, 0), Vector3(w * 1.6, h, w * 1.0), a)
+	# The slab in the middle: tipped to the ground under it, its whole rim bedded in.
 	var mid := at
-	mid.y = gen.get_height(at.x, at.z)
-	kit.add_primitive(MeshKit.cylinder(1.3, 1.5, 0.6, 7), Transform3D(Basis(Vector3.UP, rng.randf() * TAU).scaled(Vector3(1.0, 1.0, 0.7)), mid + Vector3(0, 0.2, 0)), stone.darkened(0.1), 0.15, 0.05)
-	_solid(mid + Vector3(0, 0.25, 0), Vector3(2.4, 0.5, 1.8), 0.0)
+	mid.y = surf.call(at.x, at.z)
+	var e := 1.4
+	var sx: float = (surf.call(at.x + e, at.z) - surf.call(at.x - e, at.z)) / (2.0 * e)
+	var sz: float = (surf.call(at.x, at.z + e) - surf.call(at.x, at.z - e)) / (2.0 * e)
+	var n := Vector3(-sx, 1.0, -sz).normalized()
+	var slab := Basis(Quaternion(Vector3.UP, n)) * Basis(Vector3.UP, rng.randf() * TAU)
+	var sunk := 0.0   # how far the tipped slab's foot rim floats at worst
+	for k in 10:
+		var q := mid + slab * Vector3(cos(TAU * k / 10.0) * 1.5, -0.1, sin(TAU * k / 10.0) * 1.5)
+		sunk = maxf(sunk, q.y - surf.call(q.x, q.z))
+	mid.y -= sunk + 0.08
+	kit.add_primitive(MeshKit.cylinder(1.3, 1.5, 0.75, 7), Transform3D(slab.scaled(Vector3(1.0, 1.0, 0.7)), mid + slab * Vector3(0, 0.27, 0)), stone.darkened(0.1), 0.15, 0.05)
+	_solid(mid + Vector3(0, 0.3, 0), Vector3(2.4, 0.55, 1.8), 0.0)
 	return count
 
 
@@ -93,9 +124,9 @@ func _arch(kit: MeshKit, gen: WorldGen, at: Vector3, yaw: float, rng: RandomNumb
 		for j in rng.randi_range(2, 4):
 			var a := rng.randf() * TAU
 			var bp := leg + Vector3(cos(a), 0, sin(a)) * thick * rng.randf_range(1.6, 3.0)
-			bp.y = gen.get_height(bp.x, bp.z)
 			var bs := thick * rng.randf_range(0.25, 0.55)
-			kit.add_primitive(MeshKit.sphere(1.0, 7, 4), Transform3D(Basis(Vector3.UP, rng.randf() * TAU).scaled(Vector3(bs * 1.3, bs * 0.8, bs)), bp + Vector3(0, bs * 0.35, 0)), base_col.darkened(rng.randf_range(0.0, 0.15)), 0.35, 0.06)
+			bp.y = ChunkGenerator.lowest_ground(gen, bp.x, bp.z, bs * 1.1, bs * 1.1)
+			kit.add_primitive(MeshKit.sphere(1.0, 7, 4), Transform3D(Basis(Vector3.UP, rng.randf() * TAU).scaled(Vector3(bs * 1.3, bs * 0.8, bs)), bp + Vector3(0, bs * 0.3, 0)), base_col.darkened(rng.randf_range(0.0, 0.15)), 0.35, 0.06)
 		_solid(leg + Vector3(0, height * 0.45, 0), Vector3(thick * 2.2, height * 0.9, thick * 2.2), yaw)
 	return 1
 

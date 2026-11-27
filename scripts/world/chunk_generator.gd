@@ -71,7 +71,10 @@ static func generate(job: Dictionary) -> void:
 	result.resources = resources
 	result.multimesh = _resource_buffers(resources, origin, tier)
 	if tier == 0 and job.grass_density > 0.0:
-		_place_ground_cover(coord, origin, gen, flora, job.grass_density, result.multimesh)
+		var drape := [PackedVector3Array(), PackedVector3Array(), PackedColorArray()]
+		_place_ground_cover(coord, origin, gen, flora, job.grass_density, result.multimesh, drape, covered)
+		if not (drape[0] as PackedVector3Array).is_empty():
+			result.drape = drape
 		if not covered.is_empty():
 			_clear_covered(result.multimesh, origin, covered)
 	job.result = result
@@ -170,6 +173,109 @@ static func _collision_data(origin: Vector3, gen: WorldGen, cache: Dictionary) -
 
 # --- Trees, rocks, bushes ---------------------------------------------------
 
+## The ground as it is drawn close up, at (x, z) in the world: the full-detail terrain mesh is flat between its
+## samples (FINE metres apart), so on a rounded rise it sits a little under the true height and in a dip a little
+## over it. Things that lie on the ground are fitted to this, not to the smooth height, so they meet the ground
+## the player sees. (Cut the same way as _terrain_arrays: each cell fans from its first corner off the chunk's border.)
+## `cache`: fine sample (world fine grid coordinates) -> height, kept by the caller across many calls.
+static func surface_height(gen: WorldGen, x: float, z: float, cache := {}) -> float:
+	var gx := floori(x / FINE)
+	var gz := floori(z / FINE)
+	var fx := x / FINE - gx
+	var fz := z / FINE - gz
+	var cx := posmod(gx, FINE_SEGS)   # the cell within its chunk
+	var cz := posmod(gz, FINE_SEGS)
+	var h0 := _grid_h(gen, cache, gx, gz)
+	var h1 := _grid_h(gen, cache, gx + 1, gz)
+	var h2 := _grid_h(gen, cache, gx + 1, gz + 1)
+	var h3 := _grid_h(gen, cache, gx, gz + 1)
+	# The fan's first corner: the first of the four (in outline order) not on the chunk's border.
+	var last := FINE_SEGS - 1
+	var first := 0
+	if cx == 0 or cz == 0:
+		first = 1 if cz != 0 and cx != last else (2 if cx != last and cz != last else 3)
+	if first % 2 == 0:   # cut corner 0 to corner 2
+		if fx >= fz:
+			return h0 + (h1 - h0) * fx + (h2 - h1) * fz
+		return h0 + (h2 - h3) * fx + (h3 - h0) * fz
+	if fx + fz >= 1.0:   # cut corner 1 to corner 3
+		return h3 + (h2 - h3) * fx + (h2 - h1) * (fz - 1.0)
+	return h0 + (h1 - h0) * fx + (h3 - h0) * fz
+
+
+## The lowest drawn ground under an oval footprint (radii rx, rz, turned by yaw) round (x, z): where a stone or
+## boulder set on a slope has to reach down to, so its downhill side doesn't float.
+static func lowest_ground(gen: WorldGen, x: float, z: float, rx: float, rz: float, yaw := 0.0, cache := {}) -> float:
+	var lo := surface_height(gen, x, z, cache)
+	var c := cos(yaw)
+	var s := sin(yaw)
+	for k in 8:
+		var a := TAU * k / 8.0
+		var ox := cos(a) * rx
+		var oz := sin(a) * rz
+		lo = minf(lo, surface_height(gen, x + ox * c - oz * s, z + ox * s + oz * c, cache))
+	return lo
+
+
+static func _grid_h(gen: WorldGen, cache: Dictionary, gx: int, gz: int) -> float:
+	var key := Vector2i(gx, gz)
+	var h: Variant = cache.get(key)
+	if h == null:
+		h = gen.get_height(gx * FINE, gz * FINE)
+		cache[key] = h
+	return h
+
+
+## Things that lie on the ground rather than stand on it: tipped to fit the slope under them and bedded in this
+## deep (metres) at their highest point, so no edge floats and none digs in more than it must.
+const LIE_SINK := {"log": 0.04, "mossy_log": 0.07, "branch": 0.02, "pebbles": 0.02, "scree": 0.03, "mud": 0.004}
+## Tipped to the slope too, but left as deep as they were placed (rocks sit well into the ground), only lowered
+## where an edge would float.
+const TIP := ["rock", "ore_t2", "ore_t3", "boulder", "ice_rock", "cache", "tumbleweed"]
+## How far (metres) a standing thing may be lowered to bring its downhill foot down to the ground, by category.
+const STAND_DROP := {"tree": 1.2, "bush": 0.45, "clutter": 0.5, "rock": 0.6, "fern": 0.2, "flower": 0.15}
+const MAX_TIP := 0.55   ## radians: no steeper than this, whatever the ground does
+
+
+## Fit a thing to the ground drawn under it, by the points round its foot (FloraLibrary.feet): one that lies is tipped
+## to the slope across its own length and width and lowered (or raised) until its highest foot point is just bedded
+## in; one that stands stays upright and is lowered until no foot point floats (within its category's limit).
+static func _settle(gen: WorldGen, ground: Dictionary, kind: String, feet: PackedVector3Array, xf: Transform3D) -> Transform3D:
+	if feet.is_empty():
+		return xf
+	var lie := LIE_SINK.has(kind)
+	if lie or kind in TIP:
+		# The slope along the thing's own two axes, measured across its foot's full reach each way.
+		var ax := Vector3(xf.basis.x.x, 0, xf.basis.x.z).normalized()
+		var az := Vector3(-ax.z, 0, ax.x)
+		var ex := 0.3
+		var ez := 0.3
+		for v in feet:
+			var d := xf.basis * v
+			ex = maxf(ex, absf(d.dot(ax)))
+			ez = maxf(ez, absf(d.dot(az)))
+		var o := xf.origin
+		var sx := (surface_height(gen, o.x + ax.x * ex, o.z + ax.z * ex, ground) - surface_height(gen, o.x - ax.x * ex, o.z - ax.z * ex, ground)) / (2.0 * ex)
+		var sz := (surface_height(gen, o.x + az.x * ez, o.z + az.z * ez, ground) - surface_height(gen, o.x - az.x * ez, o.z - az.z * ez, ground)) / (2.0 * ez)
+		var n := (Vector3.UP - ax * sx - az * sz).normalized()
+		var tip := Vector3.UP.angle_to(n)
+		if tip > MAX_TIP:
+			n = Vector3.UP.slerp(n, MAX_TIP / tip)
+		if tip > 0.001:
+			xf.basis = Basis(Quaternion(Vector3.UP, n)) * xf.basis
+	var top := -INF
+	for v in feet:
+		var w := xf * v
+		top = maxf(top, w.y - surface_height(gen, w.x, w.z, ground))
+	if lie:
+		xf.origin.y -= top + float(LIE_SINK[kind])
+	else:
+		var cat := FloraLibrary.category_of(kind)
+		# (A tree a little deeper: its foot is a few points round a wide spread of roots and buttresses.)
+		xf.origin.y -= clampf(top + (0.08 if cat == "tree" else 0.03), 0.0, float(STAND_DROP.get(cat, 0.3)))
+	return xf
+
+
 ## The lowest ground under a trunk of radius r at (x, z), so its downhill side sits on the ground instead of floating.
 static func _ground_under(gen: WorldGen, x: float, z: float, r: float) -> float:
 	var lowest := gen.get_height(x, z)
@@ -246,6 +352,7 @@ static func _place_resources(coord: Vector2i, origin: Vector3, gen: WorldGen, fl
 	rng.seed = hash([Game.world_seed, coord.x, coord.y, "res"])
 	var size := Game.CHUNK_SIZE
 	var counter := [0]
+	var ground := {}   # drawn-ground samples, shared by everything fitted to the ground in this chunk
 
 	var add := func(kind: String, variant: int, pos: Vector3, yaw: float, scl: Vector3) -> void:
 		var id := "%d_%d_%d" % [coord.x, coord.y, counter[0]]
@@ -264,11 +371,12 @@ static func _place_resources(coord: Vector2i, origin: Vector3, gen: WorldGen, fl
 			var lean_axis := Vector3(cos(float((h >> 15) % 628) / 100.0), 0, sin(float((h >> 15) % 628) / 100.0))
 			var lean := deg_to_rad(float((h >> 20) % 50) / 10.0)   # up to 5 degrees
 			basis = Basis(lean_axis, lean) * Basis(Vector3.UP, yaw) * Basis.from_scale(scl * Vector3(sx, sy, sz))
+		var key: String = flora.variants[kind][variant % flora.variants[kind].size()]
 		out.append({
 			"id": id,
 			"kind": kind,
-			"key": flora.variants[kind][variant % flora.variants[kind].size()],
-			"transform": Transform3D(basis, pos),
+			"key": key,
+			"transform": _settle(gen, ground, kind, flora.feet.get(key, PackedVector3Array()), Transform3D(basis, pos)),
 			"hp": FloraLibrary.KINDS[kind].hp,
 		})
 
@@ -379,12 +487,8 @@ static func _place_resources(coord: Vector2i, origin: Vector3, gen: WorldGen, fl
 		if kind == "boulder":
 			scl = Vector3.ONE * (a.scl * 1.3)
 			sink = 0.5
-		var before := out.size()
+		# (Logs, branches and the like are then tipped to the slope under them: see _settle.)
 		add.call(kind, a.variant, Vector3(a.x, h - sink, a.z), a.yaw, scl)
-		# A log lies on the ground: tipped to the slope under it, so neither end digs in or floats.
-		if kind == "log" and out.size() > before:
-			var xf: Transform3D = out[-1].transform
-			out[-1].transform = Transform3D(Basis(Quaternion(Vector3.UP, nrm)) * xf.basis, xf.origin)
 
 	# The jungle floor: a thick layer of broadleaves, heliconias, fern palms and bamboo between the trees.
 	for i in UNDERGROWTH_ATTEMPTS:
@@ -627,6 +731,34 @@ static func _resource_buffers(resources: Array[Dictionary], origin: Vector3, tie
 	return buffers
 
 
+## Lay a patch (mud) over the ground: each of its points is set on the drawn ground under it, at its own height
+## above its base, so the patch follows every rise and dip instead of lying flat across them. Upward faces take
+## the ground's slope for their light. Appended (in chunk space) to drape = [verts, normals, colors].
+static func _drape(gen: WorldGen, ground: Dictionary, src: Array, xf: Transform3D, origin: Vector3, drape: Array) -> void:
+	var sv: PackedVector3Array = src[0]
+	var sn: PackedVector3Array = src[1]
+	var sc: PackedColorArray = src[2]
+	var lift := xf.basis.y.length()
+	var up := gen.get_normal(origin.x + xf.origin.x, origin.z + xf.origin.z)
+	var tilt := Basis(Quaternion(Vector3.UP, up))
+	var dv: PackedVector3Array = drape[0]
+	var dn: PackedVector3Array = drape[1]
+	var dc: PackedColorArray = drape[2]
+	var base := dv.size()
+	dv.resize(base + sv.size())
+	dn.resize(base + sv.size())
+	dc.resize(base + sv.size())
+	for i in sv.size():
+		var p := xf * sv[i]
+		p.y = surface_height(gen, origin.x + p.x, origin.z + p.z, ground) - origin.y + 0.004 + sv[i].y * lift
+		dv[base + i] = p
+		dn[base + i] = (tilt * (xf.basis * sn[i])).normalized()
+		dc[base + i] = sc[i]
+	drape[0] = dv
+	drape[1] = dn
+	drape[2] = dc
+
+
 static func _append_instance(buffers: Dictionary, key: String, t: Transform3D, col: Color) -> void:
 	if not buffers.has(key):
 		buffers[key] = PackedFloat32Array()
@@ -637,7 +769,7 @@ static func _append_instance(buffers: Dictionary, key: String, t: Transform3D, c
 
 # --- Grass, flowers and ferns (near the player only) ---------------------------------
 
-static func _place_ground_cover(coord: Vector2i, origin: Vector3, gen: WorldGen, flora: FloraLibrary, density: float, buffers: Dictionary) -> void:
+static func _place_ground_cover(coord: Vector2i, origin: Vector3, gen: WorldGen, flora: FloraLibrary, density: float, buffers: Dictionary, drape := [], covered := []) -> void:
 	var rng := RandomNumberGenerator.new()
 	rng.seed = hash([Game.world_seed, coord.x, coord.y, "grass"])
 	var size := Game.CHUNK_SIZE
@@ -646,6 +778,13 @@ static func _place_ground_cover(coord: Vector2i, origin: Vector3, gen: WorldGen,
 	var fern_keys: Array = flora.variants["fern"]
 	var tall_keys: Array = flora.variants["tall_grass"]
 	var clover_keys: Array = flora.variants["clover"]
+	var ground := {}
+	# Fit a patch or plant (placed in chunk space) to the drawn ground (see _settle, which works in the world).
+	var fit := func(kind: String, key: String, t: Transform3D) -> Transform3D:
+		t.origin += origin
+		t = _settle(gen, ground, kind, flora.feet.get(key, PackedVector3Array()), t)
+		t.origin -= origin
+		return t
 	# Tall grass and clover: shared pass, weighted by biome.
 	for pass_def: Array in [[TALL_GRASS_ATTEMPTS, tall_keys, FloraLibrary.BIOME_TALL_GRASS, false], [CLOVER_ATTEMPTS, clover_keys, FloraLibrary.BIOME_CLOVER, true]]:
 		for i in int(int(pass_def[0]) * density):
@@ -724,7 +863,8 @@ static func _place_ground_cover(coord: Vector2i, origin: Vector3, gen: WorldGen,
 			continue
 		var t := Transform3D(Basis(Vector3.UP, yaw).scaled(Vector3.ONE * scl), Vector3(lx, h, lz))
 		var shade := rng.randf_range(0.85, 1.1)
-		_append_instance(buffers, fern_keys[variant % fern_keys.size()], t, Color(shade, shade, shade))
+		var fk: String = fern_keys[variant % fern_keys.size()]
+		_append_instance(buffers, fk, fit.call("fern", fk, t), Color(shade, shade, shade))
 
 	var meadow_here := false   # a flower glade reaches this chunk: more tries at flowers, most of them in the glade
 	for lm: Dictionary in gen.landmarks:
@@ -747,7 +887,14 @@ static func _place_ground_cover(coord: Vector2i, origin: Vector3, gen: WorldGen,
 		var w := gen.biome_weights_at(wx, wz, h)
 		if keep > float(w.get(Biome.JUNGLE, 0.0)) * 0.6 + float(w.get(Biome.MARSH, 0.0)) * 0.4 or gen.get_normal(wx, wz).y < 0.9:
 			continue
-		_append_instance(buffers, mud_keys[variant % mud_keys.size()], Transform3D(Basis(Vector3.UP, yaw).scaled(Vector3.ONE * rng.randf_range(0.8, 1.5)), Vector3(lx, h, lz)), Color(1, 1, 1))
+		var mk: String = mud_keys[variant % mud_keys.size()]
+		var mxf := Transform3D(Basis(Vector3.UP, yaw).scaled(Vector3.ONE * rng.randf_range(0.8, 1.5)), Vector3(lx, h, lz))
+		if not covered.is_empty() and _is_covered(covered, wx, wz):
+			continue   # under a floor
+		if flora.drape_src.has(mk) and not drape.is_empty():
+			_drape(gen, ground, flora.drape_src[mk], mxf, origin, drape)
+		else:
+			_append_instance(buffers, mk, fit.call("mud", mk, mxf), Color(1, 1, 1))
 	for i in int(FLOWER_ATTEMPTS * density * (4.0 if meadow_here else 1.0)):
 		var lx := rng.randf() * size
 		var lz := rng.randf() * size
@@ -770,4 +917,4 @@ static func _place_ground_cover(coord: Vector2i, origin: Vector3, gen: WorldGen,
 		var pick := patch + (1 if variant % 4 == 0 else 0)
 		var key: String = flower_keys[absi(pick) % flower_keys.size()]
 		var t := Transform3D(Basis(Vector3.UP, yaw), Vector3(lx, h, lz))
-		_append_instance(buffers, key, t, Color(1, 1, 1))
+		_append_instance(buffers, key, fit.call("flower", key, t), Color(1, 1, 1))

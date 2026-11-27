@@ -706,7 +706,7 @@ static func _dress(gen: WorldGen, plan: Dictionary, line: Dictionary, i0: int, i
 		var w := wid[i]
 		var at_point := func(along: float, across: float) -> Vector3:
 			var xz: Vector2 = p.lerp(q, along) + side * across
-			return Vector3(xz.x, gen.get_height(xz.x, xz.y), xz.y) - centre
+			return Vector3(xz.x, ChunkGenerator.surface_height(gen, xz.x, xz.y), xz.y) - centre
 		var in_other := func(v: Vector3) -> bool:   # in another river's water (at a meeting): leave it to that one
 			return not _nearest(plan, v.x + centre.x, v.z + centre.z, 0.0, own).is_empty()
 		# Stones on the bed, more in the streams (where you see them best), some breaking the surface.
@@ -773,7 +773,7 @@ static func _dress_pond(gen: WorldGen, pd: Array, rng: RandomNumberGenerator, ma
 		if outlet != null and absf(angle_difference(a, (outlet as Vector2).angle())) < 0.75:
 			continue   # not across the mouth where the river runs out
 		var xz := c2 + Vector2(cos(a), sin(a)) * (r + rng.randf_range(-0.4, 0.4))
-		_reeds(kit, Vector3(xz.x, gen.get_height(xz.x, xz.y), xz.y) - centre, rng)
+		_reeds(kit, Vector3(xz.x, ChunkGenerator.lowest_ground(gen, xz.x, xz.y, 0.3, 0.3) - 0.03, xz.y) - centre, rng)
 	var mi := MeshInstance3D.new()
 	mi.mesh = kit.commit(mat)
 	mi.position = centre
@@ -832,6 +832,13 @@ static func _dress_head(gen: WorldGen, hd: Dictionary, rng: RandomNumberGenerato
 			var mossy := rng.randf() < 0.55
 			var moss_top := moss.darkened(rng.randf_range(0.0, 0.15))
 			var sq := Vector3(bs * rng.randf_range(1.0, 1.5), bs * rng.randf_range(0.6, 0.95), bs * rng.randf_range(0.8, 1.2))
+			# Down to the ground all round its foot: a block lifted up the crag (or on a slope) reaches down to the
+			# lowest ground under it, taller rather than hanging there.
+			var low := maxf(ChunkGenerator.lowest_ground(gen, at.x, at.z, sq.x * 0.8, sq.x * 0.8), surface - 0.6) - 0.15
+			if at.y - sq.y * 0.7 > low:
+				var top := at.y + sq.y
+				sq.y = (top - low) / 1.7
+				at.y = top - sq.y
 			var cy := at.y - centre.y
 			var cf := func(pl: Vector3) -> Color:
 				var y := pl.y - cy
@@ -872,8 +879,8 @@ static func _dress_head(gen: WorldGen, hd: Dictionary, rng: RandomNumberGenerato
 			if absf(angle_difference(a, atan2(-up2.y, -up2.x))) < 0.5:
 				continue   # where the stream runs out
 			var at := Vector3(c2.x + cos(a) * (r + rng.randf_range(-0.2, 0.5)), 0, c2.y + sin(a) * (r + rng.randf_range(-0.2, 0.5)))
-			at.y = maxf(gen.get_height(at.x, at.z), surface - 0.15)
 			var sr := rng.randf_range(0.3, 0.6)
+			at.y = maxf(ChunkGenerator.lowest_ground(gen, at.x, at.z, sr * 1.1, sr * 1.1), surface - 0.15)
 			var col := pal.rock.lerp(Color(0.55, 0.53, 0.5), 0.3).darkened(rng.randf_range(0.0, 0.15))
 			var mt := moss.darkened(rng.randf_range(0.0, 0.12))
 			var hy := sr * 0.7
