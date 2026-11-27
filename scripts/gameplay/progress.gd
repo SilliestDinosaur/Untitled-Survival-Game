@@ -48,6 +48,10 @@ const MILESTONES := [
 	["lm_arch", "Landmarks", "Stone arch", "Find a natural rock arch."],
 	["lm_stack", "Landmarks", "Sea stacks", "Find the rock pillars standing in the sea."],
 	["lm_all", "Landmarks", "Seen it all", "Find every landmark on the island."],
+	["ruin_temple", "Landmarks", "Lost temple", "Find an old temple, overgrown on its plinth."],
+	["ruin_tower", "Landmarks", "Lookout", "Find a ruined watchtower."],
+	["ruin_vault", "Landmarks", "Sealed below", "Find a stone vault deep in a cave."],
+	["ruin_all", "Landmarks", "Every stone turned", "Find every ruin on the island, the vaults below it too."],
 ]
 const GROUPS := ["Survival", "Crafting", "Hunting", "Exploring", "Landmarks"]
 
@@ -57,8 +61,13 @@ const ROOFS := ["roof", "wood_roof", "stone_roof"]
 const LM_NAMES := {"giant_tree": "a giant tree", "meadow": "a hidden meadow", "stones": "standing stones", "arch": "a stone arch", "stack": "sea stacks"}
 
 
+## How many ruins there are to find: the temples and towers, and the vaults in the caves.
+static func ruin_total(gen: WorldGen) -> int:
+	return gen.ruins.size() + (gen.caves.get("vaults", []) as Array).size() if gen else 0
+
+
 static func blank() -> Dictionary:
-	return {"seen": {}, "biomes": {}, "landmarks": {}, "done": {}, "guide": {}, "flags": {}}
+	return {"seen": {}, "biomes": {}, "landmarks": {}, "ruins": {}, "done": {}, "guide": {}, "flags": {}}
 
 
 ## The text of a guide step, with the player's own key for each {action}.
@@ -90,7 +99,7 @@ static func guide_step(p: Dictionary) -> int:
 ## Look at the player and the world; mark what's newly done. Returns the milestone ids earned just now, and fills
 ## `guide_new` with guide steps finished just now. (A step only counts once those before it are done.)
 static func update(p: Dictionary, player: Node3D, guide_new: Array) -> Array:
-	for k: String in ["seen", "biomes", "landmarks", "done", "guide", "flags"]:
+	for k: String in ["seen", "biomes", "landmarks", "ruins", "done", "guide", "flags"]:
 		if not p.has(k):
 			p[k] = {}
 	var seen: Dictionary = p.seen
@@ -109,6 +118,16 @@ static func update(p: Dictionary, player: Node3D, guide_new: Array) -> Array:
 			var lp: Vector3 = lm.pos
 			if Vector2(lp.x - pos.x, lp.z - pos.z).length() < float(lm.r) + (45.0 if lm.kind == "stack" else 25.0):
 				p.landmarks[str(i)] = String(lm.kind)
+		# Ruins: walked onto (or, a vault, come within sight of it in the dark).
+		for i in gen.ruins.size():
+			var ru: Dictionary = gen.ruins[i]
+			var rp: Vector3 = ru.pos
+			if Vector2(rp.x - pos.x, rp.z - pos.z).length() < float(ru.r) + 15.0:
+				p.ruins[str(i)] = String(ru.kind)
+		var vaults: Array = gen.caves.get("vaults", [])
+		for i in vaults.size():
+			if pos.distance_to(vaults[i][0]) < 12.0:
+				p.ruins["v%d" % i] = "vault"
 		if Game.in_cave:
 			p.flags.cave = 1
 		if pos.y > 68.0 and not Game.in_cave:
@@ -179,6 +198,13 @@ static func update(p: Dictionary, player: Node3D, guide_new: Array) -> Array:
 		"lm_stack": lm_kinds.has("stack"),
 		"lm_all": gen != null and not gen.landmarks.is_empty() and p.landmarks.size() >= gen.landmarks.size(),
 	}
+	var ruin_kinds := {}
+	for k: String in p.ruins:
+		ruin_kinds[p.ruins[k]] = true
+	ok["ruin_temple"] = ruin_kinds.has("temple")
+	ok["ruin_tower"] = ruin_kinds.has("tower")
+	ok["ruin_vault"] = ruin_kinds.has("vault")
+	ok["ruin_all"] = gen != null and ruin_total(gen) > 0 and p.ruins.size() >= ruin_total(gen)
 	var earned: Array = []
 	for m: Array in MILESTONES:
 		if not p.done.has(m[0]) and ok.get(m[0], false):

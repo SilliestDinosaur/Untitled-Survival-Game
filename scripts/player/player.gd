@@ -8,7 +8,7 @@ signal hint(text: String)   ## short messages for the HUD ("Too hard to break by
 signal hit_landed           ## a swing connected with something
 signal open_crafting(kind: String)   ## Interact on a station: open its crafting panel
 signal open_chest(structure_id: String)   ## Interact on a chest: open it beside the satchel
-signal cave_chest(index: int)    ## Interact with a cave's supply chest
+signal open_cache(key: String)   ## Interact with a chest that's part of the world (a cave camp's, a ruin's, a vault's)
 signal crafting_started      ## a crafting minigame began (the satchel should close)
 
 const REACH := 3.2
@@ -570,10 +570,11 @@ func _update_looking_at() -> void:
 	var body := hit_obj as CollisionObject3D
 	if not body or ray.get_collision_point().distance_to(camera.global_position) > REACH + 0.6:
 		return
-	if body.has_meta("cave_chest"):
-		var cid := int(body.get_meta("cave_chest"))
-		var opened: bool = Game.looted.has("cave_chest_%d" % cid)
-		looking_at = {"name": "Supply chest", "label": "Chest", "cave_chest": cid, "interact": "" if opened else "Open"}
+	if body.has_meta("loot_key"):
+		var key := String(body.get_meta("loot_key"))
+		var opened: bool = Game.looted.has(key)
+		var title: String = {"cave": "Supply chest", "ruin": "Old chest", "vault": "Stone coffer"}.get(key.get_slice("_", 0), "Chest")
+		looking_at = {"name": title, "label": "Empty" if opened else "Chest", "loot_key": key, "interact": "" if opened else "Open"}
 		return
 	if body.has_meta("pickup"):
 		var pid: String = body.get_meta("pickup")
@@ -909,8 +910,8 @@ func _hit_feedback(target: String, r: Dictionary, point: Vector3) -> void:
 ## Interact: the viewmodel's hand reached out.
 func _on_grab() -> void:
 	var look := looking_at
-	if look.has("cave_chest"):
-		cave_chest.emit(int(look.cave_chest))
+	if look.has("loot_key"):
+		open_cache.emit(String(look.loot_key))
 		return
 	if look.has("door"):
 		Net.request("toggle_door", {"structure": look.door})

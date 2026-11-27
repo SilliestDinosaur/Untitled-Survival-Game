@@ -651,10 +651,48 @@ static func _dress(plan: Dictionary, gen: WorldGen, walk: PackedFloat32Array) ->
 		if s != null:
 			glow.append(s)
 	plan.glow = glow
-	# A camp's ground is clear: no stalagmite, pillar, pool, rubble or deposit among its things.
+	# Vaults: old stone rooms built into a few of the deepest chambers (only in worlds made since ruins came: an
+	# older world's caves stay as they were). Their own random numbers, so nothing else moves.
+	var vaults: Array = []        # [floor pos, facing]
+	var vault_chests: Array = []
+	if Game.world_v >= 2:
+		var vrng := RandomNumberGenerator.new()
+		vrng.seed = hash([Game.world_seed, "vaults"])
+		var most := roundi(3.0 * pow(gen.size / 2048.0, 2.0))
+		var cands: Array = []
+		for i: int in plan.rooms:
+			if lake_at.has(i) or crystal_room.has(i) or walk[i] < 35.0:
+				continue
+			cands.append(i)
+		cands.sort_custom(func(a: int, b: int) -> bool: return walk[a] > walk[b])   # the deepest first
+		for i: int in cands:
+			if vaults.size() >= most:
+				break
+			var c: Vector3 = nodes[i].p
+			var taken := false
+			for other: Array in camps + vaults:
+				if (other[0] as Vector3).distance_to(c) < 30.0:
+					taken = true
+			for lair: Vector3 in lairs:
+				if lair.distance_to(c) < 30.0:
+					taken = true
+			if taken:
+				continue
+			var f: Variant = settle(plan, c, 2.4)
+			if f == null:
+				continue
+			var facing: Variant = _vault_facing(plan, f, vrng.randf() * TAU)
+			if facing == null:
+				continue
+			vaults.append([f, float(facing)])
+			vault_chests.append((f as Vector3) + Basis(Vector3.UP, float(facing)) * VAULT_CHEST)
+	# A camp's (or a vault's) ground is clear: no stalagmite, pillar, pool, rubble or deposit among its things.
 	var away := func(list: Array, reach: float) -> Array:
 		return list.filter(func(it: Variant) -> bool:
 			var p: Vector3 = it[0] if it is Array else it
+			for vault: Array in vaults:
+				if Vector2(p.x - vault[0].x, p.z - vault[0].z).length() < reach + 1.6 and absf(p.y - vault[0].y) < 4.0:
+					return false
 			for camp: Array in camps:
 				if Vector2(p.x - camp[0].x, p.z - camp[0].z).length() < reach and absf(p.y - camp[0].y) < 3.0:
 					return false
@@ -680,6 +718,15 @@ static func _dress(plan: Dictionary, gen: WorldGen, walk: PackedFloat32Array) ->
 	shrooms = dry.call(shrooms)
 	plan.chests = dry.call(plan.chests)
 	plan.glow = dry.call(plan.glow)
+	# Nor in a vault's room (its own coffer is all it holds).
+	var outside := func(list: Array) -> Array:
+		return list.filter(func(p: Vector3) -> bool:
+			for vault: Array in vaults:
+				if Vector2(p.x - vault[0].x, p.z - vault[0].z).length() < VAULT_HALF * 1.5 and absf(p.y - vault[0].y) < 4.0:
+					return false
+			return true)
+	plan.chests = outside.call(plan.chests)
+	plan.glow = outside.call(plan.glow)
 	plan.ores = ores
 	plan.stalagmites = stalagmites
 	plan.stalactites = stalactites
@@ -690,6 +737,8 @@ static func _dress(plan: Dictionary, gen: WorldGen, walk: PackedFloat32Array) ->
 	plan.moss = moss
 	plan.worms = worms
 	plan.camps = camps
+	plan.vaults = vaults
+	plan.vault_chests = vault_chests
 	plan.lairs = lairs
 	plan.roosts = roosts
 	plan.crystals = crystals
@@ -701,6 +750,38 @@ static func _dress(plan: Dictionary, gen: WorldGen, walk: PackedFloat32Array) ->
 ## mine cart, the bedroll, the bones, and its supply chest. (Matches CaveFeatures._build_camp.)
 const CAMP_SPOTS := [Vector3(1.6, 0, -0.7), Vector3(1.9, 0, -0.5), Vector3(-1.6, 0, 0.6), Vector3(0.2, 0, 1.3), Vector3(-0.8, 0, 1.5)]
 const CAMP_CHEST := Vector3(1.3, 0, 1.0)
+
+
+## A vault's room, in its own frame (x across, z back from its doorway): a square of floor this half wide, and where
+## its coffer stands (on a dais at the back).
+const VAULT_HALF := 2.4
+const VAULT_CHEST := Vector3(0, 0.45, 1.25)
+
+
+## A facing for a vault at `at` whose square of floor is level enough and has headroom, clear of the walls (tries
+## eight turns from `turn`), or null if the chamber's too cramped or rough.
+static func _vault_facing(plan: Dictionary, at: Vector3, turn: float) -> Variant:
+	var ce: Variant = ceiling_at(plan, at + Vector3(0, 0.6, 0))
+	if ce == null or (ce as Vector3).y - at.y < 3.0:
+		return null
+	for k in 8:
+		var yaw := turn + TAU * k / 8.0
+		var ok := true
+		for sx in [-1.0, 0.0, 1.0]:
+			for sz in [-1.0, 0.0, 1.0]:
+				var p: Vector3 = at + Basis(Vector3.UP, yaw) * Vector3(sx, 0, sz) * (VAULT_HALF - 0.3)
+				if void_distance(plan, p + Vector3(0, 0.8, 0)) > -0.3:
+					ok = false
+					break
+				var f: Variant = floor_at(plan, p + Vector3(0, 0.8, 0))
+				if f == null or absf((f as Vector3).y - at.y) > 0.7:
+					ok = false
+					break
+			if not ok:
+				break
+		if ok:
+			return yaw
+	return null
 
 
 ## A facing for a camp at `at` where all its things stand on floor near its height and clear of the walls

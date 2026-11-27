@@ -203,6 +203,28 @@ func _to_map(p: Vector3, origin: Vector2, side: float) -> Vector2:
 	return origin + Vector2(p.x, p.z) / Game.WORLD_SIZE * side
 
 
+## A found ruin on the map: two columns and a lintel (a temple), a crenellated tower, or a dark sealed door (a
+## vault below ground), with its name.
+func _ruin_glyph(at: Vector2, kind: String) -> void:
+	var ink := UITheme.INK
+	var fill := Color(0.86, 0.8, 0.66)
+	draw_circle(at, 9.0, Color(0.12, 0.09, 0.07, 0.85))
+	match kind:
+		"temple":
+			draw_rect(Rect2(at + Vector2(-6, -5), Vector2(12, 2.5)), fill)
+			draw_rect(Rect2(at + Vector2(-5, -2.5), Vector2(2.5, 7)), fill)
+			draw_rect(Rect2(at + Vector2(2.5, -2.5), Vector2(2.5, 7)), fill)
+		"tower":
+			draw_rect(Rect2(at + Vector2(-3.5, -3), Vector2(7, 9)), fill)
+			for x in [-3.5, -0.5, 2.5]:
+				draw_rect(Rect2(at + Vector2(x, -6), Vector2(1.6, 3)), fill)
+		_:
+			draw_rect(Rect2(at + Vector2(-5, -5), Vector2(10, 10)), fill)
+			draw_rect(Rect2(at + Vector2(-2.5, -2), Vector2(5, 7)), Color(0.08, 0.06, 0.05))
+	var name: String = {"temple": "Temple", "tower": "Watchtower"}.get(kind, "Vault")
+	draw_string(UITheme.BOLD_FONT, at + Vector2(11, 5), name, HORIZONTAL_ALIGNMENT_LEFT, -1, 13, ink)
+
+
 func _draw() -> void:
 	var box := minf(size.x, size.y) * 0.84
 	var side := box
@@ -230,6 +252,24 @@ func _draw() -> void:
 		draw_circle(at, 4.5, Color(0.02, 0.02, 0.02))
 		draw_arc(at, 7.0, 0.0, TAU, 20, UITheme.ACCENT, 1.5, true)
 		draw_string(UITheme.BOLD_FONT, at + Vector2(9, 4), "Cave", HORIZONTAL_ALIGNMENT_LEFT, -1, 14, UITheme.INK)
+	# Ruins you've found: a little glyph for each kind, and its name.
+	if player and "progress" in player:
+		var found: Dictionary = player.progress.get("ruins", {})
+		var vaults: Array = plan.get("vaults", [])
+		for key: String in found:
+			var kind := String(found[key])
+			var wp := Vector3.ZERO
+			if key.begins_with("v"):
+				var vi := int(key.substr(1))
+				if vi >= vaults.size():
+					continue
+				wp = vaults[vi][0]
+			else:
+				var ri := int(key)
+				if ri >= Game.world_gen.ruins.size():
+					continue
+				wp = Game.world_gen.ruins[ri].pos
+			_ruin_glyph(_to_map(wp, origin, side), kind)
 	# Bases: foundations and the like, where you built them.
 	for id: String in Game.structures:
 		var st: Dictionary = Game.structures[id]

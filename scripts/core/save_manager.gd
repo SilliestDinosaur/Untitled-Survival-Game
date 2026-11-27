@@ -35,6 +35,7 @@ static func list_saves() -> Array[Dictionary]:
 			"world_name": data.get("world_name", ""),
 			"seed": int(data.get("seed", 0)),
 			"world_size": float(data.get("world_size", 2048.0)),
+			"world_v": int(data.get("world_v", 1)),
 			"last_played": float(data.get("last_played", 0)),
 			"created": float(data.get("created", 0)),
 			"play_time": float(data.get("play_time", 0)),

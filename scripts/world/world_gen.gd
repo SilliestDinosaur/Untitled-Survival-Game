@@ -163,12 +163,14 @@ func _init(seed_value: int, pal: WorldPalette) -> void:
 	rivers = Rivers.plan(self)   # before the caves, so they run under the river beds
 	caves = Caves.plan(self)   # planned from the base ground, so it's the same on every machine
 	landmarks = Landmarks.plan(self)
+	ruins = Ruins.plan(self)   # (after the landmarks, to keep clear of them)
 
 
 ## Terrain height in meters at world position (x, z). Sea level is 0.
 var caves: Dictionary = {}   ## the cave plan (see Caves.plan)
 var rivers: Dictionary = {}  ## the river plan (see Rivers.plan)
 var landmarks: Array = []    ## the island's places worth finding (see Landmarks.plan)
+var ruins: Array = []        ## old temples and watchtowers (see Ruins.plan)
 
 
 ## The height of the water's surface at (x, z): a river's or pond's where there is one, otherwise the sea's

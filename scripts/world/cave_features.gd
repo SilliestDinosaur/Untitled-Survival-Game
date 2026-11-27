@@ -38,7 +38,7 @@ func _build_chests(chests: Array) -> void:
 		body.collision_layer = TerrainChunk.LAYER_INTERACT | TerrainChunk.LAYER_SOLID
 		body.collision_mask = 0
 		body.position = c
-		body.set_meta("cave_chest", k)
+		body.set_meta("loot_key", "cave_chest_%d" % k)
 		var cs := CollisionShape3D.new()
 		var box := BoxShape3D.new()
 		box.size = Vector3(1.1, 0.7, 0.7)

@@ -57,6 +57,9 @@ func _fill() -> void:
 	_sub.text = "%s  ·  Day %d  ·  %d of %d milestones  ·  %d %s walked  ·  %d of %d landmarks found" % [Game.world_name, Game.day,
 		done.size(), Progress.MILESTONES.size(), lands, "land" if lands == 1 else "lands",
 		(p.get("landmarks", {}) as Dictionary).size(), Game.world_gen.landmarks.size() if Game.world_gen else 0]
+	var ruins := Progress.ruin_total(Game.world_gen)
+	if ruins > 0:
+		_sub.text += "  ·  %d of %d ruins found" % [(p.get("ruins", {}) as Dictionary).size(), ruins]
 	# Four columns, the short Hunting list under Survival, so it all fits on the page.
 	var cols := HBoxContainer.new()
 	cols.add_theme_constant_override("separation", 26)

@@ -539,6 +539,20 @@ static func _place_resources(coord: Vector2i, origin: Vector3, gen: WorldGen, fl
 		var gk: String = {Biome.JUNGLE: "jungle_tree", Biome.DRYLANDS: "acacia", Biome.AUTUMN: "autumn_oak"}.get(gb, "oak")
 		var gs := 2.8 + float(absi(int(lm.seed)) % 5) * 0.12
 		add.call(gk, int(lm.seed), Vector3(lp.x, _ground_under(gen, lp.x, lp.z, 1.6) - 0.3, lp.z), float(lm.yaw), Vector3.ONE * gs)
+	# A ruin's ground: nothing growing or lying on it (the grass round its stones is enough). Taken out after
+	# everything's numbered, so no id moves.
+	var near_ruins: Array = gen.ruins.filter(func(ru: Dictionary) -> bool:
+		var rp: Vector3 = ru.pos
+		var rr := float(ru.r)
+		return rp.x > origin.x - rr and rp.x < origin.x + size + rr and rp.z > origin.z - rr and rp.z < origin.z + size + rr)
+	if not near_ruins.is_empty():
+		var kept: Array[Dictionary] = []
+		for r: Dictionary in out:
+			var p: Vector3 = (r.transform as Transform3D).origin
+			var ru := Ruins.at(near_ruins, p.x, p.z)
+			if ru.is_empty() or p.y < float(ru.pos.y) - 6.0:   # (cave things deep below stay)
+				kept.append(r)
+		out = kept
 
 	return out
 

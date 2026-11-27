@@ -1458,24 +1458,49 @@ static func _add(inv: Inventory, id: String, n: int, out: Dictionary) -> void:
 
 
 ## Supply caches hold a deterministic mix (same cache, same loot on every machine).
-static func _loot_cache(inv: Inventory, cache_id: String, _rng: RandomNumberGenerator, out: Dictionary) -> void:
+## Loot for a cache: grade 0 a supply cache in the open (or a cave chest), 1 a ruin's (a little more, and some
+## metal), 2 a cave vault's (the best: worked metal, now and then the next metal and a gem).
+static func _loot_cache(inv: Inventory, cache_id: String, _rng: RandomNumberGenerator, out: Dictionary, grade := 0) -> void:
 	var rng := RandomNumberGenerator.new()
 	rng.seed = hash([Game.world_seed, cache_id])
 	var tools := ItemDB.TOOL_TYPES.keys()
 	# One or two well-used tools: stone, now and then the world's first metal (never better: metal is earned).
-	var metal := float(Difficulty.preset(Game.difficulty).cache_metal)
+	var metal := float(Difficulty.preset(Game.difficulty).cache_metal) * (1.0 + grade)
 	for i in rng.randi_range(1, 2):
 		var roll := rng.randf()
 		var tier := 2 if roll < metal else 1
+		if grade >= 2 and roll < 0.2:
+			tier = 3
 		var id := "%s_t%d" % [tools[rng.randi() % tools.size()], tier]
 		var dur := int(ItemDB.tool_stats(id).durability * rng.randf_range(0.4, 0.9))   # well used
 		var got := inv.add(id, 1, false, dur)
 		if got > 0:
 			out[id] = out.get(id, 0) + 1
 	var supplies := [["wood", 10, 30], ["stone", 10, 25], ["fiber", 5, 15], ["charcoal", 2, 4], ["flint", 1, 4], ["berries", 3, 8], ["resin", 1, 3]]
-	for i in rng.randi_range(2, 4):
+	for i in rng.randi_range(2 + grade, 4 + grade):
 		var e: Array = supplies[rng.randi() % supplies.size()]
 		_add(inv, e[0], rng.randi_range(e[1], e[2]), out)
+	if grade >= 1 and rng.randf() < 0.5 + 0.5 * (grade - 1):
+		_add(inv, "ingot_t2", rng.randi_range(2, 3) + 2 * (grade - 1), out)
+	if grade >= 2:
+		if rng.randf() < 0.4:
+			_add(inv, "ingot_t3", rng.randi_range(1, 3), out)
+		if rng.randf() < 0.25:
+			_add(inv, "gem_t4", 1, out)
+
+
+## Open a chest that's part of the world (a ruin's, a cave vault's, a cave camp's): its loot to the player, once
+## for everybody. Key: "ruin_chest_N", "vault_chest_N" or "cave_chest_N". Result: {ok, items, empty}
+static func open_cache(player_id: int, key: String) -> Dictionary:
+	var grade := {"cave": 0, "ruin": 1, "vault": 2}.get(key.get_slice("_", 0), -1) as int
+	if grade < 0 or key.get_slice("_", 1) != "chest" or not key.get_slice("_", 2).is_valid_int():
+		return {"ok": false, "items": {}, "empty": false}
+	if Game.looted.has(key):
+		return {"ok": false, "items": {}, "empty": true}
+	var out := {}
+	_loot_cache(Game.inventory_of(player_id), key, RandomNumberGenerator.new(), out, grade)
+	Game.looted[key] = true
+	return {"ok": true, "items": out, "empty": false}
 
 
 # --- Storage -----------------------------------------------------------------------------------

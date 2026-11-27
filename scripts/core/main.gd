@@ -37,6 +37,7 @@ var _autosave := AUTOSAVE_SECONDS
 var _warmup: Node3D   ## (see shader_warmup.gd)
 var _cave_features: CaveFeatures
 var _landmarks: LandmarkModels
+var _ruins: RuinModels
 var _cave_check := 0.0            ## counts down to the next look at whether the player is underground
 var _map: WorldMap
 const Progress := preload("res://scripts/gameplay/progress.gd")
@@ -161,7 +162,7 @@ func _ready() -> void:
 	var structures := preload("res://scripts/world/structures.gd").new()
 	structures.name = "Structures"
 	add_child(structures)
-	player.cave_chest.connect(_open_cave_chest)
+	player.open_cache.connect(_open_cache)
 	player.crafting_started.connect(func() -> void:
 		if _inventory.visible:
 			_toggle_inventory(false))
@@ -206,7 +207,9 @@ func _set_focus(n: Node3D) -> void:
 
 ## Switch the generated world (title-screen preview or before starting a save).
 func _switch_world(seed_value: int) -> void:
-	if seed_value != Game.world_seed or Game.save_id != "":
+	# (The title screen's world can be an older save's, at its old size and without what's been added since: a new
+	# world is always made fresh then, even of the same seed.)
+	if seed_value != Game.world_seed or Game.save_id != "" or Game.WORLD_SIZE != Game.NEW_WORLD_SIZE or Game.world_v != Game.WORLD_V:
 		Game.new_world(seed_value)
 	world.reset()
 	_new_world_loaded()
@@ -240,6 +243,17 @@ func _build_cave_features() -> void:
 	_landmarks.name = "Landmarks"
 	add_child(_landmarks)
 	_landmarks.build(Game.world_gen.landmarks)
+	if _ruins:
+		remove_child(_ruins)
+		_ruins.queue_free()
+	_ruins = RuinModels.new()
+	_ruins.name = "Ruins"
+	add_child(_ruins)
+	var t0 := Time.get_ticks_msec()
+	_ruins.build(Game.world_gen.ruins)
+	_ruins.build_vaults(Game.world_gen.caves.get("vaults", []))
+	if OS.is_debug_build() and not Game.world_gen.ruins.is_empty():
+		print_verbose("ruins built in %d ms" % (Time.get_ticks_msec() - t0))
 
 
 ## Whether the player is inside a cave tunnel right now (sets Game.in_cave for the sky, music and
@@ -322,17 +336,25 @@ func save_now() -> void:
 	_autosave = AUTOSAVE_SECONDS
 
 
-func _open_cave_chest(index: int) -> void:
-	var key := "cave_chest_%d" % index
+## Open a chest that's part of the world: through the host (it rolls the loot and keeps it to one opening, for
+## guests too).
+func _open_cache(key: String) -> void:
 	if Game.looted.has(key):
 		_hud.show_hint("Empty already")
 		return
-	var inv := Game.inventory_of(Game.LOCAL_PLAYER)
-	var out := {}
-	GameActions._loot_cache(inv, key, RandomNumberGenerator.new(), out)
-	Game.looted[key] = true
-	Audio.play("chest", -4.0)
-	_hud.show_hint("Found %d things in the chest" % out.size() if not out.is_empty() else "Nothing useful inside")
+	Net.request("open_cache", {"key": key, "pos": player.global_position}, func(res: Dictionary) -> void:
+		Game.looted[key] = true
+		if res.get("empty", false):
+			_hud.show_hint("Empty already")
+			return
+		if not res.get("ok", false):
+			return
+		Audio.play("chest", -4.0)
+		var n := 0
+		for k: String in res.items:
+			if not k.begins_with("_"):
+				n += 1
+		_hud.show_hint("Found %d things in the chest" % n if n > 0 else "Nothing useful inside"))
 
 
 ## Come back up to the entrance.

@@ -732,6 +732,11 @@ func run_action(pid: int, peer: int, action: String, a: Dictionary) -> Dictionar
 					st.hp = res.hp
 				_broadcast_resource(String(a.id), st)
 			return res
+		"open_cache":
+			var res := GameActions.open_cache(pid, String(a.get("key", "")))
+			if res.ok:
+				_drop_overflow(res.items, a.get("pos", Vector3.ZERO))
+			return res
 		"harvest_resource":
 			var r := _resource_ref(String(a.id), String(a.kind), String(a.get("key", "")))
 			var res := GameActions.harvest_resource_r(pid, r, _rng)
