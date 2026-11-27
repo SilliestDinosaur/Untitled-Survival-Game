@@ -57,6 +57,8 @@ func _look(pos: Vector3, rng: RandomNumberGenerator) -> void:
 	match b:
 		WorldGen.Biome.DESERT:
 			_stone = Color(0.84, 0.7, 0.52)
+		WorldGen.Biome.DRYLANDS:
+			_stone = Color(0.78, 0.69, 0.56)
 		WorldGen.Biome.BADLANDS:
 			_stone = pal.badlands_ochre.lerp(Color(0.82, 0.62, 0.5), 0.45)
 		WorldGen.Biome.JUNGLE:
@@ -95,7 +97,7 @@ func _ground_span(hw: float, hd: float) -> Vector2:
 func _block(kit: MeshKit, size: Vector3, xf: Transform3D, col: Color, moss := 0.0) -> void:
 	var c := col
 	var top := col.lerp(_moss, clampf(moss, 0.0, 0.85))
-	kit.add_primitive(_box, Transform3D(xf.basis.scaled(size), xf.origin), c, 0.0, 0.05, null,
+	kit.add_primitive(_box, Transform3D(xf.basis.scaled_local(size), xf.origin), c, 0.0, 0.05, null,
 		func(p: Vector3) -> Color: return top if p.y > 0.0 else c)
 
 
@@ -686,4 +688,4 @@ func _chest(kit: MeshKit, xf: Transform3D, index: int, key := "", stone := false
 
 
 func _part(kit: MeshKit, size: Vector3, xf: Transform3D, col: Color) -> void:
-	kit.add_primitive(_box, Transform3D(xf.basis.scaled(size), xf.origin), col, 0.0, 0.04)
+	kit.add_primitive(_box, Transform3D(xf.basis.scaled_local(size), xf.origin), col, 0.0, 0.04)
