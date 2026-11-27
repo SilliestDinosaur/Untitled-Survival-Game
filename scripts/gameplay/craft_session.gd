@@ -13,7 +13,16 @@ extends Node3D
 signal ended
 
 enum Mode { COOK, SMELT, SMITH, CARVE, KNAP }
-enum Mech { RING, SWEEP, DIAL, PUMP, DROP, WRAP, POUR }
+## Every step is a movement of the mouse (a hand on the screen, see ptr):
+##   FLICK  aim at the glowing spot and flick down (knapping, hammering, driving a wedge, knocking an ingot out)
+##   DRAG   press on a piece and drag it into place (fitting a head, seating, hafting, loading ore, adding food)
+##   SAW    steady side-to-side strokes (shaping a handle)
+##   PUMP   up-and-down strokes (the bellows)
+##   TILT   move sideways to tip the crucible, back to stop pouring
+##   STIR   circle at a steady pace (stirring the pot, turning the spit)
+##   WRAP   circle to wind a binding on
+##   DIP    drag the hot blade into the water and hold it there
+enum Mech { FLICK, DRAG, SAW, PUMP, TILT, STIR, WRAP, DIP }
 
 const TOOL_TYPES := ["hatchet", "pickaxe", "spear", "knife"]
 const INGOTS := ["ingot_t2", "ingot_t3", "dusk_ingot"]
@@ -21,12 +30,23 @@ const INGOTS := ["ingot_t2", "ingot_t3", "dusk_ingot"]
 ## Timing: a strike's grade by how well it was timed, and what each grade is worth (of one action's share).
 const PERFECT_Q := 0.7
 const GOOD_Q := 0.25
+const FLICK_LEN := 55.0      ## pixels of quick downward movement that make a strike
+const FLICK_WINDOW := 0.16   ## ...within this long
+const FLICK_AIM := 55.0      ## how far off the spot (pixels) a strike still lands
+const SNAP := 46.0           ## a dragged piece lets go into place within this many pixels of its spot
+const SAW_STROKE := 70.0     ## pixels of a stroke that counts
+const SAW_STROKES := 8.0
+const STIR_PACE := Vector2(2.2, 10.0)   ## radians a second: slower does little, faster slops about
+const STIR_TURNS := 4.0
+const DIP_HOLD := 1.1
+const GRAB := 80.0           ## press within this many pixels of a piece to pick it up
+const PUMP_STROKE := 40.0    ## pixels of a bellows stroke that counts
+const PUMP_HEAT := 0.075     ## each stroke stokes the fire this much...
+const HEAT_FADE := 0.16      ## ...and it dies back this much a second
 const MISS_SHARE := 0.15
 const MISS_LOCK := 0.5      ## a fumble: a moment before you can strike again (so mashing is slow)
 const HIT_LOCK := 0.22
 ## The forge: hold to pump the bellows. It only works while hot enough, fastest in the band.
-const HEAT_UP := 0.7
-const HEAT_DOWN := 0.4
 const HEAT_BAND := Vector2(0.6, 0.85)
 const HEAT_WARM := 0.4
 ## Winding a binding: circles of the mouse, at least this far from the middle (pixels).
@@ -64,12 +84,47 @@ var step := 0              ## index into steps
 var step_t := 0.0          ## progress through the current step, 0..1
 var progress := 0.0        ## through the whole item, 0..1 (the bar)
 var heat := 0.15
-var cue_t := 0.0           ## the timing cue's phase (0..1-ish)
-var target := 0.5          ## the workbench mark, along the piece (0..1)
 var fill := 0.0            ## pouring: how full the mould is
 var wrap_vec := Vector2(0, -60)   ## winding: where the mouse is round the middle
 var feedback := {}         ## {"text", "color", "age"}: the last action's grade, shown briefly
-var test_hold := false     ## tests: hold the action button without a real input
+var ptr := Vector2.ZERO    ## the hand on the screen (pixels), moved by the mouse
+var pressed := false       ## the action button is down
+var tilt := 0.0            ## pouring: how far the crucible is tipped (0..1)
+var turn_rate := 0.0       ## stirring / turning: radians a second, eased
+var hold_t := 0.0          ## dipping: how long it's been held in the water
+var pouring := false
+var drag_node: Node3D            ## dragging: the piece being moved
+var dragging := false
+var _drag_from := Transform3D()      ## where it's picked up from (global)
+var _drag_home_xf := Transform3D()   ## where it goes (global)
+var _drag_focus := Vector3.ZERO      ## the point on it that has to reach its place (its own space)
+var _drag_depth := 1.0
+var _grab := Vector3.ZERO
+var _snapping := false
+var _in_water := false
+var _dips := 0
+var _spot_local := Vector3.ZERO      ## striking: the glowing spot, on the piece
+var _impact := 0.0                   ## a blow landing (seconds left of it)
+var _impact_at := Vector3.ZERO
+var _hist: Array = []                ## the hand's recent positions (x, y, time), to catch a flick
+var _anchor := Vector2.ZERO          ## the middle of a step's movement on the screen
+var _counted := false
+var _striker_side := Vector3.RIGHT
+var _was_pouring := false
+var _spills := 0
+var _sound_acc := 0.0
+var _nag_t := 0.0
+var _stroke := 0.0
+var _stroke_dir := 0
+var _stroke_drift := 0.0
+var strokes := 0
+var _pump_dir := 0
+var _pump_len := 0.0
+var _stir_acc := 0.0
+var _sample_t := 0.0
+var _q_sum := 0.0
+var _q_n := 0
+var _auto_side := 1.0
 
 var _station := {}         ## {"kind", "pos", "yaw"} of the station being used
 var _xf := Transform3D()   ## the station's frame
@@ -100,7 +155,6 @@ var _side := Vector3.BACK  ## campfire: which side you're watching from
 var _turn := 0.0           ## campfire: the spit's turn
 var _char := 0.0           ## campfire: how much the food caught when a turn was missed (cosmetic)
 var _drops := 0            ## things dropped in this step
-var _was_holding := false
 var _tint_mat: ShaderMaterial
 var _molten_mat: StandardMaterial3D
 var _last_stage := ""
@@ -165,40 +219,40 @@ func _plan() -> Array:
 	var spear := tool_type == "spear"
 	match mode:
 		Mode.KNAP:
-			var plan := [{"mech": Mech.RING, "id": "knap", "n": 5, "view": "hand", "say": "Strike the stone as the ring closes, to knap it into a head"}]
+			var plan := [{"mech": Mech.FLICK, "id": "knap", "n": 5, "view": "hand", "say": "Aim at the glowing spot and flick the mouse down, to knap flakes off"}]
 			if knife:
 				plan.append({"mech": Mech.WRAP, "id": "grip", "view": "hand", "say": "Circle the mouse to wind the cord grip on"})
 			else:
-				plan.append({"mech": Mech.DROP, "id": "fit", "n": 2, "view": "hand", "say": "Click when the shaft lines up, to fit the head on"})
+				plan.append({"mech": Mech.DRAG, "id": "fit", "n": 1, "view": "hand", "say": "Hold {key} on the shaft and drag it up into the head"})
 				if spear:
 					plan.append({"mech": Mech.WRAP, "id": "socket", "view": "hand", "say": "Circle the mouse to bind the socket on"})
 				else:
-					plan.append({"mech": Mech.RING, "id": "wedge", "n": 2, "view": "hand", "say": "Strike as the ring closes, to drive the wedge home"})
+					plan.append({"mech": Mech.FLICK, "id": "wedge", "n": 2, "view": "hand", "say": "Flick down on the glowing spot, to drive the wedge home"})
 			return plan
 		Mode.CARVE:
-			var plan := [{"mech": Mech.SWEEP, "id": "shape", "n": 5, "view": "bench", "say": "Strike as the marker crosses the mark, to shape the handle"},
-				{"mech": Mech.DROP, "id": "seat", "n": 2, "view": "bench", "say": "Click when the head is over the handle, to seat it"}]
+			var plan := [{"mech": Mech.SAW, "id": "shape", "view": "bench", "say": "Long, steady strokes side to side, to shape the handle"},
+				{"mech": Mech.DRAG, "id": "seat", "n": 1, "view": "bench", "say": "Hold {key} on the head and drag it down onto the handle"}]
 			if spear:
 				plan.append({"mech": Mech.WRAP, "id": "socket", "view": "bench", "say": "Circle the mouse to bind the socket on"})
 			if not spear:   # a spear's socket holds it; axes and picks get a wedge, knives a guard
-				plan.append({"mech": Mech.RING, "id": "wedge", "n": 2, "view": "bench", "say": "Strike as the ring closes, to drive the wedge home" if not knife else "Strike as the ring closes, to fit the guard"})
+				plan.append({"mech": Mech.FLICK, "id": "wedge", "n": 2, "view": "bench", "say": "Flick down on the glowing spot, to drive the wedge home" if not knife else "Flick down on the glowing spot, to fit the guard"})
 			return plan
 		Mode.SMITH:
-			return [{"mech": Mech.PUMP, "id": "heat", "dur": 2.5, "view": "mouth", "say": "Hold to pump the bellows and heat the bar"},
-				{"mech": Mech.RING, "id": "hammer", "n": 5, "view": "anvil", "say": "Strike as the ring closes, to hammer it into shape"},
-				{"mech": Mech.DIAL, "id": "quench", "n": 1, "view": "anvil", "say": "Quench it when the dial reaches the green"},
-				{"mech": Mech.DROP, "id": "haft", "n": 2, "view": "anvil", "say": "Click when the handle lines up, to fit it"}]
+			return [{"mech": Mech.PUMP, "id": "heat", "dur": 2.5, "view": "mouth", "say": "Pump the bellows: move the mouse up and down"},
+				{"mech": Mech.FLICK, "id": "hammer", "n": 5, "view": "anvil", "say": "Aim at the glowing spot and flick down, to hammer it out"},
+				{"mech": Mech.DIP, "id": "quench", "n": 1, "view": "anvil", "say": "Hold {key} on the blade: drag it into the water and keep it under"},
+				{"mech": Mech.DRAG, "id": "haft", "n": 1, "view": "anvil", "say": "Hold {key} on the handle and drag it up into the head"}]
 		Mode.SMELT:
-			return [{"mech": Mech.DROP, "id": "load", "n": 3, "view": "mouth", "say": "Click when the scoop is over the crucible, to load the ore"},
-				{"mech": Mech.PUMP, "id": "melt", "dur": 3.0, "view": "mouth", "say": "Hold to pump the bellows and melt the ore"},
-				{"mech": Mech.POUR, "id": "pour", "view": "anvil", "say": "Hold to pour. Let go when it reaches the line"},
-				{"mech": Mech.RING, "id": "tap", "n": 2, "view": "anvil", "say": "Strike as the ring closes, to knock the ingot out"}]
+			return [{"mech": Mech.DRAG, "id": "load", "n": 3, "view": "mouth", "say": "Hold {key} on the ore and drag it into the crucible"},
+				{"mech": Mech.PUMP, "id": "melt", "dur": 3.0, "view": "mouth", "say": "Pump the bellows: move the mouse up and down"},
+				{"mech": Mech.TILT, "id": "pour", "view": "anvil", "say": "Move right to tip the crucible; back left at the line"},
+				{"mech": Mech.FLICK, "id": "tap", "n": 2, "view": "anvil", "say": "Flick down on the mould, to knock the ingot out"}]
 		_:
 			if recipe.out == "stew":
-				return [{"mech": Mech.DROP, "id": "add", "n": 3, "view": "fire", "say": "Click when it's over the pot, to add it"},
-					{"mech": Mech.DIAL, "id": "stir", "n": 6, "view": "fire", "say": "Stir when the dial reaches the green"}]
-			return [{"mech": Mech.RING, "id": "skewer", "n": 1, "view": "fire", "say": "Strike as the ring closes, to skewer it"},
-				{"mech": Mech.DIAL, "id": "cook", "n": 8, "view": "fire", "say": "Turn the spit when the dial reaches the green"}]
+				return [{"mech": Mech.DRAG, "id": "add", "n": 3, "view": "fire", "say": "Hold {key} on each thing and drag it into the pot"},
+					{"mech": Mech.STIR, "id": "stir", "view": "fire", "say": "Stir: circle the mouse, not too fast"}]
+			return [{"mech": Mech.DRAG, "id": "skewer", "n": 1, "view": "fire", "say": "Hold {key} on the spit and push it through the food"},
+				{"mech": Mech.STIR, "id": "cook", "view": "fire", "say": "Turn the spit: circle the mouse, steady"}]
 
 
 func cur() -> Dictionary:
@@ -206,7 +260,7 @@ func cur() -> Dictionary:
 
 
 func mech() -> int:
-	return int(cur().get("mech", Mech.RING))
+	return int(cur().get("mech", Mech.FLICK))
 
 
 func step_id() -> String:
@@ -251,18 +305,17 @@ func begin(p: Node, r: Dictionary, times: int) -> void:
 	_build_props()
 	_build_fx()
 	_start_item()
-	_go_to_view(func() -> void: _busy = false)
+	_go_to_view(_step_ready)
 
 
 ## A fresh item: the first step, the raw piece.
 func _start_item() -> void:
 	steps = _plan()
 	step = 0
-	step_t = 0.0
+	_reset_step_state()
 	progress = 0.0
-	cue_t = 0.0
-	fill = 0.0
-	_drops = 0
+	_q_sum = 0.0
+	_q_n = 0
 	_char = 0.0
 	_done = false
 	_last_stage = ""
@@ -273,6 +326,7 @@ func _start_item() -> void:
 	_reset_props()
 	_refresh()
 	_setup_striker()
+	_drag_setup()
 
 
 # --- Views ----------------------------------------------------------------------------------
@@ -616,18 +670,16 @@ func _refresh() -> void:
 
 
 func _refresh_tool(id: String, s: float) -> void:
-	var where := "hand" if mode == Mode.KNAP else ("bench" if mode == Mode.CARVE else ("coals" if id == "heat" else "anvil"))
+	var where := _where()
 	var knife := String(ItemDB.info(recipe.out).get("tool", {}).get("type", "")) == "knife"
 	var stage := {}
 	var part_stage := {}
-	var part_slide := 0.0   # how far the part still has to go (0 = home)
 	match id:
 		"knap":
 			stage = {"head": s, "handle": -1.0, "lash": 0.0, "wedge": 0.0}
 		"fit":
 			stage = {"head": 1.0, "handle": -1.0, "lash": 0.0, "wedge": 0.0}
 			part_stage = {"head": -1.0, "handle": 1.0, "lash": 0.0, "wedge": 0.0}
-			part_slide = -(1.0 - s)   # the shaft comes up from below
 		"grip":
 			stage = {"head": 1.0, "handle": 1.0, "lash": s, "wedge": 1.0}
 		"socket":
@@ -637,7 +689,6 @@ func _refresh_tool(id: String, s: float) -> void:
 		"seat":
 			stage = {"head": -1.0, "handle": 1.0, "lash": 0.0, "wedge": 0.0}
 			part_stage = {"head": 1.0, "handle": -1.0, "lash": 0.0, "wedge": 0.0}
-			part_slide = 1.0 - s       # the head comes down from above
 		"wedge":
 			stage = {"head": 1.0, "handle": 1.0, "lash": 1.0, "wedge": s if s > 0.0 else 0.01}
 		"heat":
@@ -647,19 +698,15 @@ func _refresh_tool(id: String, s: float) -> void:
 		"haft":
 			stage = {"head": 1.0, "handle": -1.0, "lash": 0.0, "wedge": 0.0}
 			part_stage = {"head": -1.0, "handle": 1.0, "lash": 1.0 if not knife else 0.0, "wedge": 1.0 if not knife else 0.0}
-			part_slide = -(1.0 - s)
 	var key := "%s|%s|%s|%s" % [id, str(stage), str(part_stage), where]
-	if key != _last_stage or part_slide != 0.0:
+	if key != _last_stage:
 		_last_stage = key
 		_piece.mesh = _tool(stage)
-		_piece.transform = _tool_place(where)
+		if not (dragging or _snapping) or drag_node != _piece:
+			_piece.transform = _tool_place(where)
 		if not part_stage.is_empty():
-			_part.mesh = _tool(part_stage)
-			_part.visible = true
-			# Slides along the haft (its local y), swaying sideways (its local z) while you line it up.
-			var sway := (sweep_pos() - 0.5) * 0.16 * absf(part_slide) if mech() == Mech.DROP else 0.0
-			var xf := _tool_place(where)
-			_part.transform = Transform3D(xf.basis, xf.origin + xf.basis * Vector3(0, part_slide * 0.28, sway))
+			_part.mesh = _tool(part_stage)   # (it's put in place by the dragging)
+	_part.visible = not part_stage.is_empty()
 
 
 ## Where a tool lies for each place: in your hand (in front of the camera), on the bench, in the coals, on the anvil.
@@ -705,10 +752,7 @@ func _refresh_smelt(id: String, s: float) -> void:
 		"load":
 			for i in _lumps.size():
 				_lumps[i].visible = i < _drops
-			_dropper.visible = true
-			var over: Vector3 = _crucible.global_position + Vector3(0, 0.38, 0)
-			var sway := (_xf.basis * Vector3(1, 0, 0)) * (sweep_pos() - 0.5) * 0.3
-			_dropper.global_transform = Transform3D(Basis.from_scale(Vector3.ONE * 1.2), over + sway)
+			_dropper.visible = true   # (it's moved by the dragging)
 		"melt":
 			_dropper.visible = false
 			_pool.visible = s > 0.05
@@ -722,7 +766,7 @@ func _refresh_smelt(id: String, s: float) -> void:
 			_pool.visible = true
 			# Held with its pouring lip over the mould, tipped by how hard you're pouring; the melt drains as the
 			# mould fills.
-			var tip := 1.1 if _holding() else 0.25
+			var tip := lerpf(0.2, 1.3, tilt)
 			var axis := (_xf.basis * Vector3(1, 0, 0)).normalized()
 			var b := Basis(axis, tip) * _xf.basis.orthonormalized()
 			var mould := (_mould_fill.get_parent() as Node3D).global_transform
@@ -734,7 +778,7 @@ func _refresh_smelt(id: String, s: float) -> void:
 			var r := 0.045 * (1.0 - fill * 0.6)
 			_pool.global_transform = Transform3D(Basis.from_scale(Vector3(r, 1.0, r)), _crucible.global_transform * Vector3(0, 0.055, 0.0))
 			_set_mould_fill(fill)
-			_stream.visible = _holding()
+			_stream.visible = pouring
 			if _stream.visible:
 				# From the lip straight down into the mould.
 				var lip: Vector3 = _crucible.global_transform * CRUCIBLE_LIP
@@ -768,9 +812,7 @@ func _refresh_food(id: String, s: float) -> void:
 		if id == "add":
 			_part.visible = true
 			var ingredients := _stew_ingredients()
-			_part.mesh = ItemModels.mesh_for(ingredients[mini(_drops, ingredients.size() - 1)], _mat)
-			var along := _side.cross(Vector3.UP).normalized()
-			_part.global_transform = Transform3D(Basis.from_scale(Vector3.ONE * 2.0), _station.pos + Vector3(0, 1.05, 0) + along * (sweep_pos() - 0.5) * 0.45)
+			_part.mesh = ItemModels.mesh_for(ingredients[mini(_drops, ingredients.size() - 1)], _mat)   # (moved by the dragging)
 		return
 	var along := _side.cross(Vector3.UP).normalized()
 	var item := String(recipe.needs.keys()[0])
@@ -778,9 +820,8 @@ func _refresh_food(id: String, s: float) -> void:
 	_piece.material_override = null
 	_set_centred(_piece, Basis(along, _turn) * Basis(Vector3.UP, 0.4), _station.pos + Vector3(0, 0.88, 0), 3.0)
 	# Skewering: the spit slides in through the food.
-	if _crossbar:
-		var slide := (1.0 - s) * 0.75 if id == "skewer" else 0.0
-		_crossbar.global_position = _station.pos + Vector3(0, 0.88, 0) + along * slide
+	if _crossbar and id != "skewer":   # (while skewering, the dragging moves it)
+		_crossbar.global_position = _station.pos + Vector3(0, 0.88, 0)
 	# Browning as it cooks (and a little charring wherever a turn was missed).
 	var cooked := s if id == "cook" else 0.0
 	var tint := Color.WHITE.lerp(Color(0.62, 0.42, 0.3), cooked).darkened(minf(_char, 0.35))
@@ -861,11 +902,9 @@ func _setup_striker() -> void:
 	if _striker_pivot:
 		_striker_pivot.queue_free()
 		_striker_pivot = null
-	if not mech() in [Mech.RING, Mech.SWEEP] or step_id() in ["skewer"]:
-		return   # nothing to strike with in this step
-	if mode == Mode.SMELT and step_id() != "tap":
-		return
-	var tool_id := "rock" if mode == Mode.KNAP else "hammer"
+	if not mech() in [Mech.FLICK, Mech.SAW]:
+		return   # nothing in the other hand this step
+	var tool_id := "knife_t1" if mech() == Mech.SAW else ("rock" if mode == Mode.KNAP else "hammer")
 	var mi := MeshInstance3D.new()
 	mi.mesh = ItemModels.mesh_for(tool_id, _mat)
 	mi.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
@@ -879,6 +918,13 @@ func _setup_striker() -> void:
 		_striker_pivot.basis = Basis(Vector3.FORWARD, 0.6)
 		return
 	add_child(_striker_pivot)
+	if mech() == Mech.SAW:
+		# A knife lying across the handle, its edge down, shaving along it.
+		mi.scale = Vector3.ONE * 0.8
+		mi.rotation = Vector3(0, 0, PI * 0.5)
+		_striker_pivot.global_position = work_point()
+		_striker_pivot.global_basis = _xf.basis * Basis(Vector3.UP, PI * 0.5) * Basis(Vector3.FORWARD, 0.5)
+		return
 	# The hammer comes in from the side; its handle points at the piece, its face down.
 	var hit := work_point()
 	var cam_pos := _view(String(cur().get("view", "anvil"))).origin
@@ -886,6 +932,7 @@ func _setup_striker() -> void:
 	away.y = 0.0
 	away = away.normalized()
 	var side := away.cross(Vector3.UP).normalized()
+	_striker_side = side
 	_striker_pivot.global_position = hit - side * 0.33 + Vector3(0, 0.1, 0)   # the head's lower face meets the piece
 	var y_axis := side   # from the pivot toward the piece
 	var z_axis := Vector3.UP
@@ -895,116 +942,525 @@ func _setup_striker() -> void:
 
 # --- Playing --------------------------------------------------------------------------------
 
-func _holding() -> bool:
-	return test_hold or Input.is_action_pressed("attack")
+## Screen pixels scale with the window (the gestures were tuned at 720 px tall).
+func ui_scale() -> float:
+	return maxf(get_viewport().get_visible_rect().size.y / 720.0, 0.5)
+
+
+## Where a world point is on the screen.
+func screen(p: Vector3) -> Vector2:
+	if _cam and not _cam.is_position_behind(p):
+		return _cam.unproject_position(p)
+	return get_viewport().get_visible_rect().size * 0.5
+
+
+## How far in front of the camera a point is (along its view).
+func _depth(p: Vector3) -> float:
+	return maxf(-(_cam.global_transform.affine_inverse() * p).z, 0.05)
+
+
+## The point under the hand on the plane facing the camera `depth` in front of it.
+func _under_ptr(depth: float) -> Vector3:
+	return _cam.project_position(ptr, depth)
 
 
 func _process(delta: float) -> void:
 	if feedback.has("age"):
 		feedback.age += delta
+	_nag_t = maxf(_nag_t - delta, 0.0)
 	if not _closing:
 		_update_fx(delta)
 	if _busy or _closing:
 		return
 	_lock = maxf(_lock - delta, 0.0)
-	var holding := _holding()
+	_impact = maxf(_impact - delta, 0.0)
 	match mech():
 		Mech.PUMP:
-			_pump(delta, holding)
-		Mech.POUR:
-			_pour(delta, holding)
-		Mech.WRAP:
-			pass   # the mouse does it (_input)
-		_:
-			_advance_cue(delta)
+			_pump(delta)
+		Mech.TILT:
+			_pour(delta)
+		Mech.STIR:
+			_stir(delta)
 	if mode == Mode.SMITH and step_id() in ["hammer", "quench"]:
 		heat = maxf(heat - 0.07 * delta, 0.35)   # the bar cools slowly on the anvil
-	_was_holding = holding
 	progress = (step + clampf(step_t, 0.0, 1.0)) / maxf(steps.size(), 1.0)
 	_refresh()
-	if step_t >= 1.0:
+	if mech() in [Mech.DRAG, Mech.DIP]:
+		_drag_process(delta)
+	_update_striker(delta)
+	if step_t >= 1.0 and not _snapping:
 		_next_step()
 
 
-## Bellows: holding pumps the heat up, letting go lets it fall. The work goes fastest in the hot band.
-func _pump(delta: float, holding: bool) -> void:
-	heat = clampf(heat + (HEAT_UP if holding else -HEAT_DOWN) * delta, 0.0, 1.0)
+## Every bit of mouse movement: the hand moves, and the step reads the movement its own way.
+func move(rel: Vector2) -> void:
+	if _busy or _closing:
+		return
+	var before := ptr
+	var vp := get_viewport().get_visible_rect().size
+	ptr = (ptr + rel).clamp(Vector2.ZERO, vp)
+	var sc := ui_scale()
+	match mech():
+		Mech.FLICK:
+			_flick_track(before)
+		Mech.SAW:
+			# The hand stays in a band round the work (the strokes are read from the movement itself).
+			ptr = ptr.clamp(_anchor - Vector2(170, 45) * sc, _anchor + Vector2(170, 45) * sc)
+			_saw_track(rel)
+		Mech.PUMP:
+			ptr = ptr.clamp(_anchor - Vector2(30, 110) * sc, _anchor + Vector2(30, 110) * sc)
+			_pump_track(rel)
+		Mech.TILT:
+			tilt = clampf(tilt + rel.x / (220.0 * sc), 0.0, 1.0)
+			ptr = _anchor + Vector2((tilt - 0.5) * 220.0 * sc, 0)
+		Mech.STIR, Mech.WRAP:
+			_circle(rel)
+
+
+func press() -> void:
+	pressed = true
+	if not _busy and not _closing and mech() in [Mech.DRAG, Mech.DIP]:
+		_try_grab()
+
+
+func release() -> void:
+	pressed = false
+	if dragging and not _closing:
+		_let_go()
+
+
+func _sample(q: float) -> void:
+	_q_sum += clampf(q, 0.0, 1.0)
+	_q_n += 1
+
+
+## How clean the work on this item has been so far (0..1).
+func quality() -> float:
+	return _q_sum / _q_n if _q_n > 0 else 0.7
+
+
+func _say(text: String, col := Color(1.0, 0.92, 0.6)) -> void:
+	feedback = {"text": text, "color": col, "age": 0.0}
+
+
+## A gentle nudge (too fast, not steady...), not more than about once a second.
+func _nag(text: String) -> void:
+	if _nag_t > 0.0:
+		return
+	_nag_t = 1.1
+	_say(text, Color(1.0, 0.75, 0.55))
+
+
+# Striking: aim at the glowing spot and flick down through it.
+
+## Where to strike next, on the piece (or the wedge's top, or the mould).
+func spot_world() -> Vector3:
+	if is_instance_valid(_piece) and _piece.mesh:
+		match step_id():
+			"knap", "hammer":
+				return _piece.global_transform * _spot_local
+			"wedge":
+				return _piece.global_transform * Vector3(0, _piece.mesh.get_aabb().end.y - 0.012, 0)
+	return work_point()
+
+
+## A fresh spot somewhere on the piece, well away from the last one.
+func _new_spot() -> void:
+	if not is_instance_valid(_piece) or not _piece.mesh or not step_id() in ["knap", "hammer"]:
+		return
+	var bb := _piece.mesh.get_aabb()
+	var was := screen(spot_world())
+	var best := _spot_local
+	for i in 10:
+		var u := Vector3(randf_range(0.22, 0.78), randf_range(0.22, 0.78), randf_range(0.3, 0.7))
+		best = bb.position + bb.size * u
+		if screen(_piece.global_transform * best).distance_to(was) > 40.0 * ui_scale():
+			break
+	_spot_local = best
+
+
+func _flick_track(before: Vector2) -> void:
+	var now := Time.get_ticks_msec() / 1000.0
+	_hist.append(Vector3(before.x, before.y, now))
+	while _hist.size() > 1 and now - _hist[0].z > FLICK_WINDOW:
+		_hist.pop_front()
+	var top: Vector3 = _hist[0]
+	for h: Vector3 in _hist:
+		if h.y < top.y:
+			top = h
+	if ptr.y - top.y >= FLICK_LEN * ui_scale() and _lock <= 0.0:
+		_hist.clear()
+		strike(Vector2(top.x, top.y), ptr)
+
+
+## A blow along the flick from `a` to `b`: graded by how close it passes to the spot.
+func strike(a: Vector2, b: Vector2) -> void:
+	if _busy or _closing or _lock > 0.0 or mech() != Mech.FLICK:
+		return
+	var sp := screen(spot_world())
+	var near := Geometry2D.get_closest_point_to_segment(sp, a, b)
+	var q := clampf(1.0 - near.distance_to(sp) / (FLICK_AIM * ui_scale()), 0.0, 1.0)
+	var n := float(cur().get("n", 1))
+	var gain := MISS_SHARE / n
+	if q >= PERFECT_Q:
+		gain = 1.0 / n
+		_say("Perfect!", Color(0.75, 1.0, 0.6))
+	elif q >= GOOD_Q:
+		gain = lerpf(0.45, 1.0, q) / n
+		_say("Good")
+	else:
+		_say("Missed the spot", Color(1.0, 0.6, 0.5))
+	_sample(q)
+	var good := q >= GOOD_Q
+	_lock = HIT_LOCK if good else MISS_LOCK
+	# Where the blow lands: on the spot, or off it where the flick went.
+	_impact_at = spot_world() if good else _cam.project_position(near, _depth(spot_world()))
+	_impact = 0.12
+	step_t = minf(step_t + gain, 1.0)
+	if q >= PERFECT_Q:
+		_perfect_fx(func() -> void: _show_strike(good))
+	else:
+		_show_strike(good)
+	if good:
+		_new_spot()
+
+
+## The striking rock (knapping) or hammer follows the hand, hovering just over the work; at a blow it lands.
+func _update_striker(delta: float) -> void:
+	if not _striker_pivot:
+		return
+	var hit := spot_world()
+	var at := _under_ptr(_depth(hit))
+	var k := 1.0 - exp(-30.0 * delta)
+	if mech() == Mech.SAW:
+		# The knife rides along the handle, under the hand.
+		var a := _piece.global_transform * Vector3(0, 0.02, 0)
+		var b := work_point()
+		var on := Geometry3D.get_closest_point_to_segment(at, a, b)
+		_striker_pivot.global_position = _striker_pivot.global_position.lerp(on + Vector3(0, 0.03, 0), k)
+		return
+	var landing := _impact > 0.0
+	if landing:
+		at = _impact_at
+		k = 1.0
+	if mode == Mode.KNAP:
+		var lift := 0.0 if landing else 0.025
+		var local := _holder().to_local(at) + Vector3(0.035, lift, 0.0)
+		_striker_pivot.position = _striker_pivot.position.lerp(local, k)
+		return
+	var pivot := at - _striker_side * 0.33 + Vector3(0, 0.1 if landing else 0.16, 0)
+	_striker_pivot.global_position = _striker_pivot.global_position.lerp(pivot, k)
+	_striker_pivot.global_basis = _striker_rest * Basis(Vector3.RIGHT, -0.5 if landing else 0.15)
+
+
+# Strokes: the bench (side to side) and the bellows (up and down).
+
+func _saw_track(rel: Vector2) -> void:
+	var dir := int(signf(rel.x)) if absf(rel.x) > 0.5 else 0
+	if dir != 0 and dir != _stroke_dir:
+		_stroke_dir = dir
+		_stroke = 0.0
+		_stroke_drift = 0.0
+		_counted = false
+	_stroke += absf(rel.x)
+	_stroke_drift += absf(rel.y)
+	if not _counted and _stroke >= SAW_STROKE * ui_scale():
+		_counted = true
+		# Clean if the stroke ran straight along (little up-and-down wobble in it).
+		var q := clampf(1.0 - _stroke_drift / (_stroke * 0.55), 0.0, 1.0)
+		_sample(q)
+		strokes += 1
+		step_t = minf(step_t + 1.0 / SAW_STROKES, 1.0)
+		var at := _striker_pivot.global_position if _striker_pivot else work_point()
+		Audio.play_3d("chop", at, -7.0, randf_range(1.25, 1.45) if q >= GOOD_Q else 0.95)
+		Effects.splinters(self, at, Color(0.82, 0.66, 0.46), Color(0.72, 0.55, 0.36), 5 if q >= GOOD_Q else 2, 0.3)
+		if q < 0.4:
+			_nag("Steady: keep it straight")
+
+
+func _pump_track(rel: Vector2) -> void:
+	var dir := int(signf(rel.y)) if absf(rel.y) > 0.5 else 0
+	if dir != 0 and dir != _pump_dir:
+		_pump_dir = dir
+		_pump_len = 0.0
+		_counted = false
+	_pump_len += absf(rel.y)
+	if not _counted and _pump_len >= PUMP_STROKE * ui_scale():
+		_counted = true
+		heat = minf(heat + PUMP_HEAT, 1.0)
+		Audio.play_3d("swoosh", work_point(), -13.0, 0.5 if dir > 0 else 0.6)
+		# Each push of the bellows throws a shower of embers off the coals, bigger the hotter they are.
+		var coals: Vector3 = _xf * COALS
+		Effects.sparks(self, coals, Color(1.0, 0.55, 0.18), roundi(3 + heat * 8.0), 1.2 + heat * 1.8)
+		if heat > 0.5 and dir > 0:
+			Effects.flash(self, coals + Vector3(0, 0.2, 0), Color(1.0, 0.5, 0.2), 0.8 * heat, 2.5, 0.35)
+
+
+## Bellows: each stroke stokes the fire, which dies back between them. The work goes fastest in the hot band.
+func _pump(delta: float) -> void:
+	heat = clampf(heat - HEAT_FADE * delta, 0.0, 1.0)
 	var rate := 1.0 / float(cur().get("dur", 3.0))
 	if heat >= HEAT_BAND.x and heat <= HEAT_BAND.y:
 		step_t += rate * delta
 	elif heat >= HEAT_WARM and heat < HEAT_BAND.x:
 		step_t += rate * 0.3 * delta
-	if holding and fmod(Time.get_ticks_msec() / 1000.0, 0.45) < delta:
-		Audio.play_3d("swoosh", work_point(), -14.0, 0.55)
-		# Each push of the bellows throws a shower of embers off the coals, bigger the hotter they are.
-		var coals: Vector3 = _xf * COALS
-		Effects.sparks(self, coals, Color(1.0, 0.55, 0.18), roundi(4 + heat * 10.0), 1.2 + heat * 1.8)
-		if heat > 0.5:
-			Effects.flash(self, coals + Vector3(0, 0.2, 0), Color(1.0, 0.5, 0.2), 0.8 * heat, 2.5, 0.35)
+	elif heat > HEAT_BAND.y:
+		_nag("Too hot: ease off")
+	_sample_t += delta
+	if _sample_t >= 0.3 and heat >= HEAT_WARM:
+		_sample_t = 0.0
+		_sample(1.0 if heat <= HEAT_BAND.y and heat >= HEAT_BAND.x else (0.7 if heat < HEAT_BAND.x else 0.25))
 
 
-## Pouring: holding tips the crucible and fills the mould. Let go at the line; over the top spills (and you pour
-## again, a little later: speed only, nothing lost).
-func _pour(delta: float, holding: bool) -> void:
-	if holding:
-		fill += POUR_RATE * delta
+## Pouring: the further it's tipped, the faster it pours. Tip it back at the line; over the top spills (and the
+## mould has to be topped up again, a little later: speed only, nothing lost).
+func _pour(delta: float) -> void:
+	var rate := POUR_RATE * smoothstep(0.3, 1.0, tilt)
+	pouring = rate > 0.01
+	if pouring:
+		fill += rate * delta
 		if fill > 1.0:
 			fill = 0.55
-			feedback = {"text": "Spilled!", "color": Color(1.0, 0.6, 0.5), "age": 0.0}
+			_spills += 1
+			_say("Spilled!", Color(1.0, 0.6, 0.5))
 			Effects.sparks(self, work_point(), Color(1.0, 0.55, 0.15), 10, 1.8)
 			Effects.dust(self, work_point(), Color(0.4, 0.38, 0.36), 3, 0.15, 0.6)   # a puff of smoke
-	elif _was_holding:   # just let go
-		if fill >= POUR_BAND.x and fill <= POUR_BAND.y:
-			feedback = {"text": "Perfect!", "color": Color(0.75, 1.0, 0.6), "age": 0.0}
+	elif _was_pouring:   # just tipped back
+		if fill >= POUR_BAND.x:
+			# Right on the line is clean; a bit over it (short of spilling) less so.
+			var q := 1.0 if fill <= POUR_BAND.y else clampf(1.0 - (fill - POUR_BAND.y) / 0.05, 0.3, 1.0)
+			q *= pow(0.6, _spills)
+			_sample(q)
 			step_t = 1.0
-			_perfect_fx(func() -> void: Effects.sparks(self, work_point(), Color(1.0, 0.6, 0.2), 10, 1.5))
-		elif fill < POUR_BAND.x:
-			feedback = {"text": "More", "color": Color(1.0, 0.92, 0.6), "age": 0.0}
+			if q >= PERFECT_Q:
+				_say("Perfect!", Color(0.75, 1.0, 0.6))
+				_perfect_fx(func() -> void: Effects.sparks(self, work_point(), Color(1.0, 0.6, 0.2), 10, 1.5))
+			else:
+				_say("Good")
+		else:
+			_say("More")
+	_was_pouring = pouring
 	if step_t < 1.0:
 		step_t = minf(fill / POUR_BAND.x, 0.99) if fill > 0.0 else 0.0
 
 
-## The cue's speed for each kind of step.
-func _advance_cue(delta: float) -> void:
-	match mech():
-		Mech.DIAL:
-			cue_t += delta / 1.1
-			if cue_t > 1.0:
-				cue_t = 0.0   # missed the moment: it comes round again (the food catches a little)
-				if step_id() == "cook":
-					_char += 0.06
-		Mech.SWEEP:
-			cue_t += delta / 0.75
-		Mech.DROP:
-			cue_t += delta / 0.9
-		_:   # a ring closing on the strike point
-			cue_t += delta / 0.85
-			if cue_t > 1.3:
-				cue_t = 0.0
+# Circling: winding a binding on, stirring, turning the spit.
+
+func _circle(rel: Vector2) -> void:
+	var sc := ui_scale()
+	var before := wrap_vec
+	wrap_vec = (wrap_vec + rel).limit_length(140.0 * sc)
+	if before.length() < WRAP_RADIUS * sc or wrap_vec.length() < WRAP_RADIUS * sc:
+		return
+	var turned := angle_difference(before.angle(), wrap_vec.angle())
+	if mech() == Mech.WRAP:
+		var t := absf(turned)
+		step_t += minf(t, 0.6) / (TAU * WRAP_TURNS)
+		if fmod(step_t * WRAP_TURNS * 4.0, 1.0) < minf(t, 0.6) / (TAU / 4.0) * 0.25:
+			Audio.play_3d("rustle", work_point(), -12.0, 1.4)
+		return
+	_stir_acc += absf(turned)
+	_turn += turned * (1.0 if recipe.out == "stew" else 0.6)   # the spoon goes round with you; the spit turns
 
 
-## The sweep (or sway) position, 0..1.
-func sweep_pos() -> float:
-	return pingpong(cue_t, 1.0)
+## Stirring and turning: progress with every bit of circling, best at a steady pace.
+func _stir(delta: float) -> void:
+	var turned := _stir_acc
+	_stir_acc = 0.0
+	turn_rate = lerpf(turn_rate, turned / maxf(delta, 1e-4), 1.0 - exp(-5.0 * delta))
+	var gain := turned
+	var stew: bool = recipe.out == "stew"
+	if turn_rate > STIR_PACE.y:
+		gain *= 0.35
+		_nag("Too fast: it's slopping about" if stew else "Too fast: it won't cook")
+		if stew and randf() < delta * 3.0:
+			Effects.splash(self, work_point(), 0.25)
+	elif turn_rate < STIR_PACE.x:
+		gain *= 0.6
+		if not stew and turn_rate < 0.6:
+			_char += 0.03 * delta   # left sitting over the fire, it catches
+	step_t = minf(step_t + gain / (TAU * STIR_TURNS), 1.0)
+	_sample_t += delta
+	if _sample_t >= 0.3 and turn_rate > 0.5:
+		_sample_t = 0.0
+		_sample(1.0 if turn_rate >= STIR_PACE.x and turn_rate <= STIR_PACE.y else (0.3 if turn_rate > STIR_PACE.y else 0.7))
+	# A slurp of the stew, a sizzle off the spit, every half turn or so.
+	_sound_acc += turned
+	if _sound_acc > PI:
+		_sound_acc = 0.0
+		var at := work_point()
+		Audio.play_3d("rustle", at, -9.0, 0.7 if stew else 0.55)
+		if not stew:
+			Effects.chips(self, at, Color(1.0, 0.75, 0.4), 3, 0.02, 1.2)   # spitting fat
+			Effects.steam(self, at, 2, 0.12)
 
 
-func _quality() -> float:
-	match mech():
-		Mech.DIAL:
-			return clampf(1.0 - absf(cue_t - 0.85) / 0.12, 0.0, 1.0)
-		Mech.SWEEP:
-			return clampf(1.0 - absf(sweep_pos() - target) / 0.11, 0.0, 1.0)
-		Mech.DROP:
-			return clampf(1.0 - absf(sweep_pos() - 0.5) / 0.12, 0.0, 1.0)
-	return clampf(1.0 - absf(cue_t - 1.0) / 0.2, 0.0, 1.0)
+# Dragging: press on a piece and drag it into place (or into the water, and hold it there).
+
+## What's dragged this step, where it starts, where it goes, and the point on it that has to reach its place.
+func _drag_setup() -> void:
+	dragging = false
+	drag_node = null
+	if step_t >= 1.0:
+		return
+	match step_id():
+		"fit", "seat", "haft":
+			drag_node = _part
+			var up := -1.0 if step_id() != "seat" else 1.0   # a shaft comes up from below, a head down from above
+			var parent := _part.get_parent() as Node3D
+			var home := _tool_place(_where())
+			_drag_home_xf = parent.global_transform * home
+			_drag_from = parent.global_transform * Transform3D(home.basis, home.origin + home.basis * Vector3(0, up * 0.3, 0.07))
+			_drag_focus = Vector3(0, _head_y(), 0)
+		"skewer":
+			drag_node = _crossbar
+			var along := _side.cross(Vector3.UP).normalized()
+			var c: Vector3 = _station.pos + Vector3(0, 0.88, 0)
+			_drag_home_xf = Transform3D(Basis(), c)
+			_drag_from = Transform3D(Basis(), c + along * 0.55)
+			_drag_focus = along * 0.22   # a hand's width in from where it sticks out
+		"load":
+			drag_node = _dropper
+			_dropper.visible = true
+			_drag_home_xf = Transform3D(Basis.from_scale(Vector3.ONE * 1.2), _crucible.global_position + Vector3(0, 0.17, 0))
+			_drag_from = Transform3D(Basis.from_scale(Vector3.ONE * 1.2), _xf * Vector3(-0.32, 0.95, -0.22))
+			_drag_focus = Vector3.ZERO
+		"add":
+			drag_node = _part
+			var along := _side.cross(Vector3.UP).normalized()
+			var b := Basis.from_scale(Vector3.ONE * 2.0)
+			var c := _part.mesh.get_aabb().get_center() if _part.mesh else Vector3.ZERO
+			_drag_home_xf = Transform3D(b, _station.pos + Vector3(0, POT_BASE + 0.24, 0) - b * c)
+			_drag_from = Transform3D(b, _station.pos + Vector3(0, 0.98, 0) + along * 0.42 - b * c)
+			_drag_focus = c
+		"quench":
+			drag_node = _piece
+			_drag_from = _piece.global_transform
+			_drag_focus = Vector3(0, _head_y(), 0)
+			var water: Vector3 = _xf * (BUCKET_AT + Vector3(0, 0.26, 0))
+			_drag_home_xf = Transform3D(_drag_from.basis, _drag_from.origin + (water - _drag_from * _drag_focus))
+	if drag_node:
+		drag_node.global_transform = _drag_from
+
+
+## The dragged piece's point that has to reach its place, now and when it's there.
+func drag_focus() -> Vector3:
+	return drag_node.global_transform * _drag_focus if drag_node else work_point()
+
+
+func drag_target() -> Vector3:
+	return _drag_home_xf * _drag_focus
+
+
+func _try_grab() -> void:
+	if drag_node == null or dragging or _snapping:
+		return
+	if ptr.distance_to(screen(drag_focus())) > GRAB * ui_scale():
+		_nag("Grab it: move onto it first")
+		return
+	dragging = true
+	_drag_depth = _depth(drag_node.global_position)
+	_grab = drag_node.global_position - _under_ptr(_drag_depth)
+	Audio.play_3d("rustle", drag_focus(), -12.0, 1.3)
+
+
+## Each frame: the piece follows the hand while it's held; quenching, it hisses while it's under.
+func _drag_process(delta: float) -> void:
+	if drag_node == null or _snapping:
+		return
+	if not dragging:
+		drag_node.global_transform = _drag_from
+		return
+	var xf := Transform3D(_drag_from.basis, _under_ptr(_drag_depth) + _grab)
+	if mech() == Mech.DIP:
+		var under := screen(xf * _drag_focus).distance_to(screen(drag_target())) < SNAP * 1.5 * ui_scale()
+		if under:
+			# In the water: it sinks in, hissing and steaming, cooling as it's held there.
+			xf = Transform3D(_drag_from.basis, _drag_home_xf.origin - Vector3(0, 0.03, 0))
+			if hold_t == 0.0 or not _in_water:
+				var water := drag_target()
+				Audio.play_3d("swoosh", water, -2.0, 1.6)
+				Effects.splash(self, water, 0.3)
+			_in_water = true
+			hold_t += delta
+			_sample_t += delta
+			if _sample_t > 0.15:
+				_sample_t = 0.0
+				Effects.steam(self, drag_target() + Vector3(0, 0.05, 0), 3, 0.2)
+			step_t = minf(hold_t / DIP_HOLD, 0.99)
+			if hold_t >= DIP_HOLD:
+				_sample(1.0 if _dips == 0 else 0.6)
+				_say("Quenched", Color(0.75, 1.0, 0.6))
+				dragging = false
+				_back_home(func() -> void: step_t = 1.0)
+		elif _in_water:
+			_in_water = false
+			_dips += 1   # pulled out too soon: it'll have to go back in
+			_nag("Hold it under")
+	drag_node.global_transform = xf
+
+
+## Let go: close enough to its place, it goes home; otherwise it drops back where it was.
+func _let_go() -> void:
+	dragging = false
+	if mech() == Mech.DIP:
+		if step_t < 1.0:
+			_back_home(Callable())
+		return
+	var d := screen(drag_focus()).distance_to(screen(drag_target()))
+	var snap := SNAP * ui_scale()
+	if d > snap:
+		_say("Not quite", Color(1.0, 0.75, 0.55))
+		Audio.play_3d("thud", drag_focus(), -12.0, 1.3)
+		_back_home(Callable())
+		return
+	var q := clampf(1.0 - d / snap, 0.0, 1.0)
+	_sample(q)
+	_say("Perfect!" if q >= PERFECT_Q else "Good", Color(0.75, 1.0, 0.6) if q >= PERFECT_Q else Color(1.0, 0.92, 0.6))
+	_snapping = true
+	var node := drag_node
+	var from := node.global_transform
+	var to := _drag_home_xf
+	var tw := create_tween()
+	tw.tween_method(func(w: float) -> void: node.global_transform = from.interpolate_with(to, w), 0.0, 1.0, 0.12) \
+		.set_trans(Tween.TRANS_QUAD).set_ease(Tween.EASE_IN)
+	if step_id() in ["load", "add"]:   # it falls in
+		var sunk := Transform3D(to.basis, to.origin - Vector3(0, 0.12, 0))
+		tw.tween_method(func(w: float) -> void: node.global_transform = to.interpolate_with(sunk, w), 0.0, 1.0, 0.1)
+	tw.tween_callback(func() -> void:
+		_snapping = false
+		if q >= PERFECT_Q:
+			_perfect_fx(func() -> void: _show_drop(true))
+		else:
+			_show_drop(true)
+		_drops += 1
+		step_t = minf(step_t + 1.0 / float(cur().get("n", 1)), 1.0)
+		if step_t < 1.0:
+			_refresh()
+			_drag_setup())
+
+
+## Back to where it was picked up from.
+func _back_home(then: Callable) -> void:
+	_snapping = true
+	var node := drag_node
+	var from := node.global_transform
+	var to := _drag_from
+	var tw := create_tween()
+	tw.tween_method(func(w: float) -> void: node.global_transform = from.interpolate_with(to, w), 0.0, 1.0, 0.22) \
+		.set_trans(Tween.TRANS_SINE)
+	tw.tween_callback(func() -> void:
+		_snapping = false
+		_in_water = false
+		if then.is_valid():
+			then.call())
 
 
 func _input(event: InputEvent) -> void:
 	if _closing:
 		return
 	if event is InputEventMouseMotion:
-		if mech() == Mech.WRAP and not _busy:
-			wrap_input((event as InputEventMouseMotion).relative)
+		move((event as InputEventMouseMotion).relative)
 		return
 	# While working, the game's other keys wait: Esc, right click and walking away stop instead.
 	get_viewport().set_input_as_handled()
@@ -1016,64 +1472,9 @@ func _input(event: InputEvent) -> void:
 			stop()
 			return
 	if event.is_action_pressed("attack"):
-		strike()
-
-
-## Winding: the mouse goes round the middle; each bit of a circle winds a bit more on.
-func wrap_input(relative: Vector2) -> void:
-	var before := wrap_vec
-	wrap_vec = (wrap_vec + relative).limit_length(140.0)
-	if before.length() < WRAP_RADIUS or wrap_vec.length() < WRAP_RADIUS:
-		return
-	var turned := absf(angle_difference(before.angle(), wrap_vec.angle()))
-	step_t += minf(turned, 0.6) / (TAU * WRAP_TURNS)
-	if fmod(step_t * WRAP_TURNS * 4.0, 1.0) < minf(turned, 0.6) / (TAU / 4.0) * 0.25:
-		Audio.play_3d("rustle", work_point(), -12.0, 1.4)
-
-
-## A click: a strike, a turn of the spit, a stir, or letting a part go.
-func strike() -> void:
-	if _busy or _closing or _lock > 0.0:
-		return
-	if mech() in [Mech.PUMP, Mech.POUR, Mech.WRAP]:
-		return   # those are holding or circling, handled each frame
-	var q := _quality()
-	var n := float(cur().get("n", 1))
-	var gain := MISS_SHARE / n
-	if q >= PERFECT_Q:
-		gain = 1.0 / n
-		feedback = {"text": "Perfect!", "color": Color(0.75, 1.0, 0.6), "age": 0.0}
-	elif q >= GOOD_Q:
-		gain = lerpf(0.45, 1.0, q) / n
-		feedback = {"text": "Good", "color": Color(1.0, 0.92, 0.6), "age": 0.0}
-	else:
-		feedback = {"text": "Miss", "color": Color(1.0, 0.6, 0.5), "age": 0.0}
-	var good := q >= GOOD_Q
-	_lock = HIT_LOCK if good else MISS_LOCK
-	if mech() == Mech.DROP:
-		# A part or an ingredient only goes in when it's lined up; a miss just costs a moment.
-		if good:
-			step_t = minf(step_t + 1.0 / n, 1.0)
-			_drops += 1
-		if q >= PERFECT_Q:
-			_perfect_fx(func() -> void: _show_drop(good))
-		else:
-			_show_drop(good)
-		cue_t = randf()   # it starts swaying from somewhere new
-		return
-	step_t = minf(step_t + gain, 1.0)
-	if q >= PERFECT_Q:
-		_perfect_fx(func() -> void: _show_strike(good))
-	else:
-		_show_strike(good)
-	match mech():
-		Mech.DIAL:
-			cue_t = 0.0   # turned: the other side starts again
-		Mech.SWEEP:
-			var u := sweep_pos()   # a new mark, well away from the marker
-			target = clampf(fposmod(u + randf_range(0.3, 0.7), 1.0), 0.15, 0.85)
-		_:
-			cue_t = 0.0
+		press()
+	elif event.is_action_released("attack"):
+		release()
 
 
 func _show_drop(good: bool) -> void:
@@ -1093,63 +1494,62 @@ func _show_drop(good: bool) -> void:
 
 
 func _show_strike(good: bool) -> void:
-	var at := work_point()
-	match step_id():
-		"cook", "stir":
-			create_tween().tween_method(func(a: float) -> void: _turn = a, _turn, _turn + PI, 0.25).set_trans(Tween.TRANS_SINE)
-			Audio.play_3d("rustle", at, -6.0, 0.7 if good else 0.5)
-			if good and step_id() == "cook":
-				Effects.chips(self, at, Color(1.0, 0.75, 0.4), 5, 0.02, 1.2)   # spitting fat
-				Effects.steam(self, at, 3, 0.12)
-			return
-		"quench":
-			if good:
-				# Into the bucket and out again, hissing.
-				var home := _piece.transform
-				var water: Vector3 = _xf * (BUCKET_AT + Vector3(0, 0.3, 0))
-				var dip := Transform3D(home.basis, home.origin + (water - work_point()))
-				_busy = true
-				var tw := create_tween()
-				tw.tween_property(_piece, "transform", dip, 0.25).set_trans(Tween.TRANS_SINE)
-				tw.tween_callback(func() -> void:
-					Audio.play_3d("swoosh", water, -2.0, 1.6)
-					Effects.steam(self, water + Vector3(0, 0.05, 0), 12, 0.22)
-					Effects.splash(self, water, 0.3))
-				tw.tween_interval(0.35)
-				tw.tween_property(_piece, "transform", home, 0.25).set_trans(Tween.TRANS_SINE)
-				tw.tween_callback(func() -> void: _busy = false)
-			else:
-				Audio.play_3d("swoosh", at, -8.0, 1.2)
-			return
-		"skewer":
-			Audio.play_3d("chop", at, -6.0, 1.3)
-			return
-	if _striker_pivot and mode == Mode.KNAP:
-		# The rock knocks against the edge of the stone and comes back.
-		var rest := _striker_pivot.position
-		var hit_at: Vector3 = _holder().to_local(at) + Vector3(0.05, 0.0, 0.0)
-		var tw := create_tween()
-		tw.tween_property(_striker_pivot, "position", hit_at, 0.07).set_trans(Tween.TRANS_QUAD).set_ease(Tween.EASE_IN)
-		tw.tween_property(_striker_pivot, "position", rest, 0.18).set_trans(Tween.TRANS_SINE)
-	elif _striker_pivot:
-		var tw := create_tween()
-		tw.tween_property(_striker_pivot, "basis", _striker_rest * Basis(Vector3.RIGHT, -0.8), 0.07).set_trans(Tween.TRANS_QUAD).set_ease(Tween.EASE_IN)
-		tw.tween_property(_striker_pivot, "basis", _striker_rest, 0.18).set_trans(Tween.TRANS_SINE)
+	var at := _impact_at
 	match mode:
 		Mode.SMITH, Mode.SMELT:
 			Audio.play_3d("clink", at, -2.0, randf_range(0.95, 1.1) if good else 0.8)
 			Effects.sparks(self, at, Color(1.0, 0.6, 0.2), 12 if good else 4, 3.0 if good else 1.8)
 		Mode.CARVE:
-			if step_id() == "shape":
-				Audio.play_3d("chop", at, -4.0, randf_range(1.1, 1.3) if good else 0.9)
-				Effects.splinters(self, at, Color(0.82, 0.66, 0.46), Color(0.72, 0.55, 0.36), 6 if good else 2, 0.35)
-			else:
-				Audio.play_3d("thud", at, -4.0, 1.2)
+			Audio.play_3d("thud", at, -4.0, 1.2)
 		Mode.KNAP:
 			Audio.play("clink", -6.0, randf_range(1.3, 1.5) if good else 1.0)
 			Effects.chips(_holder(), at, Color(0.55, 0.56, 0.6), 6 if good else 2, 0.015, 1.2)   # flakes
 			if good:
 				Effects.sparks(_holder(), at, Color(1.0, 0.85, 0.6), 3, 1.5)
+
+
+## Which place the piece is worked in this step.
+func _where() -> String:
+	return "hand" if mode == Mode.KNAP else ("bench" if mode == Mode.CARVE else ("coals" if step_id() == "heat" else "anvil"))
+
+
+## A step's fresh start: everything that counts movement goes back to zero.
+func _reset_step_state() -> void:
+	step_t = 0.0
+	_drops = 0
+	fill = 0.0
+	tilt = 0.0
+	pouring = false
+	_was_pouring = false
+	_spills = 0
+	turn_rate = 0.0
+	hold_t = 0.0
+	_dips = 0
+	_in_water = false
+	strokes = 0
+	_stroke_dir = 0
+	_pump_dir = 0
+	_counted = false
+	_hist.clear()
+	dragging = false
+	_snapping = false
+	_impact = 0.0
+	wrap_vec = Vector2(0, -60) * ui_scale()
+
+
+## Once the view has settled on a step: the hand starts in the middle of the work, ready.
+func _step_ready() -> void:
+	_busy = false
+	_anchor = screen(work_point())
+	ptr = _anchor + (Vector2(0, -60) * ui_scale() if mech() == Mech.FLICK else Vector2.ZERO)
+	if mech() in [Mech.SAW, Mech.PUMP]:
+		_anchor += Vector2(0, 90) * ui_scale()
+		ptr = _anchor
+	if mech() == Mech.TILT:
+		_anchor += Vector2(0, 110) * ui_scale()
+		ptr = _anchor - Vector2(110, 0) * ui_scale()
+	_new_spot()
+	_drag_setup()
 
 
 ## On to the next step (the view moves if it needs to), or the item's done.
@@ -1159,16 +1559,13 @@ func _next_step() -> void:
 		_finish_item()
 		return
 	step += 1
-	step_t = 0.0
-	cue_t = 0.0
-	_drops = 0
-	fill = 0.0
-	wrap_vec = Vector2(0, -60)
+	_reset_step_state()
 	_last_stage = ""
 	_busy = true
 	_refresh()
 	_setup_striker()
-	_go_to_view(func() -> void: _busy = false)
+	_drag_setup()
+	_go_to_view(_step_ready)
 
 
 # --- Finishing ------------------------------------------------------------------------------
@@ -1176,7 +1573,8 @@ func _next_step() -> void:
 func _finish_item() -> void:
 	_busy = true
 	progress = 1.0
-	Net.request("craft", {"recipe": recipe.id, "pos": player.global_position, "times": 1}, func(res: Dictionary) -> void:
+	var q := quality()
+	Net.request("craft", {"recipe": recipe.id, "pos": player.global_position, "times": 1, "quality": q}, func(res: Dictionary) -> void:
 		if _closing:
 			return
 		if not res.get("ok", false):
@@ -1185,7 +1583,7 @@ func _finish_item() -> void:
 			return
 		made += 1
 		left -= 1
-		_show_done()
+		_show_done(q, int(res.get("extra", 0)))
 		var more := left > 0 and CraftSession.problem(player, recipe) == ""
 		get_tree().create_timer(1.0, false).timeout.connect(func() -> void:
 			if _closing:
@@ -1197,8 +1595,17 @@ func _finish_item() -> void:
 
 
 ## The finished thing, where the work was.
-func _show_done() -> void:
-	feedback = {"text": "Made %s" % ItemDB.display_name(recipe.out), "color": Color(1.0, 0.95, 0.8), "age": 0.0}
+func _show_done(q := 0.7, extra := 0) -> void:
+	var text := "Made %s" % ItemDB.display_name(recipe.out)
+	if extra > 0:
+		text += "  +%d" % extra
+	var col := Color(1.0, 0.95, 0.8)
+	if q >= GameActions.FINE_WORK:
+		text = "Fine work!  " + text
+		col = Color(0.8, 1.0, 0.65)
+	elif q < 0.4:
+		text += "  (rough)"
+	feedback = {"text": text, "color": col, "age": 0.0, "long": true}
 	Audio.play(Audio.sfx.chime, -4.0)
 	_done = true
 	if _part:
@@ -1234,7 +1641,7 @@ func _next() -> void:
 		_glow.visible = true
 	_start_item()
 	_busy = true
-	_go_to_view(func() -> void: _busy = false)
+	_go_to_view(_step_ready)
 
 
 func _on_hurt(_amount: float) -> void:
@@ -1274,34 +1681,56 @@ func stop(at_once := false) -> void:
 
 # --- Tests ------------------------------------------------------------------------------------
 
-## Plays the current step well (for the automated tests): strikes at the best moment, keeps the heat in the band,
-## circles for a binding, pours to the line.
-func autoplay(_delta: float) -> void:
+## Plays the current step well (for the automated tests), with the same mouse movements a player makes: flicks
+## through the spot, drags each piece to its place, long straight strokes, steady pumping and circling, a pour to
+## the line.
+func autoplay(delta: float) -> void:
 	if _busy or _closing:
-		test_hold = false
 		return
+	var sc := ui_scale()
 	match mech():
-		Mech.PUMP:
-			test_hold = heat < 0.72
-		Mech.POUR:
-			test_hold = fill < 0.87
-		Mech.WRAP:
-			wrap_input(wrap_vec.rotated(0.3) - wrap_vec)
-		_:
-			test_hold = false
-			if _lock > 0.0:
+		Mech.FLICK:
+			if _lock > 0.0 or _impact > 0.0:
 				return
-			var ready := false
-			match mech():
-				Mech.DIAL: ready = absf(cue_t - 0.85) < 0.03
-				Mech.SWEEP:
-					target = clampf(sweep_pos(), 0.15, 0.85)
-					ready = absf(sweep_pos() - target) < 0.01
-				Mech.DROP: ready = absf(sweep_pos() - 0.5) < 0.03
-				_: ready = absf(cue_t - 1.0) < 0.04
-			if ready:
-				strike()
-
+			var above := screen(spot_world()) - Vector2(0, 12) * sc
+			if ptr.distance_to(above) > 1.0:
+				_hist.clear()
+				move(above - ptr)
+				_hist.clear()
+			else:
+				move(Vector2(0, FLICK_LEN + 20.0) * sc)
+		Mech.DRAG, Mech.DIP:
+			if _snapping or drag_node == null:
+				return
+			if not dragging:
+				var f := screen(drag_focus())
+				if ptr.distance_to(f) > 1.0:
+					move(f - ptr)
+				else:
+					press()
+				return
+			var to := screen(drag_target()) - screen(drag_focus())
+			if mech() == Mech.DIP and _in_water:
+				return   # hold it under
+			if to.length() > 1.0:
+				move(to.limit_length(30.0 * sc))
+			elif mech() == Mech.DRAG:
+				release()
+		Mech.SAW:
+			move(Vector2(110.0 * _auto_side, 0) * sc)
+			_auto_side = -_auto_side
+		Mech.PUMP:
+			if heat < 0.68:
+				move(Vector2(0, 60.0 * _auto_side) * sc)
+				_auto_side = -_auto_side
+		Mech.TILT:
+			if fill < 0.86:
+				if tilt < 1.0:
+					move(Vector2(40.0, 0) * sc)
+			else:
+				move(Vector2(-400.0, 0) * sc)
+		Mech.STIR, Mech.WRAP:
+			move(wrap_vec.rotated(5.5 * clampf(delta, 1.0 / 120.0, 0.1)) - wrap_vec)
 
 
 ## How wide the inside of a lathed vessel is at height y (its inner wall: the profile from its rim's peak onward).

@@ -202,8 +202,27 @@ static func craftable_count(inv: Inventory, recipe: Dictionary) -> int:
 	return n
 
 
-## Craft a recipe `times` times. Result: {ok, reason, out, made}
-static func craft(player_id: int, recipe_id: String, pos: Vector3, times := 1) -> Dictionary:
+## How well a crafting minigame went makes a better item (0..1; below 0, from the quick-craft menu: as standard).
+## Tools: sloppy work 90% of the usual durability, clean work up to 125%. Food: clean cooking makes one more.
+## Metal: clean work can give an extra ingot.
+const FINE_WORK := 0.8
+
+static func quality_bonus(out: String, quality: float, rng_roll: float) -> Dictionary:
+	if quality < 0.0:
+		return {}
+	var info := ItemDB.info(out)
+	var q := clampf(quality, 0.0, 1.0)
+	if info.get("kind", "") == "tool":
+		return {"dur": roundi(float(info.tool.durability) * (0.9 + 0.35 * q))}
+	if info.get("kind", "") == "food":
+		return {"extra": 1 if q >= FINE_WORK else 0}
+	if out.begins_with("ingot") or out.ends_with("_ingot"):
+		return {"extra": 1 if rng_roll < (q - 0.6) * 1.5 else 0}
+	return {}
+
+
+## Craft a recipe `times` times. Result: {ok, reason, out, made, extra}
+static func craft(player_id: int, recipe_id: String, pos: Vector3, times := 1, quality := -1.0) -> Dictionary:
 	var inv := Game.inventory_of(player_id)
 	var r := Recipes.get_recipe(recipe_id)
 	if r.is_empty():
@@ -211,18 +230,22 @@ static func craft(player_id: int, recipe_id: String, pos: Vector3, times := 1) -
 	if r.at != "" and not stations_near(pos).has(r.at):
 		return {"ok": false, "reason": "Needs a %s nearby" % Recipes.STATION_NAMES[r.at]}
 	var made := 0
+	var extra := 0
 	for i in times:
 		if craftable_count(inv, r) < 1:
 			break
 		for item: String in r.needs:
 			inv.remove(item, int(r.needs[item]))
-		var got := inv.add(r.out, int(r.count))
-		if got < int(r.count):
-			spawn_pickup(r.out, int(r.count) - got, -1, pos + Vector3(0, 0.3, 0))
+		var bonus := quality_bonus(String(r.out), quality, randf())
+		var count := int(r.count) + int(bonus.get("extra", 0))
+		extra += int(bonus.get("extra", 0))
+		var got := inv.add(r.out, count, false, int(bonus.get("dur", -1)))
+		if got < count:
+			spawn_pickup(r.out, count - got, int(bonus.get("dur", -1)), pos + Vector3(0, 0.3, 0))
 		made += 1
 	if made == 0:
 		return {"ok": false, "reason": "Missing ingredients"}
-	return {"ok": true, "out": r.out, "made": made}
+	return {"ok": true, "out": r.out, "made": made, "extra": extra}
 
 
 ## Building pieces live on a grid: foundations fill 2 m cells and can stack in levels. Walls,

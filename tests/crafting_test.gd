@@ -115,7 +115,15 @@ func _process(_d: float) -> bool:
 			if s == null:
 				Input.action_release("attack")
 				var got: int = _player.inventory.count(_case.out) - _before
-				_check(got == int(_case.times), "made %d %s (wanted %d)" % [got, _case.out, _case.times])
+				# Clean work (the autoplay's) can make a little extra food or metal; never less.
+				_check(got >= int(_case.times) and got <= 2 * int(_case.times), "made %d %s (wanted %d)" % [got, _case.out, _case.times])
+				var info: Dictionary = load("res://scripts/items/item_db.gd").info(_case.out)
+				if info.get("kind", "") == "tool":
+					var best := -1
+					for sl: Dictionary in _player.inventory.slots:
+						if not sl.is_empty() and sl.id == _case.out:
+							best = maxi(best, int(sl.dur))
+					_check(best > int(info.tool.durability), "clean work made a tougher %s (%d over %d)" % [_case.out, best, int(info.tool.durability)])
 				_check(_player.camera.current, "the view is back with the player after %s" % _case.out)
 				var per := _game_time / float(_case.times)
 				print("  %s: steps %s, about %.1f s of play each" % [_case.out, ", ".join(_seen.map(func(x: String) -> String: return x.get_slice(":", 1)).slice(0, _seen.size() / maxi(int(_case.times), 1))), per])

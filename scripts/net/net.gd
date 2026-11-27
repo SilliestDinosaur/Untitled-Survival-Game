@@ -751,7 +751,7 @@ func run_action(pid: int, peer: int, action: String, a: Dictionary) -> Dictionar
 				return {"id": ""}
 			return {"id": GameActions.drop(pid, int(a.slot), int(a.amount), a.pos)}
 		"craft":
-			return GameActions.craft(pid, String(a.recipe), a.pos, int(a.get("times", 1)))
+			return GameActions.craft(pid, String(a.recipe), a.pos, int(a.get("times", 1)), float(a.get("quality", -1.0)))
 		"place":
 			var placed := GameActions.place_structure(pid, int(a.slot), a.pos, float(a.yaw))
 			_shape_ground(placed)
