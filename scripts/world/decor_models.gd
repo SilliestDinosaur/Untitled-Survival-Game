@@ -282,8 +282,14 @@ static func _wall_torch(k: MeshKit, glow: MeshKit) -> void:
 	# The arm: out from the plate and up a little to the ring the torch sits in, and a stay under it.
 	k.loft([Vector3(0, 0.04, 0.02), Vector3(0, 0.07, 0.12), Vector3(0, 0.1, 0.19)], [0.012, 0.011, 0.01], 5, IRON)
 	k.loft([Vector3(0, -0.09, 0.02), Vector3(0, -0.02, 0.12), Vector3(0, 0.08, 0.19)], [0.009, 0.009, 0.008], 5, IRON)
-	k.loft([Vector3(-0.035, 0.1, 0.2), Vector3(0, 0.1, 0.235), Vector3(0.035, 0.1, 0.2), Vector3(0, 0.1, 0.165), Vector3(-0.035, 0.1, 0.2)],
-		[0.008, 0.008, 0.008, 0.008, 0.008], 4, IRON.lightened(0.1))
+	# (An open ring, its ends just apart: a loop closed on itself makes edges shared by too many faces.)
+	var ring: Array = []
+	var rr: Array = []
+	for i in 7:
+		var a := lerpf(0.35, TAU - 0.35, i / 6.0)
+		ring.append(Vector3(sin(a) * 0.035, 0.1, 0.2 - cos(a) * 0.035))
+		rr.append(0.008)
+	k.loft(ring, rr, 4, IRON.lightened(0.1))
 	# The torch: a stick leaning out, a resin-soaked head of wrapped rags, its middle glowing.
 	var lean := Vector3(0, 1.0, 0.28).normalized()
 	var foot := Vector3(0, 0.1, 0.2) - lean * 0.2
@@ -328,8 +334,13 @@ static func _hanging_lantern(k: MeshKit, glow: MeshKit) -> void:
 	for i in 8:   # the chain: links turned alternately
 		var y := -0.04 - i * 0.07
 		var b := Basis(Vector3.UP, PI * 0.5 * (i % 2))
-		k.loft([Vector3(0, y, 0), b * Vector3(0.018, y - 0.03, 0) + Vector3(0, 0, 0), Vector3(0, y - 0.06, 0), b * Vector3(-0.018, y - 0.03, 0), Vector3(0, y, 0)],
-			[0.005, 0.005, 0.005, 0.005, 0.005], 4, IRON)
+		var link: Array = []
+		var lr: Array = []
+		for j in 7:   # an open oval (see the torch's ring)
+			var a := lerpf(0.4, TAU - 0.4, j / 6.0)
+			link.append(b * Vector3(sin(a) * 0.018, 0, 0) + Vector3(0, y - 0.03 + cos(a) * 0.03, 0))
+			lr.append(0.005)
+		k.loft(link, lr, 4, IRON)
 	_lantern(k, glow, Vector3(0, -0.78, 0), 1.25)
 
 
