@@ -45,7 +45,7 @@ func build(list: Array) -> void:
 		var chest: Transform3D
 		if ru.kind == "temple":
 			# Mostly a walk-in complex of rooms and corridors; now and then an open temple on its plinth.
-			chest = _temple(kit, ru.size, rng) if rng.randf() < 0.22 else _complex(kit, ru, rng)
+			chest = _temple(kit, ru.size, rng) if rng.randf() < 0.12 else _complex(kit, ru, rng)
 		elif ru.get("fort", false):
 			chest = _fort(kit, ru, rng)
 		else:
@@ -788,7 +788,7 @@ func _tower(kit: MeshKit, dims: Vector2, rng: RandomNumberGenerator, c := Vector
 	var foot := span.x - 0.6
 	var base := span.y + 0.5          # the top of the batter (the sloping skirt round its foot)
 	var top := base + height          # the walk on top
-	var core_col := Color(0.1, 0.09, 0.08).lerp(_stone, 0.25)   # what shows dark through a gap: the inside
+	var core_col := _stone.darkened(0.55)   # what shows through a gap: the shadowed inside
 	# The skirt: a wider, battered course from below the ground up to the base.
 	if round_body:
 		kit.add_primitive(MeshKit.cylinder(radius + 0.12, radius + 0.45, base - foot, 20), Transform3D(Basis(), o3 + Vector3(0, (base + foot) * 0.5, 0)), _stone.darkened(0.08), 0.0, 0.06)
