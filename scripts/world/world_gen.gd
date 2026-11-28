@@ -560,6 +560,6 @@ func find_spawn_point() -> Vector3:
 			var x := center + cos(a) * r
 			var z := center + sin(a) * r
 			var h := get_height(x, z)
-			if h > 3.0 and h < 22.0 and get_normal(x, z).y > 0.93 and not near_river(x, z, 4.0):
+			if h > 3.0 and h < 22.0 and get_normal(x, z).y > 0.93 and not near_river(x, z, 4.0) and Ruins.at(ruins, x, z).is_empty():
 				return Vector3(x, h, z)
 	return Vector3(center, get_height(center, center), center)

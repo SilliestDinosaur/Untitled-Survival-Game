@@ -612,6 +612,9 @@ class LoadingScreen extends Control:
 		"Mushrooms grow near fallen logs in damp forests.",
 		"Gathered trees and rocks grow back after a while.",
 		"Your world saves when you pause, quit, and every couple of minutes.",
+		"Crafting at a station is done with the mouse: flick, drag, stroke or circle as it asks. Clean work makes tougher tools.",
+		"Old temples and watchtowers stand here and there, and stone vaults lie deep in the caves. Each has a chest.",
+		"Ruins you've found go on your map, and your journal counts how many you've seen.",
 	]
 	var _bar: ProgressBar
 	var _name: Label
@@ -1016,6 +1019,8 @@ class HelpCard extends Control:
 		"To build: hold a building plan and the building wheel key, place free blueprints, then build them up with a hammer.",
 		"If you fall, your things stay where you dropped. It's marked on your map and compass.",
 		"Caves hold ore and crystals, and they're dark: bring a torch.",
+		"Crafting at a station is a little job for your hands: follow what it asks (flick, drag, stroke, circle). Clean work makes better things.",
+		"Ruins are worth the walk: old temples, watchtowers, and vaults deep in the caves each hold a chest.",
 		"Your journal has things to aim for once you've found your feet.",
 	]
 

@@ -194,6 +194,8 @@ func _ring_spot(center: Vector3, near: float, far: float) -> Variant:
 		var z := center.z + sin(a) * d
 		if x < 10.0 or z < 10.0 or x > Game.WORLD_SIZE - 10.0 or z > Game.WORLD_SIZE - 10.0:
 			continue
+		if not Ruins.at(Game.world_gen.ruins, x, z).is_empty():
+			continue   # (not on a ruin's ground: they'd be in its walls)
 		var h: float = Game.world_gen.get_height(x, z)
 		if h > 2.5 and h < 50.0 and Game.world_gen.get_normal(x, z).y > 0.82 and not Game.world_gen.near_river(x, z, 1.0):
 			if d < 110.0 and _in_view(Vector3(x, h, z)):
@@ -334,6 +336,8 @@ func _spawn_shore(center: Vector3) -> void:
 		var z := center.z + sin(a) * d
 		if x < 10.0 or z < 10.0 or x > Game.WORLD_SIZE - 10.0 or z > Game.WORLD_SIZE - 10.0:
 			continue
+		if not Ruins.at(Game.world_gen.ruins, x, z).is_empty():
+			continue   # (not on a ruin's ground: they'd be in its walls)
 		var h := gen.get_height(x, z)
 		var shore := (h > 0.2 and h < 2.2) or (h > 2.0 and gen.near_river(x, z, 4.0) and not gen.near_river(x, z, -0.5))
 		if not shore:

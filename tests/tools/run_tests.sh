@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # Runs every headless test suite and prints one line per suite.
 # Usage: tests/tools/run_tests.sh [suite ...]   (default: all suites)
-# Set GODOT=/path/to/godot if the binary is not in the default place.
+# Set GODOT=/path/to/godot if the binary is not in the default place; LOGDIR=dir keeps each suite's log there.
 cd "$(dirname "$0")/../.." || exit 1
 G="${GODOT:-/tmp/claude-0/-home-user/19c39f26-e94b-5cf8-b4f4-4d5d8499409a/scratchpad/godot/Godot_v4.5.1-stable_linux.x86_64}"
 SUITES=("$@")
@@ -23,6 +23,6 @@ for s in "${SUITES[@]}"; do
   printf "%-16s %s\n" "$s" "${result:-NO RESULT (crashed or timed out)}"
   [ -n "$fails" ] && echo "$fails" | sed 's/^/    /'
   [ -z "$result" ] || echo "$result" | grep -q "PASS" || fail=1
-  rm -f "$log"
+  if [ -n "$LOGDIR" ]; then mkdir -p "$LOGDIR"; mv "$log" "$LOGDIR/$s.log"; else rm -f "$log"; fi
 done
 exit $fail

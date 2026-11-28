@@ -623,9 +623,10 @@ func _walkable(p: Vector3, h: float) -> bool:
 		return not is_nan(h) and absf(h - position.y) < 0.7 and Vector2(p.x - home_pos.x, p.z - home_pos.z).length() < LAIR_LEASH
 	if species.swims:   # swimmers go into the water (not out to the deep sea)
 		return h > -5.0 and h < 62.0 and (h < 0.5 or Game.world_gen.get_normal(p.x, p.z).y > 0.7)
-	# Wading into a river's shallows is fine; its deep middle isn't. Nor into anyone's house or walled yard.
+	# Wading into a river's shallows is fine; its deep middle isn't. Nor into anyone's house or walled yard, nor
+	# through a ruin's walls (they keep to the ground round it).
 	return h > 1.3 and h < 62.0 and Game.world_gen.get_normal(p.x, p.z).y > 0.7 and h > Game.world_gen.water_level(p.x, p.z) - 0.6 \
-		and not GameActions.in_building(p)
+		and not GameActions.in_building(p) and Ruins.at(Game.world_gen.ruins, p.x, p.z).is_empty()
 
 
 ## The player is inside a building (or a walled yard): out of reach, so not worth squaring up to.
