@@ -338,13 +338,25 @@ func _process(_delta: float) -> bool:
 			var sess = _player.crafting
 			if sess == null:
 				_check(_player.inventory.count("cooked_meat") > _cooked, "cooked meat through the minigame (cooked meat %d)" % _player.inventory.count("cooked_meat"))
-				_next("report")
+				_next("ruin_chest")
 			else:
 				sess.autoplay(_delta)
 			if _waited() > 60.0:
 				_check(false, "cooking never finished")
 				if sess:
 					sess.stop(true)
+				_next("report")
+		"ruin_chest":
+			# A ruin's chest, opened through the host: things come, and it's empty the second time.
+			if _frames == 1:
+				var stone_before: int = _player.inventory.count("stone") + _player.inventory.count("wood") + _player.inventory.count("fiber")
+				_net.request("open_cache", {"key": "ruin_chest_0", "pos": _player.global_position}, func(res: Dictionary) -> void:
+					_check(res.get("ok", false) and not (res.get("items", {}) as Dictionary).is_empty(), "opened a ruin's chest through the host (%s)" % str(res.get("items", {}).keys()))
+					_net.request("open_cache", {"key": "ruin_chest_0", "pos": _player.global_position}, func(again: Dictionary) -> void:
+						_check(again.get("empty", false), "and it's empty the second time")
+						_next("report")))
+			elif _waited() > 20.0:
+				_check(false, "the ruin's chest never answered")
 				_next("report")
 		"report":
 			_net._report.rpc_id(1, _player.to_save_data())
