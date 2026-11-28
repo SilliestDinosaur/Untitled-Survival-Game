@@ -36,7 +36,7 @@ func _process(_d: float) -> bool:
 			var temples: Array = gen.ruins.filter(func(r: Dictionary) -> bool: return r.kind == "temple")
 			var towers: Array = gen.ruins.filter(func(r: Dictionary) -> bool: return r.kind == "tower")
 			var vaults: Array = gen.caves.get("vaults", [])
-			_check(_g.world_v == 2 and _g.WORLD_SIZE == 3072.0, "a new world is the current kind (v%d, %d m)" % [_g.world_v, _g.WORLD_SIZE])
+			_check(_g.world_v == _g.WORLD_V and _g.WORLD_SIZE == 3072.0, "a new world is the current kind (v%d, %d m)" % [_g.world_v, _g.WORLD_SIZE])
 			_check(temples.size() >= 4, "it has temples (%d)" % temples.size())
 			_check(towers.size() >= 4, "and watchtowers (%d)" % towers.size())
 			_check(vaults.size() >= 1, "and vaults in its caves (%d)" % vaults.size())

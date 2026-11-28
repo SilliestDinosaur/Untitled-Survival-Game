@@ -727,6 +727,25 @@ static func _dress(plan: Dictionary, gen: WorldGen, walk: PackedFloat32Array) ->
 			return true)
 	plan.chests = outside.call(plan.chests)
 	plan.glow = outside.call(plan.glow)
+	# Away from the mouths the built caves keep a skin of rock against the open air (VoxelTerrain._seal), so the
+	# dressing planned where a tunnel came close to a hillside or cliff would poke out through it: none there.
+	var mouths: Array = plan.entrances
+	var walled := func(list: Array) -> Array:
+		return list.filter(func(it: Variant) -> bool:
+			var at: Vector3 = it if it is Vector3 else (it as Array)[0]
+			return not _near_air(gen, mouths, at))
+	stalactites = walled.call(stalactites)
+	pillars = walled.call(pillars)
+	rubble = walled.call(rubble)
+	pools = walled.call(pools)
+	drips = walled.call(drips)
+	moss = walled.call(moss)
+	worms = walled.call(worms)
+	roosts = walled.call(roosts)
+	crystals = walled.call(crystals)
+	hanging = walled.call(hanging)
+	shrooms = walled.call(shrooms)
+	plan.glow = walled.call(plan.glow)
 	plan.ores = ores
 	plan.stalagmites = stalagmites
 	plan.stalactites = stalactites
@@ -846,6 +865,34 @@ static func floor_at(plan: Dictionary, p: Vector3) -> Variant:
 
 
 ## The cave ceiling straight above p, or null.
+## Whether something at p would show outside (closer to the open air than the rock skin VoxelTerrain keeps round
+## the caves away from their mouths). Near a mouth, where the caves open anyway, never.
+const NEAR_AIR := 2.2
+static func _near_air(gen: WorldGen, mouths: Array, p: Vector3) -> bool:
+	# Deep under ground all round: the usual case, settled with a few samples.
+	var deep := gen.get_base_height(p.x, p.z) > p.y + NEAR_AIR + 1.0
+	if deep:
+		for k in 4:
+			var a := TAU * k / 4.0
+			if gen.get_base_height(p.x + cos(a) * 2.0, p.z + sin(a) * 2.0) < p.y + NEAR_AIR + 1.0:
+				deep = false
+				break
+	if deep:
+		return false
+	for m: Vector3 in mouths:
+		if Vector2(m.x - p.x, m.z - p.z).length() < MOUTH_R + 10.0:
+			return false
+	if gen.get_base_height(p.x, p.z) < p.y + NEAR_AIR:
+		return true
+	for d: float in [1.0, 2.0]:
+		var under := sqrt(NEAR_AIR * NEAR_AIR - d * d)
+		for k in 8:
+			var a := TAU * k / 8.0
+			if gen.get_base_height(p.x + cos(a) * d, p.z + sin(a) * d) < p.y + under:
+				return true
+	return false
+
+
 static func ceiling_at(plan: Dictionary, p: Vector3) -> Variant:
 	var hit: Variant = _march(plan, p, Vector3.UP, 12.0)
 	return null if hit == null else (hit as Vector3) - Vector3(0, 0.05, 0)

@@ -578,6 +578,10 @@ static func _place_cave_resources(coord: Vector2i, origin: Vector3, gen: WorldGe
 			var id := "%d_%d_%s%d" % [coord.x, coord.y, tag, i]
 			if removed.has(id):
 				continue
+			# Where a tunnel came close to a hillside the rock is kept whole over it (VoxelTerrain._seal): what grew
+			# there would poke out of the slope.
+			if Caves._near_air(gen, plan.entrances, p + Vector3(0, 0.6, 0)):
+				continue
 			var kind: String = it[1] if tag == "c" else "stalagmite"
 			var vs: Array = flora.variants[kind]
 			var h := hash([id, "look"])
@@ -814,7 +818,7 @@ static func _place_ground_cover(coord: Vector2i, origin: Vector3, gen: WorldGen,
 			var wx := origin.x + lx
 			var wz := origin.z + lz
 			var h := gen.get_height(wx, wz)
-			if Caves.void_distance(gen.caves, Vector3(wx, h, wz)) < 1.0:
+			if Caves.void_distance(gen.caves, Vector3(wx, h, wz)) < 1.5:
 				continue
 			if h < 2.0 or gen.near_river(wx, wz) or h > 55.0:
 				continue
@@ -844,6 +848,8 @@ static func _place_ground_cover(coord: Vector2i, origin: Vector3, gen: WorldGen,
 		var wx := origin.x + lx
 		var wz := origin.z + lz
 		var h := gen.get_height(wx, wz)
+		if Caves.void_distance(gen.caves, Vector3(wx, h, wz)) < 1.5:
+			continue   # nothing over a cave opening (it would hang in the air over the hole)
 		if h < 1.9 or gen.near_river(wx, wz) or h > 62.0:
 			continue
 		var nrm := gen.get_normal(wx, wz)
@@ -869,6 +875,8 @@ static func _place_ground_cover(coord: Vector2i, origin: Vector3, gen: WorldGen,
 		var wx := origin.x + lx
 		var wz := origin.z + lz
 		var h := gen.get_height(wx, wz)
+		if Caves.void_distance(gen.caves, Vector3(wx, h, wz)) < 1.5:
+			continue   # nothing over a cave opening (it would hang in the air over the hole)
 		if h < 2.0 or gen.near_river(wx, wz) or h > 55.0 or gen.get_normal(wx, wz).y < 0.8:
 			continue
 		var w := gen.biome_weights_at(wx, wz, h)
@@ -899,6 +907,8 @@ static func _place_ground_cover(coord: Vector2i, origin: Vector3, gen: WorldGen,
 		var wx := origin.x + lx
 		var wz := origin.z + lz
 		var h := gen.get_height(wx, wz)
+		if Caves.void_distance(gen.caves, Vector3(wx, h, wz)) < 1.5:
+			continue   # nothing over a cave opening (it would hang in the air over the hole)
 		if mud_keys.is_empty() or h < 2.2 or h > 40.0 or gen.near_river(wx, wz):
 			continue
 		var w := gen.biome_weights_at(wx, wz, h)
@@ -921,6 +931,8 @@ static func _place_ground_cover(coord: Vector2i, origin: Vector3, gen: WorldGen,
 		var wx := origin.x + lx
 		var wz := origin.z + lz
 		var h := gen.get_height(wx, wz)
+		if Caves.void_distance(gen.caves, Vector3(wx, h, wz)) < 1.5:
+			continue   # nothing over a cave opening (it would hang in the air over the hole)
 		if h < 2.2 or gen.near_river(wx, wz) or h > 58.0:
 			continue
 		var w := gen.biome_weights_at(wx, wz, h)
@@ -948,6 +960,8 @@ static func _place_ground_cover(coord: Vector2i, origin: Vector3, gen: WorldGen,
 		var wx := origin.x + lx
 		var wz := origin.z + lz
 		var h := gen.get_height(wx, wz)
+		if Caves.void_distance(gen.caves, Vector3(wx, h, wz)) < 1.5:
+			continue   # nothing over a cave opening (it would hang in the air over the hole)
 		if h < 0.8 or h > 90.0 or gen.near_river(wx, wz):
 			continue
 		var biome := _pick_biome(gen.biome_weights_at(wx, wz, h), roll)

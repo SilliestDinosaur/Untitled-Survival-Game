@@ -435,6 +435,9 @@ func _build_dressing(plan: Dictionary, rng: RandomNumberGenerator) -> void:
 			var p := top + Vector3(rng.randf_range(-0.7, 0.7), 0.0, rng.randf_range(-0.7, 0.7))
 			if Caves.void_distance(Game.world_gen.caves, p - Vector3(0, 0.4, 0)) > -0.05:
 				continue
+			# Over a mouth the "ceiling" can be the open sky (the void ends above the ground there): nothing to hang from.
+			if p.y > Game.world_gen.get_height(p.x, p.z) - 0.15:
+				continue
 			var l := length * rng.randf_range(0.5, 1.0)
 			var path: Array = []
 			var radii: Array = []

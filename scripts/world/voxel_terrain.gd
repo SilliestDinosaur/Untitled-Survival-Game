@@ -12,6 +12,10 @@ extends RefCounted
 const DEPTH_PAD := 2.0      ## metres of solid rock sampled below the lowest ground
 const PAD := 2              ## spare samples on each side of the chunk (see build)
 const ROCK_BAND := 1.2      ## vertices this far below the ground are cave walls (rock colour)
+const SKIN_UP := 1.4        ## rock kept over a cave, at least (the caves are planned with a little more: Caves.CLEARANCE)
+const SKIN := 2.2           ## and at least about this much between a cave and the open air beside it (see _seal)
+const MOUTH_FREE := 6.0     ## a cave opens to the air only this far round its mouth (past its own radius)...
+const MOUTH_RAMP := 8.0     ## ...the rock closing in over the next few metres
 
 
 ## Returns {verts, normals, colors, indices, faces}. Vertices are local to the chunk origin.
@@ -54,8 +58,9 @@ static func build(gen: WorldGen, origin: Vector3, size: float, step: float, segs
 			var row := (k * ny + j) * nx
 			for i in nx:
 				d[row + i] = hs[k * nx + i] - y
+	var seal := _seal(gen, plan, origin, step, hs, nx, nz)
 	for s: Array in segs:
-		_carve(d, s, origin, ylo, step, nx, ny, nz)
+		_carve(d, s, origin, ylo, step, nx, ny, nz, seal)
 
 	# Surface nets: one vertex per cell that the surface passes through.
 	var ncx := nx - 1
@@ -197,7 +202,9 @@ static func build(gen: WorldGen, origin: Vector3, size: float, step: float, segs
 				var tz := fz - hk0
 				var gh := lerpf(lerpf(hs[hk0 * nx + hi0], hs[hk0 * nx + hi0 + 1], tx), lerpf(hs[(hk0 + 1) * nx + hi0], hs[(hk0 + 1) * nx + hi0 + 1], tx), tz)
 				var sd := Caves.sky_and_distance(plan, vert)   # how much sky it sees (the shader's ambient occlusion), and the void's distance
-				if absf(vert.y - gh) < 6.0 and sd.y > 2.5:
+				# Above the seal no cave is cut (see _seal), so a vertex there is on the ground too, even close over a cave.
+				var sl := lerpf(lerpf(seal[hk0 * nx + hi0], seal[hk0 * nx + hi0 + 1], tx), lerpf(seal[(hk0 + 1) * nx + hi0], seal[(hk0 + 1) * nx + hi0 + 1], tx), tz)
+				if absf(vert.y - gh) < 6.0 and (sd.y > 2.5 or vert.y > sl + 0.3):
 					vert.y = gh
 				var nrm := nsum.normalized() if nsum.length_squared() > 0.000001 else Vector3.UP
 				var col: Color
@@ -220,6 +227,14 @@ static func build(gen: WorldGen, origin: Vector3, size: float, step: float, segs
 						col = col.lerp(Caves.rock_color(plan, vert, nrm.y), rock_w)
 				col = col.srgb_to_linear()
 				col.a = sd.x
+				# The rock left over a cave where it came close to the air (see _seal) is inside the planned void, which
+				# reads as dark, but it faces outside: lit like the ground, if a step out from it is in the open air.
+				if sd.y < 0.5 and sd.x < 0.99:
+					for reach: float in [1.0, 2.0, 3.0]:   # (a cave's own walls are further than this from the air)
+						var out_p := vert + nrm * reach
+						if out_p.y > gen.get_height(out_p.x, out_p.z) + 0.2:
+							col.a = 1.0
+							break
 				cell_vert[(ck * ncy + cj) * ncx + ci] = verts.size()
 				verts.append(vert - origin)
 				normals.append(nrm)
@@ -505,8 +520,66 @@ static func _corner_normal(d: PackedFloat32Array, nx: int, ny: int, nz: int, i: 
 const _EDGES := [[0, 1], [2, 3], [4, 5], [6, 7], [0, 2], [1, 3], [4, 6], [5, 7], [0, 4], [1, 5], [2, 6], [3, 7]]
 
 
-## Cut the density by one cave piece: its wall distance, where that is closer than the rock.
-static func _carve(d: PackedFloat32Array, s: Array, origin: Vector3, ylo: float, step: float, nx: int, ny: int, nz: int) -> void:
+## Per sample column, the highest a cave may be cut there: a skin of rock is kept between every cave and the open
+## air, so a tunnel planned close under a cliff or a steep side never breaks out through it (a hole in a mesa's
+## face with the sky showing through). The skin is a ball's worth of rock round the cut: under the ground here, and
+## under the ground a step or so to each side (a cliff face next to the column). Only round the cave mouths, where
+## the caves are meant to open, is there none.
+static func _seal(gen: WorldGen, plan: Dictionary, origin: Vector3, step: float, hs: PackedFloat32Array, nx: int, nz: int) -> PackedFloat32Array:
+	var seal := PackedFloat32Array()
+	seal.resize(nx * nz)
+	# Never thinner than about a cell and a half of the grid: rock thinner than a cell melts into dents and slivers
+	# in the mesh (its two faces share cells), showing the cave through the slope.
+	var up := maxf(SKIN_UP, step * 1.1)
+	var skin := maxf(SKIN, step * 1.6)
+	var reach := ceili(skin / step - 0.001)   # neighbour samples within the skin
+	var near_r := skin * skin - 0.001
+	var offs: Array[Vector3] = []   # (di, dk, how far under that neighbour's ground the cut must stay)
+	for dk in range(-reach, reach + 1):
+		for di in range(-reach, reach + 1):
+			var o2 := (di * di + dk * dk) * step * step
+			if o2 > 0.0 and o2 < near_r:
+				offs.append(Vector3(di, dk, sqrt(skin * skin - o2)))
+	# Heights one ring past the grid's own, so the columns at its edge see the same neighbours as the next chunk's.
+	var ex := nx + 2 * reach
+	var ez := nz + 2 * reach
+	var eh := PackedFloat32Array()
+	eh.resize(ex * ez)
+	for k in ez:
+		for i in ex:
+			var gi := i - reach
+			var gk := k - reach
+			if gi >= 0 and gi < nx and gk >= 0 and gk < nz:
+				eh[k * ex + i] = hs[gk * nx + gi]
+			else:
+				eh[k * ex + i] = gen.get_height(origin.x + (gi - PAD) * step, origin.z + (gk - PAD) * step)
+	# The mouths near this chunk.
+	var mouths: Array[Vector2] = []
+	var span := Game.CHUNK_SIZE + (PAD + 1) * step + MOUTH_FREE + MOUTH_RAMP + 4.0
+	var mid := Vector2(origin.x + Game.CHUNK_SIZE * 0.5, origin.z + Game.CHUNK_SIZE * 0.5)
+	for m: Vector3 in plan.get("entrances", []):
+		if absf(m.x - mid.x) < span and absf(m.z - mid.y) < span:
+			mouths.append(Vector2(m.x, m.z))
+	var free := Caves.MOUTH_R + MOUTH_FREE
+	for k in nz:
+		for i in nx:
+			var top := hs[k * nx + i] - up
+			for o: Vector3 in offs:
+				top = minf(top, eh[(k + reach + int(o.y)) * ex + i + reach + int(o.x)] - o.z)
+			if not mouths.is_empty():
+				var w := Vector2(origin.x + (i - PAD) * step, origin.z + (k - PAD) * step)
+				var dm := 1e9
+				for m: Vector2 in mouths:
+					dm = minf(dm, w.distance_squared_to(m))
+				# Open at the mouth; the rock closes in over the next few metres.
+				top += (1.0 - clampf((sqrt(dm) - free) / MOUTH_RAMP, 0.0, 1.0)) * 60.0
+			seal[k * nx + i] = top
+	return seal
+
+
+## Cut the density by one cave piece: its wall distance, where that is closer than the rock (and only below the
+## column's seal, see _seal).
+static func _carve(d: PackedFloat32Array, s: Array, origin: Vector3, ylo: float, step: float, nx: int, ny: int, nz: int, seal: PackedFloat32Array) -> void:
 	var a: Vector3 = s[0]
 	var b: Vector3 = s[1]
 	var ra := float(s[2])
@@ -533,7 +606,7 @@ static func _carve(d: PackedFloat32Array, s: Array, origin: Vector3, ylo: float,
 			for i in range(i0, i1 + 1):
 				var p := Vector3(origin.x + (i - PAD) * step, y, z)
 				var t := clampf((p - a).dot(ab) / len2, 0.0, 1.0)
-				var dist := maxf(maxf(p.distance_to(a + ab * t) - lerpf(ra, rb, t), lerpf(fa, fb, t) - y), y - ceil_y)
+				var dist := maxf(maxf(maxf(p.distance_to(a + ab * t) - lerpf(ra, rb, t), lerpf(fa, fb, t) - y), y - ceil_y), y - seal[k * nx + i])
 				if dist < d[row + i]:
 					d[row + i] = dist
 

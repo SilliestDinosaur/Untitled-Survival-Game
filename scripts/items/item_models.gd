@@ -379,9 +379,10 @@ static func _hatchet(k: MeshKit, tier: int, col: Color) -> void:
 
 static func _pickaxe(k: MeshKit, tier: int, col: Color) -> void:
 	# Every tier is the same tool, a long point lashed across a squared branch; only the point's material changes.
-	var top := 0.35
+	# The head sits right at the haft's top, so the haft ends inside its eye (none of it shows above, as on the axe).
+	var top := 0.39
 	var m := _metal(tier, col)
-	_handle(k, top + 0.04, 1, 0.02)   # the same round branch as the axe
+	_handle(k, top, 1, 0.02)   # the same round branch as the axe
 	if _s("head") < 0.0:
 		return
 	# A pick: a long, nearly straight point running forward from the eye (only a touch of droop at its tip), a short
