@@ -14,6 +14,11 @@ var resources: Array[Dictionary] = []
 
 var _mmis := {}          # mesh key -> MultiMeshInstance3D
 var _shadow_mmis := {}   # mesh key -> its shadow-only twin (near trees cast shadows from their low-poly shape)
+var _far_mmis := {}      # mesh key -> its low-poly twin drawn instead past FAR_TREES (trees in the near ring)
+
+## Past this far (metres from the chunk's middle) the near ring's trees draw their own low-poly shape: they're most of
+## the triangles in view, and the detail doesn't show from there. By model detail; on Ultra they never change.
+const FAR_TREES := {"Low": 55.0, "Medium": 70.0, "High": 85.0, "Ultra": 0.0}
 var _colliders := {}     # resource index -> CollisionShape3D
 var _wobbles := {}       # resource index -> time left
 var _bare := {}          # resource index -> MeshInstance3D showing the harvested look
@@ -70,18 +75,15 @@ func _build_terrain(data: Dictionary, flora: FloraLibrary) -> void:
 		mi.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
 	add_child(mi)
 
-	var tri: ConcavePolygonShape3D = data.get("collision_shape")
-	if tri != null:
-		# Solid ground near caves: the collider is the same triangles as the mesh, made on the worker thread
-		# (see ChunkGenerator.generate).
-		var tbody := StaticBody3D.new()
-		tbody.name = "TerrainBody"
-		tbody.collision_layer = LAYER_SOLID
-		tbody.collision_mask = 0
-		var tcol := CollisionShape3D.new()
-		tcol.shape = tri
-		tbody.add_child(tcol)
-		add_child(tbody)
+	if data.has("collision_pieces"):
+		# Solid ground near caves: the collider is the same triangles as the mesh, in squares that go in a few at a
+		# time (see build_collision).
+		_tbody = StaticBody3D.new()
+		_tbody.name = "TerrainBody"
+		_tbody.collision_layer = LAYER_SOLID
+		_tbody.collision_mask = 0
+		add_child(_tbody)
+		_col_pending = (data.collision_pieces as Array).duplicate()
 		return
 	var heights: PackedFloat32Array = data.collision
 	if heights.is_empty():
@@ -100,6 +102,59 @@ func _build_terrain(data: Dictionary, flora: FloraLibrary) -> void:
 	col.scale = Vector3.ONE * float(data.step)
 	body.add_child(col)
 	add_child(body)
+
+
+var _solid_cells := {}      # 4 m cell (world) -> indices of the solid resources in it (see obstacle_penalty)
+var _solid_built := false
+
+
+## How much the trees and rocks here are in the way at p (world): for each within `reach`, how far inside it is,
+## doubled. Animals use it to pick their way round them.
+func obstacle_penalty(p: Vector3, reach: float) -> float:
+	if not _solid_built:
+		_solid_built = true
+		for k in resources.size():
+			var r := resources[k]
+			if FloraLibrary.KINDS[r.kind].solid:
+				var o: Vector3 = (r.transform as Transform3D).origin
+				var cell := Vector2i(floori(o.x / 4.0), floori(o.z / 4.0))
+				if not _solid_cells.has(cell):
+					_solid_cells[cell] = []
+				(_solid_cells[cell] as Array).append(k)
+	var penalty := 0.0
+	for cz in range(floori((p.z - reach) / 4.0), floori((p.z + reach) / 4.0) + 1):
+		for cx in range(floori((p.x - reach) / 4.0), floori((p.x + reach) / 4.0) + 1):
+			var list: Variant = _solid_cells.get(Vector2i(cx, cz))
+			if list == null:
+				continue
+			for k: int in list:
+				var r := resources[k]
+				if r.get("removed", false):
+					continue
+				var o: Vector3 = (r.transform as Transform3D).origin
+				var d := Vector2(o.x - p.x, o.z - p.z).length()
+				if d < reach:
+					penalty += (reach - d) * 2.0
+	return penalty
+
+
+var _tbody: StaticBody3D
+var _col_pending: Array = []   # triangle pieces of the voxel ground's collider not yet made into shapes
+
+
+## Make the solid ground's pieces still to do, until `deadline` (Time.get_ticks_usec()) has passed; at least one each
+## call. True once the chunk's ground is all solid (the world puts it in only then).
+func build_collision(deadline: int) -> bool:
+	while not _col_pending.is_empty():
+		var tri := ConcavePolygonShape3D.new()
+		tri.backface_collision = true   # solid from both sides: a steep face can't be walked through from behind
+		tri.set_faces(_col_pending.pop_back())
+		var tcol := CollisionShape3D.new()
+		tcol.shape = tri
+		_tbody.add_child(tcol)
+		if Time.get_ticks_usec() > deadline:
+			break
+	return _col_pending.is_empty()
 
 
 func _build_multimeshes(buffers: Dictionary, flora: FloraLibrary) -> void:
@@ -148,6 +203,27 @@ func _build_multimeshes(buffers: Dictionary, flora: FloraLibrary) -> void:
 			smmi.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_SHADOWS_ONLY
 			_shadow_mmis[key] = smmi
 			add_child(smmi)
+		var far: float = FAR_TREES.get(Settings.model_detail, 0.0)
+		if cat == "tree" and tier == 0 and far > 0.0 and not key.ends_with("_lod") and flora.has_mesh(key + "_lod"):
+			mmi.visibility_range_end = far
+			mmi.visibility_range_end_margin = 8.0
+			mmi.visibility_range_fade_mode = GeometryInstance3D.VISIBILITY_RANGE_FADE_SELF
+			var fmm := MultiMesh.new()
+			fmm.transform_format = MultiMesh.TRANSFORM_3D
+			fmm.use_colors = true
+			fmm.mesh = flora.mesh(key + "_lod")
+			fmm.instance_count = mm.instance_count
+			fmm.buffer = buf
+			var fmmi := MultiMeshInstance3D.new()
+			fmmi.name = key + "_far"
+			fmmi.multimesh = fmm
+			fmmi.visibility_range_begin = far
+			fmmi.visibility_range_begin_margin = 8.0
+			fmmi.visibility_range_fade_mode = GeometryInstance3D.VISIBILITY_RANGE_FADE_SELF
+			# Its shadow: from the shadow twin if there is one (that one is drawn at every distance), else its own.
+			fmmi.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF if _shadow_mmis.has(key) else mmi.cast_shadow
+			_far_mmis[key] = fmmi
+			add_child(fmmi)
 
 
 ## Plants with a mesh of their own (made with the chunk, on its worker): each one drawn on its own.
@@ -357,6 +433,8 @@ func _set_instance(index: int, xf: Transform3D) -> void:
 	_mmis[r.mm_key].multimesh.set_instance_transform(r.mm_index, xf)
 	if _shadow_mmis.has(r.mm_key):
 		_shadow_mmis[r.mm_key].multimesh.set_instance_transform(r.mm_index, xf)
+	if _far_mmis.has(r.mm_key):
+		_far_mmis[r.mm_key].multimesh.set_instance_transform(r.mm_index, xf)
 
 
 ## Point every MultiMesh at freshly generated meshes (after the model detail setting changes).
@@ -366,3 +444,5 @@ func swap_meshes(flora: FloraLibrary) -> void:
 			_mmis[key].multimesh.mesh = flora.mesh(key)
 	for key: String in _shadow_mmis:
 		_shadow_mmis[key].multimesh.mesh = flora.mesh(key + "_lod")
+	for key: String in _far_mmis:
+		_far_mmis[key].multimesh.mesh = flora.mesh(key + "_lod")
