@@ -208,6 +208,7 @@ func _stacks(kit: MeshKit, gen: WorldGen, at: Vector3, rng: RandomNumberGenerato
 		var p := at + Vector3(rng.randf_range(-7, 7), 0, rng.randf_range(-7, 7))
 		var floor_y := gen.get_height(p.x, p.z)
 		var top := rng.randf_range(6.0, 13.0) * (1.0 if k == 0 else rng.randf_range(0.4, 0.8))
+		top = maxf(top, floor_y + 3.0)   # (one whose foot found higher ground still stands a few metres up)
 		var r := rng.randf_range(1.6, 2.8) * (1.0 if k == 0 else 0.7)
 		var lean := Vector3(rng.randf_range(-1, 1), 0, rng.randf_range(-1, 1)).normalized() * rng.randf_range(0.3, 1.2)
 		# Where the ledges are: the radius steps in there.

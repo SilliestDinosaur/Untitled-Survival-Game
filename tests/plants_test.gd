@@ -80,8 +80,6 @@ func _process(_d: float) -> bool:
 			var r := {"id": "t_%s" % kind, "kind": kind, "key": flora.variants[kind][0], "hp": 10}
 			var res: Dictionary = GA.harvest_resource_r(1, r, rng)
 			var ok: bool = res.get("ok", false)
-			for item: String in res.get("items", {}):
-				ok = ok and _game.get_node("/root/ItemDB") == null or true
 			_check(ok and not (res.items as Dictionary).is_empty(), "gathering %s gives %s" % [kind, str(res.get("items", {}))])
 			for item: String in res.get("items", {}):
 				_check(load("res://scripts/items/item_db.gd").exists(item), "%s is a real item" % item)
