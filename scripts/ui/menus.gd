@@ -791,7 +791,8 @@ class MultiplayerBox extends VBoxContainer:
 		_who.text = ("Here: " + ", ".join(names)) if not names.is_empty() else ("Waiting for friends..." if Net.is_host() else "")
 
 
-## Title screen: your name and colour, and joining a friend's world by code.
+## Title screen: who you are to friends (your name, and how you look: see Avatar), and joining a friend's world by
+## code. (What you choose here is what friends see, whether you host or join.)
 class MultiplayerPanel extends Control:
 	signal back_pressed
 
@@ -800,62 +801,80 @@ class MultiplayerPanel extends Control:
 	var _status: Label
 	var _join: Button
 	var _games: VBoxContainer
-	var _swatches: Array[Button] = []
+	var _preview: AvatarPreview
+	var _swatch_sets := {}    ## look key -> [Button]
+	var _cyclers := {}        ## look key -> [Label, names]
 
 	func _ready() -> void:
 		set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
 		Menus._dim(self, 0.25)
-		var col := Menus._card(self, Vector2(580, 0), 9)
-		col.add_child(UITheme.heading("Play with Friends", 40))
+		var col := Menus._card(self, Vector2(1100, 0), 8)
+		col.add_child(UITheme.heading("Play with Friends", 38))
 		col.add_child(UITheme.divider())
-		col.add_child(UITheme.label("Your name", 16, UITheme.INK_DIM))
+		# Two sides: you (how friends will see you, whether you host or join) and joining a game.
+		var sides := HBoxContainer.new()
+		sides.add_theme_constant_override("separation", 22)
+		col.add_child(sides)
+		var you := HBoxContainer.new()
+		you.add_theme_constant_override("separation", 14)
+		sides.add_child(you)
+		_preview = AvatarPreview.new(Vector2i(170, 250))
+		you.add_child(_preview)
+		var edit := VBoxContainer.new()
+		edit.add_theme_constant_override("separation", 6)
+		edit.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 		_name = LineEdit.new()
 		_name.max_length = 20
+		_name.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 		_name.text_changed.connect(func(t: String) -> void:
 			Settings.player_name = t.strip_edges()
 			Settings.save_settings())
-		col.add_child(_name)
-		var swatch_row := HBoxContainer.new()
-		swatch_row.add_theme_constant_override("separation", 6)
-		for i in Settings.PLAYER_COLORS.size():
-			var b := Button.new()
-			b.custom_minimum_size = Vector2(36, 36)
-			b.focus_mode = Control.FOCUS_NONE
-			var sb := UITheme.box(Settings.PLAYER_COLORS[i], 18, Color(0.15, 0.1, 0.08), 0, 0)
-			b.add_theme_stylebox_override("normal", sb)
-			b.add_theme_stylebox_override("hover", sb)
-			b.add_theme_stylebox_override("pressed", sb)
-			b.pressed.connect(func() -> void:
-				Settings.player_color = i
-				Settings.save_settings()
-				_mark_swatch())
-			swatch_row.add_child(b)
-			_swatches.append(b)
-		col.add_child(swatch_row)
-		col.add_child(Menus._spacer(6))
-		col.add_child(UITheme.label("Join a friend: enter their invite code", 16, UITheme.INK_DIM))
+		edit.add_child(_line("Name", _name))
+		edit.add_child(_line("Shirt", _swatches_for("shirt", Settings.PLAYER_COLORS)))
+		edit.add_child(_line("Skin", _swatches_for("skin", Avatar.SKINS)))
+		edit.add_child(_line("Hair", _cycler("hair", Avatar.HAIR_STYLES)))
+		edit.add_child(_line("Hair colour", _swatches_for("hair_color", Avatar.HAIR_COLORS)))
+		var dice := UITheme.button("Randomise", false, 130)
+		dice.pressed.connect(func() -> void:
+			var rng := RandomNumberGenerator.new()
+			rng.randomize()
+			Settings.player_look = Avatar.random(rng)
+			Settings.player_color = int(Settings.player_look.shirt)
+			Settings.save_settings()
+			_refresh_look())
+		var hat_row := _line("Hat", _cycler("hat", Avatar.HATS))
+		hat_row.add_child(dice)
+		edit.add_child(hat_row)
+		you.add_child(edit)
+		sides.add_child(VSeparator.new())
+		var right := VBoxContainer.new()
+		right.add_theme_constant_override("separation", 8)
+		right.custom_minimum_size = Vector2(380, 0)
+		right.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+		sides.add_child(right)
+		right.add_child(UITheme.label("Join a friend: enter their invite code", 16, UITheme.INK_DIM))
 		_code = LineEdit.new()
 		_code.placeholder_text = "e.g. KQ7M-B3X"
 		_code.text_submitted.connect(func(_t: String) -> void: _do_join())
 		_join = UITheme.button("Join", true, 140)
 		_join.pressed.connect(_do_join)
 		_code.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-		col.add_child(Menus._row([_code, _join]))
-		col.add_child(Menus._spacer(4))
-		col.add_child(UITheme.label("Games on this Wi-Fi", 16, UITheme.INK_DIM))
+		right.add_child(Menus._row([_code, _join]))
+		right.add_child(Menus._spacer(4))
+		right.add_child(UITheme.label("Games on this Wi-Fi", 16, UITheme.INK_DIM))
 		_games = VBoxContainer.new()
 		_games.add_theme_constant_override("separation", 6)
-		col.add_child(_games)
+		right.add_child(_games)
 		_status = UITheme.label("", 15, UITheme.ACCENT)
 		_status.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
-		_status.custom_minimum_size = Vector2(520, 0)
-		col.add_child(_status)
-		col.add_child(Menus._spacer(4))
-		var host_note := UITheme.label("To host: start or load a world with \"Open to friends\" switched on, or open it from the pause menu at any time. You'll get a code to share.", 14, UITheme.INK_DIM)
+		_status.custom_minimum_size = Vector2(360, 0)
+		right.add_child(_status)
+		right.add_child(Menus._spacer(4))
+		var host_note := UITheme.label("To host: start or load a world with \"Open to friends\" switched on, or open it from the pause menu at any time. You'll get a code to share. Friends see you as you look here.", 14, UITheme.INK_DIM)
 		host_note.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
-		host_note.custom_minimum_size = Vector2(520, 0)
-		col.add_child(host_note)
-		col.add_child(Menus._spacer(6))
+		host_note.custom_minimum_size = Vector2(360, 0)
+		right.add_child(host_note)
+		col.add_child(UITheme.divider())
 		var back := UITheme.button("Back", false, 160)
 		back.pressed.connect(func() -> void:
 			Net.stop_listening()
@@ -873,7 +892,7 @@ class MultiplayerPanel extends Control:
 		_name.text = Settings.player_name
 		_status.text = ""
 		_join.disabled = false
-		_mark_swatch()
+		_refresh_look()
 		Net.start_listening()
 		_refresh_games()
 		show()
@@ -886,7 +905,10 @@ class MultiplayerPanel extends Control:
 			c.queue_free()
 		var keys: Array = Net.found_games.keys()
 		if keys.is_empty():
-			_games.add_child(UITheme.label("No games found yet. Ask your friend to open their world to friends (pause menu > Open to Friends).", 14, UITheme.INK_DIM))
+			var none := UITheme.label("No games found yet. Ask your friend to open their world to friends (pause menu > Open to Friends).", 14, UITheme.INK_DIM)
+			none.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+			none.custom_minimum_size = Vector2(360, 0)
+			_games.add_child(none)
 			return
 		for ip: String in keys:
 			var g: Dictionary = Net.found_games[ip]
@@ -894,6 +916,8 @@ class MultiplayerPanel extends Control:
 			row.add_theme_constant_override("separation", 10)
 			var info := UITheme.label("%s  ·  %s" % [g.name, g.world], 17, UITheme.INK)
 			info.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+			info.clip_text = true
+			info.custom_minimum_size = Vector2(200, 0)
 			row.add_child(info)
 			var b := UITheme.button("Join", true, 110)
 			b.custom_minimum_size = Vector2(110, 38)
@@ -907,9 +931,69 @@ class MultiplayerPanel extends Control:
 			row.add_child(b)
 			_games.add_child(row)
 
-	func _mark_swatch() -> void:
-		for i in _swatches.size():
-			_swatches[i].text = "✓" if i == Settings.player_color else ""
+	## A row of the character editor: its name on the left, the control on the right.
+	func _line(title: String, control: Control) -> HBoxContainer:
+		var row := HBoxContainer.new()
+		row.add_theme_constant_override("separation", 10)
+		var lab := UITheme.label(title, 16, UITheme.INK_DIM)
+		lab.custom_minimum_size = Vector2(104, 0)
+		row.add_child(lab)
+		row.add_child(control)
+		return row
+
+	## Colour swatches for one part of your look; a tick on the one you've chosen.
+	func _swatches_for(key: String, colors: Array) -> HBoxContainer:
+		var row := HBoxContainer.new()
+		row.add_theme_constant_override("separation", 4)
+		var list: Array = []
+		for i in colors.size():
+			var c: Color = colors[i]
+			var b := Button.new()
+			b.custom_minimum_size = Vector2(27, 27)
+			b.focus_mode = Control.FOCUS_NONE
+			var sb := UITheme.box(c, 14, Color(0.25, 0.19, 0.14, 0.55), 2, 0)   # (outlined: the pale ones show on the page)
+			for st in ["normal", "hover", "pressed", "focus"]:
+				b.add_theme_stylebox_override(st, sb)
+			var ink := Color(0.1, 0.07, 0.05) if c.v > 0.62 else Color(1, 0.97, 0.9)
+			b.add_theme_color_override("font_color", ink)
+			b.add_theme_color_override("font_hover_color", ink)
+			b.add_theme_color_override("font_pressed_color", ink)
+			b.pressed.connect(func() -> void: _set_look(key, i))
+			row.add_child(b)
+			list.append(b)
+		_swatch_sets[key] = list
+		return row
+
+	## A ◀ name ▶ chooser for one part of your look (hair style, hat).
+	func _cycler(key: String, names: Array) -> HBoxContainer:
+		var lab := UITheme.label("", 17, UITheme.INK)
+		lab.custom_minimum_size = Vector2(150, 0)
+		lab.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+		var prev := UITheme.button("<", false, 46)
+		var next := UITheme.button(">", false, 46)
+		prev.pressed.connect(func() -> void: _set_look(key, posmod(int(Settings.look()[key]) - 1, names.size())))
+		next.pressed.connect(func() -> void: _set_look(key, posmod(int(Settings.look()[key]) + 1, names.size())))
+		_cyclers[key] = [lab, names]
+		return Menus._row([prev, lab, next])
+
+	func _set_look(key: String, value: int) -> void:
+		var l := Settings.look()
+		l[key] = value
+		Settings.player_look = l
+		Settings.player_color = int(l.shirt)
+		Settings.save_settings()
+		_refresh_look()
+
+	## Ticks on the chosen swatches, the chosen names, and the figure turning in the preview.
+	func _refresh_look() -> void:
+		var l := Settings.look()
+		for key: String in _swatch_sets:
+			var list: Array = _swatch_sets[key]
+			for i in list.size():
+				(list[i] as Button).text = "✓" if i == int(l[key]) else ""
+		for key: String in _cyclers:
+			(_cyclers[key][0] as Label).text = String(_cyclers[key][1][int(l[key])])
+		_preview.set_look(l)
 
 	func _do_join() -> void:
 		if _code.text.strip_edges() == "":

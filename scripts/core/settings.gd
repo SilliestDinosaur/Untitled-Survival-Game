@@ -86,9 +86,18 @@ var bindings := {}               ## action -> Array[String] overrides
 ## Multiplayer identity: shown to friends; the id lets a host remember your character.
 var player_name := ""
 var player_uid := ""
-var player_color := 0
+var player_color := 0          ## your shirt colour (an index into PLAYER_COLORS): your colour on friends' maps too
+var player_look := {}           ## how you look to friends (see Avatar): skin, hair, hair colour, hat (and the shirt)
 const PLAYER_COLORS := [Color(0.86, 0.42, 0.3), Color(0.32, 0.6, 0.86), Color(0.48, 0.74, 0.36), Color(0.9, 0.72, 0.3),
-	Color(0.66, 0.46, 0.84), Color(0.3, 0.74, 0.7), Color(0.9, 0.5, 0.66), Color(0.55, 0.55, 0.6)]
+	Color(0.66, 0.46, 0.84), Color(0.3, 0.74, 0.7), Color(0.9, 0.5, 0.66), Color(0.55, 0.55, 0.6),
+	Color(0.92, 0.9, 0.84), Color(0.22, 0.22, 0.26), Color(0.56, 0.36, 0.22), Color(0.72, 0.18, 0.2)]
+
+
+## Your look, whole (an older settings file may only have had a colour).
+func look() -> Dictionary:
+	var l := Avatar.clean(player_look, player_color)
+	l.shirt = posmod(player_color, PLAYER_COLORS.size())
+	return l
 
 
 func _ready() -> void:
@@ -99,6 +108,14 @@ func _ready() -> void:
 		player_uid = "%08x%08x" % [rng.randi(), rng.randi()]
 		player_name = "Wanderer %d" % rng.randi_range(10, 99)
 		player_color = rng.randi() % PLAYER_COLORS.size()
+		player_look = Avatar.random(rng)
+		player_look.shirt = player_color
+		save_settings()
+	elif player_look.is_empty():   # from before looks: keep the colour, pick the rest
+		var rng := RandomNumberGenerator.new()
+		rng.seed = hash(player_uid)
+		player_look = Avatar.random(rng)
+		player_look.shirt = player_color
 		save_settings()
 	apply()
 
@@ -152,6 +169,7 @@ func load_settings() -> void:
 	player_name = cfg.get_value("player", "name", player_name)
 	player_uid = cfg.get_value("player", "uid", player_uid)
 	player_color = cfg.get_value("player", "color", player_color)
+	player_look = cfg.get_value("player", "look", player_look)
 
 
 func save_settings() -> void:
@@ -173,6 +191,7 @@ func save_settings() -> void:
 	cfg.set_value("player", "name", player_name)
 	cfg.set_value("player", "uid", player_uid)
 	cfg.set_value("player", "color", player_color)
+	cfg.set_value("player", "look", player_look)
 	cfg.save(PATH)
 
 

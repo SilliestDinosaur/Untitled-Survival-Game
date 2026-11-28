@@ -1,8 +1,8 @@
 class_name RemotePlayer
 extends Node3D
-## Another player, seen in third person: a simple, friendly figure (a rounded torso in their
-## colour, a head with a painted face, no arms or legs) with whatever they're holding floating
-## at their side, and their name above. Moves smoothly between the poses the network sends.
+## Another player, seen in third person: a simple, friendly figure (see Avatar: a rounded torso in their shirt
+## colour, a head with a painted face, their hair and hat) with whatever they're holding floating at their side,
+## and their name above. Moves smoothly between the poses the network sends.
 ## On the host it's also what animals notice and bite.
 
 var peer_id := 0
@@ -28,27 +28,24 @@ static var _mat: ShaderMaterial
 static var _item_mat: ShaderMaterial
 
 
-func setup(pname: String, color: Color) -> void:
+func setup(pname: String, look: Dictionary) -> void:
 	display_name = pname
 	if not _mat:
 		_mat = ArtStyle.painted({"brush_strength": 0.18, "rim_amount": 0.35})
 		_item_mat = ArtStyle.painted({"brush_strength": 0.16, "rim_amount": 0.4, "stroke_scale": 3.0})
-	var rng := RandomNumberGenerator.new()
-	rng.seed = hash(pname)
-	var skin: Color = [Color(0.96, 0.8, 0.66), Color(0.86, 0.66, 0.5), Color(0.68, 0.48, 0.34), Color(0.5, 0.35, 0.25), Color(0.98, 0.86, 0.74)][rng.randi() % 5]
-
+	var l := Avatar.clean(look)
 	_body = Node3D.new()
 	add_child(_body)
 	add_child(CaveShade.new())   # darker in a cave, like everything else there
 	var torso := MeshInstance3D.new()
-	torso.mesh = _torso_mesh(color)
+	torso.mesh = Avatar.torso_mesh(Settings.PLAYER_COLORS[l.shirt], _mat)
 	_body.add_child(torso)
 
 	_head = Node3D.new()
 	_head.position = Vector3(0, 1.6, 0)
 	_body.add_child(_head)
 	var head := MeshInstance3D.new()
-	head.mesh = _head_mesh(skin, color, rng)
+	head.mesh = Avatar.head_mesh(l, _mat)
 	_head.add_child(head)
 
 	_item = MeshInstance3D.new()
@@ -59,7 +56,7 @@ func setup(pname: String, color: Color) -> void:
 	_label = Label3D.new()
 	_label.text = pname
 	_label.billboard = BaseMaterial3D.BILLBOARD_ENABLED
-	_label.position = Vector3(0, 2.05, 0)
+	_label.position = Vector3(0, 2.05 + (0.15 if Avatar.HATS[l.hat] in ["Straw hat", "Feather"] else 0.0), 0)
 	_label.font_size = 40
 	_label.pixel_size = 0.006
 	_label.outline_size = 10
@@ -69,51 +66,6 @@ func setup(pname: String, color: Color) -> void:
 	_label.fixed_size = false
 	add_child(_label)
 	visible = false
-
-
-## A rounded torso: wide shoulders tapering to the waist, with a collar and a belt line.
-func _torso_mesh(color: Color) -> ArrayMesh:
-	var k := MeshKit.new(7)
-	var path := []
-	var radii := []
-	var profile := [0.17, 0.25, 0.28, 0.29, 0.3, 0.31, 0.3, 0.26, 0.16]
-	for i in profile.size():
-		var t := float(i) / (profile.size() - 1)
-		path.append(Vector3(0, 0.55 + t * 0.8, 0))
-		radii.append(profile[i])
-	var dark := color.darkened(0.25)
-	var light := color.lightened(0.12)
-	var shirt := func(t: float, a: float) -> Color:
-		if t < 0.13:
-			return dark            # belt / hem
-		if t > 0.88:
-			return light           # collar
-		return color.lightened(0.05) if a > PI * 0.6 and a < PI * 1.4 else color
-	var oval := func(_t: float, _a: float) -> Vector2: return Vector2(1.0, 0.72)
-	k.loft(path, radii, 20, color, shirt, oval, true, true)
-	return k.commit(_mat)
-
-
-## A rounded head with simple painted eyes and a smile, plus a little hair tuft.
-func _head_mesh(skin: Color, accent: Color, rng: RandomNumberGenerator) -> ArrayMesh:
-	var k := MeshKit.new(9)
-	k.add_primitive(MeshKit.sphere(0.26, 22, 16), Transform3D(Basis.from_scale(Vector3(1.0, 1.06, 0.98)), Vector3.ZERO), skin, 0.0, 0.03)
-	var eye := Color(0.12, 0.09, 0.08)
-	for side in [-1.0, 1.0]:
-		k.add_primitive(MeshKit.sphere(0.042, 10, 7), Transform3D(Basis.from_scale(Vector3(0.8, 1.25, 0.5)), Vector3(side * 0.09, 0.04, -0.243)), eye, 0.0, 0.0)
-		k.add_primitive(MeshKit.sphere(0.013, 6, 4), Transform3D(Basis(), Vector3(side * 0.09 + 0.012, 0.065, -0.262)), Color(1, 1, 1), 0.0, 0.0)
-	# Smile: a short lofted arc.
-	var smile := []
-	var sr := []
-	for i in 7:
-		var t := (i / 6.0 - 0.5) * 1.4
-		smile.append(Vector3(sin(t) * 0.085, -0.075 - cos(t) * 0.025 + 0.025, -0.247 + absf(t) * 0.015))
-		sr.append(0.011)
-	k.loft(smile, sr, 6, eye.lightened(0.15), Callable(), Callable(), true, true)
-	# Hair: a cap of lumpy blobs in a colour that suits the player.
-	var hair: Color = [Color(0.2, 0.14, 0.1), Color(0.45, 0.28, 0.15), Color(0.85, 0.7, 0.4), Color(0.6, 0.25, 0.12), accent.darkened(0.35)][rng.randi() % 5]
-	k.add_primitive(MeshKit.sphere(0.265, 16, 10), Transform3D(Basis.from_scale(Vector3(1.03, 0.6, 1.0)), Vector3(0, 0.125, 0.025)), hair, 0.03, 0.05)
-	return k.commit(_mat)
 
 
 func set_pose(pos: Vector3, yaw: float, pitch: float, held: String, swings: int, sprinting: bool) -> void:

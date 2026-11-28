@@ -48,7 +48,12 @@ func _process(_delta: float) -> bool:
 		"wait":
 			if not _net.players.is_empty():
 				if not _client_seen:
-					print("HOST guest joined: ", _net.players.values()[0].name)
+					var guest: Dictionary = _net.players.values()[0]
+					print("HOST guest joined: ", guest.name)
+					# How they look came with them, whole, and their figure here wears it.
+					var look: Dictionary = guest.get("look", {})
+					_check(look.has_all(["shirt", "skin", "hair", "hair_color", "hat"]), "the guest's look arrived (%s)" % str(look))
+					_check(int(look.get("shirt", -1)) == int(guest.color), "their shirt is their colour on the map")
 				_client_seen = true
 			elif _client_seen:
 				_phase = "check"

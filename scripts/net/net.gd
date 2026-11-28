@@ -32,7 +32,7 @@ const MAX_PLAYERS := 4
 const PEER_TIMEOUT_LIMIT := 32
 const PEER_TIMEOUT_MIN_MS := 30000
 const PEER_TIMEOUT_MAX_MS := 60000
-const PROTOCOL := 3
+const PROTOCOL := 4   ## (4: players send how they look)
 const POSE_RATE := 1.0 / 15.0
 const ANIMAL_RATE := 0.1
 const ANIMAL_RANGE := 170.0
@@ -463,11 +463,11 @@ func _on_connected() -> void:
 	_be_patient(1)
 	_join_timeout = 12.0
 	status_changed.emit("Connected. Getting the world...")
-	_hello.rpc_id(1, PROTOCOL, Settings.player_name, Settings.player_uid, Settings.player_color)
+	_hello.rpc_id(1, PROTOCOL, Settings.player_name, Settings.player_uid, Settings.player_color, Settings.look())
 
 
 @rpc("any_peer", "reliable")
-func _hello(protocol: int, pname: String, uid: String, color: int) -> void:
+func _hello(protocol: int, pname: String, uid: String, color: int, look: Dictionary = {}) -> void:
 	if not is_host():
 		return
 	var peer := multiplayer.get_remote_sender_id()
@@ -485,7 +485,8 @@ func _hello(protocol: int, pname: String, uid: String, color: int) -> void:
 	pname = pname.strip_edges().substr(0, 20)
 	if pname == "":
 		pname = "Wanderer"
-	players[peer] = {"name": pname, "uid": uid, "color": color}
+	var l := Avatar.clean(look, color)
+	players[peer] = {"name": pname, "uid": uid, "color": int(l.shirt), "look": l}
 	# Their character in this world, if they've been here before.
 	var saved: Dictionary = Game.guests.get(uid, {})
 	var inv := Game.inventory_of(peer)
@@ -509,7 +510,7 @@ func _hello(protocol: int, pname: String, uid: String, color: int) -> void:
 
 func _roster_with_host() -> Dictionary:
 	var r := players.duplicate(true)
-	r[1] = {"name": Settings.player_name, "uid": Settings.player_uid, "color": Settings.player_color}
+	r[1] = {"name": Settings.player_name, "uid": Settings.player_uid, "color": Settings.player_color, "look": Settings.look()}
 	return r
 
 
@@ -1167,7 +1168,7 @@ func _spawn_avatar(peer: int) -> void:
 	var a := RemotePlayer.new()
 	a.peer_id = peer
 	_avatar_root.add_child(a)
-	a.setup(players[peer].name, Settings.PLAYER_COLORS[int(players[peer].color) % Settings.PLAYER_COLORS.size()])
+	a.setup(players[peer].name, Avatar.clean(players[peer].get("look", {}), int(players[peer].get("color", 0))))
 	avatars[peer] = a
 
 
