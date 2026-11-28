@@ -543,6 +543,18 @@ func _build_spit() -> void:
 	_mesh_node(k.commit(_mat), _props).position = _station.pos
 
 
+const LUMP_SCALE := 0.44   ## the ore lumps in the crucible (its inside is about 0.1 across where they lie)
+
+
+## A lump of ore in the crucible at its resting place (its meta "rest": turn and where its middle goes), at `scl`: it
+## shrinks about its own middle as it melts.
+func _place_lump(lump: MeshInstance3D, scl: float) -> void:
+	var rest: Transform3D = lump.get_meta("rest")
+	var c := lump.mesh.get_aabb().get_center() if lump.mesh else Vector3.ZERO
+	var b := rest.basis.scaled_local(Vector3.ONE * scl)
+	lump.transform = Transform3D(b, rest.origin - b * c)
+
+
 ## At the forge: a clay crucible in the coals, an iron mould on the anvil, the molten metal and its pour.
 func _build_foundry() -> void:
 	var k := MeshKit.new(7)
@@ -564,11 +576,13 @@ func _build_foundry() -> void:
 			break
 	var rng := RandomNumberGenerator.new()
 	rng.seed = 3
+	# Three lumps settled in the bottom of the crucible round its middle, the last on top of the other two. Placed by
+	# the middle of their shape (an ore's model isn't centred on its origin), small enough to sit inside its walls.
+	var spots := [Vector3(0.016, 0.05, 0.009), Vector3(-0.016, 0.052, 0.009), Vector3(0.0, 0.074, -0.012)]
 	for i in 3:
 		var lump := _mesh_node(ItemModels.mesh_for(ore, _mat), _crucible)
-		lump.position = Vector3(rng.randf_range(-0.03, 0.03), 0.1 + i * 0.012, rng.randf_range(-0.03, 0.03))
-		lump.rotation = Vector3(rng.randf() * TAU, rng.randf() * TAU, 0)
-		lump.scale = Vector3.ONE * 0.9
+		lump.set_meta("rest", Transform3D(Basis.from_euler(Vector3(rng.randf() * TAU, rng.randf() * TAU, 0)), spots[i]))
+		_place_lump(lump, LUMP_SCALE)
 		_lumps.append(lump)
 	var mk := MeshKit.new(8)   # the mould: an iron block with an ingot-shaped hollow
 	var iron := Color(0.24, 0.23, 0.25)
@@ -620,7 +634,7 @@ func _reset_props() -> void:
 		_crucible.global_transform = _xf * Transform3D(Basis(), CRUCIBLE_AT)
 		for l in _lumps:
 			l.visible = false
-			l.scale = Vector3.ONE * 0.9
+			_place_lump(l, LUMP_SCALE)
 		_pool.visible = false
 		_stream.visible = false
 		_mould_fill.visible = false
@@ -762,7 +776,7 @@ func _refresh_smelt(id: String, s: float) -> void:
 			_set_pool_level(0.02 + 0.08 * s)
 			for l in _lumps:
 				l.visible = s < 0.95
-				l.scale = Vector3.ONE * 0.9 * (1.0 - s)
+				_place_lump(l, LUMP_SCALE * (1.0 - s))
 		"pour":
 			for l in _lumps:
 				l.visible = false
@@ -1329,9 +1343,12 @@ func _drag_setup() -> void:
 		"load":
 			drag_node = _dropper
 			_dropper.visible = true
-			_drag_home_xf = Transform3D(Basis.from_scale(Vector3.ONE * 1.2), _crucible.global_position + Vector3(0, 0.17, 0))
-			_drag_from = Transform3D(Basis.from_scale(Vector3.ONE * 1.2), _xf * Vector3(-0.32, 0.95, -0.22))
-			_drag_focus = Vector3.ZERO
+			# Held by the middle of the lump, and let go right over the middle of the crucible's mouth.
+			var lb := Basis.from_scale(Vector3.ONE * 0.75)
+			var lc := _dropper.mesh.get_aabb().get_center() if _dropper.mesh else Vector3.ZERO
+			_drag_home_xf = Transform3D(lb, _crucible.global_position + Vector3(0, 0.2, 0) - lb * lc)
+			_drag_from = Transform3D(lb, _xf * Vector3(-0.32, 0.95, -0.22) - lb * lc)
+			_drag_focus = lc
 		"add":
 			drag_node = _part
 			var along := _side.cross(Vector3.UP).normalized()

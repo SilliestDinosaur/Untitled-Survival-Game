@@ -1085,9 +1085,7 @@ static func _roof_into(k: MeshKit, kind: String, window: PackedByteArray) -> Pac
 				k.add_tri(t0, b0, t1, col)
 				k.add_tri(t1, b0, b1, col)
 			top.append_array(PackedVector3Array([t0, t1, b0, t1, b1, b0]))
-		var fl := cell + EAVE * 2.0
-		var fy: float = float(height.call(out.x * h, out.z * h)) - drop - 0.08
-		boards.append([Vector3(fl, 0.12, 0.05) if absf(out.z) > 0.5 else Vector3(0.05, 0.12, fl), out * (h + EAVE + 0.03) + Vector3(0, fy, 0)])
+		_eave_trim(boards, d, has, float(height.call(out.x * h, out.z * h)) - drop)
 	# Outer corners: where two open edges meet, the eaves wrap round the corner.
 	for cd: Vector2i in [Vector2i(1, 1), Vector2i(1, -1), Vector2i(-1, 1), Vector2i(-1, -1)]:
 		if not (open.has(Vector2i(cd.x, 0)) and open.has(Vector2i(0, cd.y))):
@@ -1095,7 +1093,7 @@ static func _roof_into(k: MeshKit, kind: String, window: PackedByteArray) -> Pac
 		var pa: Vector3 = grid[n if cd.y == 1 else 0][n if cd.x == 1 else 0]
 		var pb: Vector3 = lip.call(pa, Vector3(cd.x, 0, 0))
 		var pd: Vector3 = lip.call(pa, Vector3(0, 0, cd.y))
-		var pc := pa + Vector3(cd.x, 0, cd.y) * EAVE + Vector3(0, -drop * 1.4, 0)
+		var pc := pa + Vector3(cd.x, 0, cd.y) * EAVE + Vector3(0, -drop, 0)   # (the eave's edge level all round)
 		var col := tile.darkened(0.1)
 		for t: Array in [[pa, pb, pc], [pa, pc, pd]]:
 			var a: Vector3 = t[0]
@@ -1109,8 +1107,51 @@ static func _roof_into(k: MeshKit, kind: String, window: PackedByteArray) -> Pac
 	k.flat_shading = false
 	_roof_underside(k, top, tile.darkened(0.25))
 	for b: Array in boards:
-		k.add_primitive(_box(b[0]), Transform3D(Basis(), b[1]), fascia, 0.0, 0.03)
+		k.add_primitive(_box(b[0]), Transform3D(Basis(), b[1]), fascia.lightened(0.06) if b[2] else fascia, 0.0, 0.03)
 	return top
+
+
+const FASCIA_H := 0.17   ## the board along the eave's edge, under the tiles' lip
+const FASCIA_T := 0.045
+const SOFFIT_T := 0.025  ## the boards closing the eave's underside back to the wall
+
+
+## The trim along one open edge `d` of a roof cell: a fascia board under the tiles' lip (its face flush with the lip)
+## and a soffit under the eave back to the wall line, so the eave reads as a solid boxed edge from outside. Each runs
+## the cell's length, on past it round an outer corner (where the boards along x take the corner square, so the two
+## don't overlap), short of it at an inner corner (where the other wing's eave comes across). `lip_y`: the height of
+## the tiles' lower edge. Appends [size, centre, is soffit] to `boards`.
+static func _eave_trim(boards: Array, d: Vector2i, has: Callable, lip_y: float) -> void:
+	var h := GameActions.CELL * 0.5
+	var along := Vector2i(-d.y, d.x)
+	var runs_x := d.x == 0   # the board lies along x (the edge faces +-z)
+	var ext := [0.0, 0.0]    # how far past the cell each end goes (- end, + end), fascia and soffit alike
+	var soffit_ext := [0.0, 0.0]
+	for e in 2:
+		var s := -1 if e == 0 else 1
+		var nb := along * s
+		if not has.call(nb.x, nb.y):   # outer corner: on round it
+			ext[e] = EAVE if runs_x else EAVE - FASCIA_T
+			soffit_ext[e] = EAVE - FASCIA_T if runs_x else 0.0
+		elif has.call(nb.x + d.x, nb.y + d.y):   # inner corner: stop where the other wing's eave comes across
+			ext[e] = -EAVE + (FASCIA_T if runs_x else 0.0)
+			soffit_ext[e] = -EAVE
+	var out := Vector3(d.x, 0, d.y)
+	var ax := Vector3(along.x, 0, along.y)
+	var top := lip_y - 0.045 + 0.012   # tucked a hair up under the tiles' skin
+	# The fascia.
+	var lo: float = -h - ext[0]
+	var hi: float = h + ext[1]
+	var size := Vector3(hi - lo, FASCIA_H, FASCIA_T)
+	var at := out * (h + EAVE - FASCIA_T * 0.5) + ax * ((lo + hi) * 0.5) + Vector3(0, top - FASCIA_H * 0.5, 0)
+	boards.append([size if runs_x else Vector3(size.z, size.y, size.x), at, false])
+	# The soffit, from the wall line out to the fascia, level with its bottom.
+	lo = -h - soffit_ext[0]
+	hi = h + soffit_ext[1]
+	var deep := EAVE - FASCIA_T - 0.004
+	size = Vector3(hi - lo, SOFFIT_T, deep)
+	at = out * (h + deep * 0.5) + ax * ((lo + hi) * 0.5) + Vector3(0, top - FASCIA_H + SOFFIT_T * 0.5 + 0.004, 0)
+	boards.append([size if runs_x else Vector3(size.z, size.y, size.x), at, true])
 
 
 ## The roof is a skin of tiles some centimetres thick, not a sheet: an underside under every face of `top` (seen

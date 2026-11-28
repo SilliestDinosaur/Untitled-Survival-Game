@@ -344,49 +344,139 @@ static func _hanging_lantern(k: MeshKit, glow: MeshKit) -> void:
 	_lantern(k, glow, Vector3(0, -0.78, 0), 1.25)
 
 
-## A chest: planks on a frame, iron straps over it, a lock plate; the large one is longer and taller, iron-bound,
-## with studs along its straps.
+## A chest: a box of planks between corner posts, standing on a plinth and four little feet, with a rim round its
+## top; a rounded lid of planks closed at both ends by arched end boards; iron corner brackets, straps over the lid
+## and down the front and back, hinges behind, a ring handle at each end and a padlock on a hasp in front. The large
+## one is bigger, of darker wood, and bound in iron: more straps, studded, with iron bands round its rim and plinth.
 static func _chest(k: MeshKit, rng: RandomNumberGenerator, large: bool) -> void:
-	var w := 1.15 if large else 0.9
-	var d := 0.66 if large else 0.56
-	var h := 0.5 if large else 0.42
-	var lid := 0.22 if large else 0.18
-	var wood := WOOD.darkened(0.05) if large else WOOD
-	for i in 3:   # the box's planks, front and back, each a shade different
-		for sz in [-1.0, 1.0]:
-			_post(k, Vector3(w, h / 3.0 - 0.01, 0.05), Vector3(0, h / 6.0 + i * h / 3.0 + 0.005, sz * (d * 0.5 - 0.025)), _wood(rng, wood))
+	var w := 1.16 if large else 0.92    # across (x)
+	var d := 0.68 if large else 0.58    # deep (z; it faces +z)
+	var h := 0.48 if large else 0.4     # the box's top
+	var rise := 0.23 if large else 0.19 # the lid's
+	var wood := WOOD.darkened(0.12) if large else WOOD.lightened(0.02)
+	var frame := wood.darkened(0.28)
+	var iron := Color(0.23, 0.23, 0.25)
+	var rivet := iron.lightened(0.35)
+	var brass := GOLD.darkened(0.2)
+	var foot := 0.035
+	var hx := w * 0.5
+	var hz := d * 0.5
+	# Feet, and the dark core inside the planks (so the gaps between them show shadow, not daylight).
 	for sx in [-1.0, 1.0]:
-		_post(k, Vector3(0.05, h - 0.004, d - 0.1), Vector3(sx * (w * 0.5 - 0.025), h * 0.5, 0), _wood(rng, wood))
-	_post(k, Vector3(w - 0.1, 0.04, d - 0.1), Vector3(0, 0.03, 0), wood.darkened(0.1))   # bottom
-	# The lid: a rounded top (a half cylinder of planks along the length).
+		for sz in [-1.0, 1.0]:
+			_post(k, Vector3(0.075, foot + 0.004, 0.075), Vector3(sx * (hx - 0.045), (foot + 0.004) * 0.5, sz * (hz - 0.045)), frame.darkened(0.1))
+	_post(k, Vector3(w - 0.07, h - foot - 0.03, d - 0.07), Vector3(0, foot + (h - foot - 0.03) * 0.5 + 0.004, 0), Color(0.12, 0.09, 0.06))
+	# The plinth: a band of boards round the foot, a little proud.
+	var pl := 0.065
+	for sz in [-1.0, 1.0]:
+		_post(k, Vector3(w + 0.022, pl, 0.03), Vector3(0, foot + pl * 0.5, sz * (hz + 0.003)), frame)
+	for sx in [-1.0, 1.0]:
+		_post(k, Vector3(0.03, pl - 0.004, d - 0.026), Vector3(sx * (hx + 0.003), foot + pl * 0.5, 0), frame)
+	# Corner posts.
+	for sx in [-1.0, 1.0]:
+		for sz in [-1.0, 1.0]:
+			_post(k, Vector3(0.07, h - foot - pl - 0.004, 0.07), Vector3(sx * (hx - 0.03), foot + pl + (h - foot - pl) * 0.5, sz * (hz - 0.03)), frame.lightened(0.05))
+	# Plank panels between the posts: three boards a side, each a shade different, with a hair of gap between.
+	var y0 := foot + pl + 0.004
+	var span := h - 0.045 - y0
+	for i in 3:
+		var bh := span / 3.0 - 0.008
+		var y := y0 + span * (i + 0.5) / 3.0
+		for sz in [-1.0, 1.0]:
+			StructureModels._board(k, Vector3(w - 0.13, bh, 0.032), Transform3D(Basis(), Vector3(0, y, sz * (hz - 0.022))), _wood(rng, wood), 0.004)
+		for sx in [-1.0, 1.0]:
+			StructureModels._board(k, Vector3(d - 0.13, bh, 0.032), Transform3D(Basis(Vector3.UP, PI * 0.5), Vector3(sx * (hx - 0.022), y, 0)), _wood(rng, wood), 0.004)
+	# The rim round the box's top, where the lid comes down on it.
+	for sz in [-1.0, 1.0]:
+		_post(k, Vector3(w + 0.012, 0.045, 0.032), Vector3(0, h - 0.0225, sz * (hz - 0.006)), frame.lightened(0.08))
+	for sx in [-1.0, 1.0]:
+		_post(k, Vector3(0.032, 0.041, d - 0.05), Vector3(sx * (hx - 0.006), h - 0.0225, 0), frame.lightened(0.08))
+	# The lid: planks along its length round a half-round arch, closed at each end by an arched board.
+	var lz := hz + 0.012
 	var arc: Array = []
-	for i in 7:
-		var a := PI * i / 6.0
-		arc.append(Vector2(cos(a) * d * 0.5, sin(a) * lid))
-	for i in 6:
+	for i in 9:
+		var a := PI * i / 8.0
+		arc.append(Vector2(cos(a) * lz, sin(a) * rise))
+	var base := h + 0.006
+	for i in 8:
 		var p0: Vector2 = arc[i]
 		var p1: Vector2 = arc[i + 1]
 		var mid := (p0 + p1) * 0.5
 		var ang := atan2(p1.y - p0.y, p1.x - p0.x)
-		k.add_primitive(StructureModels._box(Vector3(w + 0.02, 0.035, p0.distance_to(p1) - 0.004)),
-			Transform3D(Basis(Vector3.RIGHT, -ang), Vector3(0, h + 0.012 + mid.y, mid.x)), _wood(rng, wood.lightened(0.04)), 0.0, 0.03)
-	# Iron straps over the lid and down the front and back.
-	var straps := [-0.3, 0.3] if not large else [-0.42, -0.14, 0.14, 0.42]
-	for sx: float in straps:
-		var x := sx * w / (0.9 if not large else 1.15)
-		for i in 6:
+		var nrm := Vector2(sin(ang), -cos(ang))   # out from the lid
+		var at := mid - nrm * 0.016
+		StructureModels._board(k, Vector3(w - 0.07, p0.distance_to(p1) + 0.006, 0.034),
+			Transform3D(Basis(Vector3.RIGHT, -ang) * FLAT, Vector3(0, base + at.y, at.x)), _wood(rng, wood.lightened(0.05)), 0.003)
+	var cap := PackedVector2Array()
+	for i in 13:
+		var a := PI * i / 12.0
+		cap.append(Vector2(cos(a) * (lz + 0.006), sin(a) * (rise + 0.006)))
+	var end_basis := Basis(Vector3(0, 0, 1), Vector3.UP, Vector3(-1, 0, 0))
+	for sx in [-1.0, 1.0]:
+		k.extrude(cap, Transform3D(end_basis, Vector3(sx * (hx - 0.03), base, 0)), 0.05, 0.01, frame, frame.lightened(0.1))
+	# Iron straps over the lid, down the front and the back.
+	var straps: Array = [-0.34, 0.34] if not large else [-0.4, -0.13, 0.13, 0.4]
+	for f: float in straps:
+		var x := f * w
+		for i in 8:
 			var p0: Vector2 = arc[i]
 			var p1: Vector2 = arc[i + 1]
 			var mid := (p0 + p1) * 0.5
 			var ang := atan2(p1.y - p0.y, p1.x - p0.x)
-			var nrm := Vector2(-sin(ang), cos(ang)) * 0.02
-			k.add_primitive(StructureModels._box(Vector3(0.06, 0.012, p0.distance_to(p1) + 0.01)),
-				Transform3D(Basis(Vector3.RIGHT, -ang), Vector3(x, h + 0.012 + mid.y + nrm.y, mid.x + nrm.x)), IRON, 0.0, 0.03)
+			var nrm := Vector2(sin(ang), -cos(ang))   # out from the lid
+			var at := mid + nrm * 0.008
+			k.add_primitive(StructureModels._box(Vector3(0.055, 0.01, p0.distance_to(p1) + 0.012)),
+				Transform3D(Basis(Vector3.RIGHT, -ang), Vector3(x, base + at.y, at.x)), iron, 0.0, 0.03)
+			if large or i % 2 == 1:
+				var r := mid + nrm * 0.014
+				k.add_primitive(MeshKit.sphere(0.011, 6, 4), Transform3D(Basis(), Vector3(x, base + r.y, r.x)), rivet, 0.0, 0.02)
 		for sz in [-1.0, 1.0]:
-			_post(k, Vector3(0.06, h - 0.02, 0.012), Vector3(x, h * 0.5, sz * (d * 0.5 + 0.007)), IRON)
-			if large:
-				for j in 3:
-					k.add_primitive(MeshKit.sphere(0.014, 6, 4), Transform3D(Basis(), Vector3(x, 0.1 + j * (h - 0.2) / 2.0, sz * (d * 0.5 + 0.016))), IRON.lightened(0.3), 0.0, 0.02)
-	# The lock plate and its hasp.
-	_post(k, Vector3(0.12, 0.14, 0.014), Vector3(0, h - 0.06, d * 0.5 + 0.012), GOLD.darkened(0.15))
-	k.add_primitive(MeshKit.sphere(0.018, 6, 4), Transform3D(Basis(), Vector3(0, h - 0.07, d * 0.5 + 0.022)), Color(0.12, 0.1, 0.08), 0.0, 0.02)
+			_post(k, Vector3(0.055, h - foot - pl - 0.01, 0.01), Vector3(x, foot + pl + (h - foot - pl) * 0.5, sz * (hz + 0.003)), iron)
+			for j in (3 if large else 2):
+				var ry := foot + pl + 0.05 + j * (h - foot - pl - 0.1) / (2.0 if large else 1.0)
+				k.add_primitive(MeshKit.sphere(0.011, 6, 4), Transform3D(Basis(), Vector3(x, ry, sz * (hz + 0.011))), rivet, 0.0, 0.02)
+	# Iron corner brackets, top and bottom: an L of plate round each upright corner.
+	var bs := 0.1 if large else 0.08
+	for sx in [-1.0, 1.0]:
+		for sz in [-1.0, 1.0]:
+			for cy: float in [foot + pl + 0.05, h - 0.075]:
+				_post(k, Vector3(bs, bs, 0.01), Vector3(sx * (hx - bs * 0.5 + 0.004), cy, sz * (hz + 0.006)), iron)
+				_post(k, Vector3(0.01, bs - 0.004, bs), Vector3(sx * (hx + 0.006), cy, sz * (hz - bs * 0.5 + 0.004)), iron)
+	# The large one: iron bands round its rim and its plinth, and studs along the rim.
+	if large:
+		for y: float in [h - 0.0225, foot + pl * 0.5]:
+			for sz in [-1.0, 1.0]:
+				_post(k, Vector3(w + 0.03, 0.03, 0.01), Vector3(0, y, sz * (hz + 0.012)), iron)
+			for sx in [-1.0, 1.0]:
+				_post(k, Vector3(0.01, 0.026, d + 0.004), Vector3(sx * (hx + 0.012), y, 0), iron)
+		for i in 9:
+			var x := lerpf(-hx + 0.08, hx - 0.08, i / 8.0)
+			for sz in [-1.0, 1.0]:
+				k.add_primitive(MeshKit.sphere(0.01, 6, 4), Transform3D(Basis(), Vector3(x, h - 0.0225, sz * (hz + 0.02))), rivet, 0.0, 0.02)
+	# Hinges behind: a plate down from the lid's back edge onto the box, round a pin.
+	for f in [-0.22, 0.22]:
+		_post(k, Vector3(0.06, 0.13, 0.01), Vector3(f * w, h - 0.02, -(lz + 0.008)), iron)
+		k.loft([Vector3(f * w - 0.035, h + 0.006, -(lz + 0.012)), Vector3(f * w + 0.035, h + 0.006, -(lz + 0.012))], [0.012, 0.012], 6, iron.lightened(0.1))
+	# A ring handle at each end, on a plate.
+	var hy := h * 0.62
+	for sx in [-1.0, 1.0]:
+		_post(k, Vector3(0.01, 0.07, 0.15), Vector3(sx * (hx + 0.012), hy, 0), iron)
+		var path: Array = []
+		var radii: Array = []
+		for i in 9:
+			var a := PI * i / 8.0
+			path.append(Vector3(sx * (hx + 0.03), hy - 0.012 - sin(a) * 0.055, -cos(a) * 0.065))
+			radii.append(0.009)
+		k.loft(path, radii, 6, iron.lightened(0.15))
+	# The hasp down from the lid over the rim, and a padlock hung through it.
+	_post(k, Vector3(0.075, 0.12, 0.012), Vector3(0, h + 0.006, lz + 0.01), iron.lightened(0.05))
+	var lock_y := h - 0.09
+	k.add_primitive(StructureModels._box(Vector3(0.085, 0.075, 0.032)), Transform3D(Basis(), Vector3(0, lock_y, lz + 0.034)), brass, 0.0, 0.04)
+	var shackle: Array = []
+	var sr: Array = []
+	for i in 9:
+		var a := PI * i / 8.0
+		shackle.append(Vector3(cos(a) * 0.026, lock_y + 0.036 + sin(a) * 0.035, lz + 0.034))
+		sr.append(0.006)
+	k.loft(shackle, sr, 6, iron.lightened(0.25))
+	k.add_primitive(MeshKit.cylinder(0.008, 0.008, 0.006, 8), Transform3D(Basis(Vector3.RIGHT, PI * 0.5), Vector3(0, lock_y - 0.008, lz + 0.052)), Color(0.08, 0.06, 0.04), 0.0, 0.0)

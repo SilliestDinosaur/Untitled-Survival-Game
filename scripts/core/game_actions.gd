@@ -349,8 +349,8 @@ const DECOR := {
 		"light_at": Vector3(0, 0.2, 0.16), "range": 4.5, "warm": 0.3, "desc": "A little shelf of candles on a wall. Dim and cosy, and a touch of warmth."},
 	"hanging_lantern": {"name": "Hanging Lantern", "page": "lights", "r": 0.0, "box": Vector3.ZERO, "mount": "ceiling", "light": Color(1.0, 0.8, 0.5),
 		"light_at": Vector3(0, -0.78, 0), "range": 9.5, "desc": "A lantern on a chain from a roof or an upper floor, lighting the room from the middle."},
-	"chest": {"name": "Chest", "page": "storage", "r": 0.48, "box": Vector3(0.95, 0.7, 0.6), "slots": 16, "desc": "Holds 16 stacks. Interact to open it."},
-	"large_chest": {"name": "Iron-Bound Chest", "page": "storage", "r": 0.6, "box": Vector3(1.2, 0.8, 0.7), "slots": 32, "desc": "Holds 32 stacks, bound in iron. Interact to open it."},
+	"chest": {"name": "Chest", "page": "storage", "r": 0.5, "box": Vector3(0.98, 0.6, 0.64), "slots": 16, "desc": "Holds 16 stacks. Interact to open it."},
+	"large_chest": {"name": "Iron-Bound Chest", "page": "storage", "r": 0.62, "box": Vector3(1.22, 0.72, 0.74), "slots": 32, "desc": "Holds 32 stacks, bound in iron. Interact to open it."},
 }
 const FLOOR_KINDS := ["foundation", "wood_floor", "brick_floor"]
 ## Full-height walls, windows, doorways and doors. Roofs need two of these under them.
