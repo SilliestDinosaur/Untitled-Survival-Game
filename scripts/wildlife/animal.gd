@@ -585,7 +585,7 @@ func _perceive(dist: float, sprinting: bool) -> void:
 func _move(delta: float, want_dir: Vector3, want_speed: float) -> void:
 	_steer_cd -= delta
 	if want_dir.length_squared() > 0.000001 and want_speed > 0.0 and _steer_cd <= 0.0:
-		_steer_cd = 0.25
+		_steer_cd = _rng.randf_range(0.22, 0.32)   # (not all the herd on the same frame)
 		_desired_yaw = _best_heading(want_dir)
 	var turn_rate := (4.5 if want_speed > species.walk_speed * 1.5 else 2.2) * delta
 	_yaw = rotate_toward(_yaw, _desired_yaw, turn_rate)
@@ -625,8 +625,9 @@ func _walkable(p: Vector3, h: float) -> bool:
 		return h > -5.0 and h < 62.0 and (h < 0.5 or Game.world_gen.get_normal(p.x, p.z).y > 0.7)
 	# Wading into a river's shallows is fine; its deep middle isn't. Nor into anyone's house or walled yard, nor
 	# through a ruin's walls (they keep to the ground round it).
-	return h > 1.3 and h < 62.0 and Game.world_gen.get_normal(p.x, p.z).y > 0.7 and h > Game.world_gen.water_level(p.x, p.z) - 0.6 \
-		and not GameActions.in_building(p) and Ruins.at(Game.world_gen.ruins, p.x, p.z).is_empty()
+	# (Cheapest looks first: the slope takes four height samples.)
+	return h > 1.3 and h < 62.0 and h > Game.world_gen.water_level(p.x, p.z) - 0.6 and not GameActions.in_building(p) \
+		and Ruins.at(Game.world_gen.ruins, p.x, p.z).is_empty() and Game.world_gen.get_normal(p.x, p.z).y > 0.7
 
 
 ## The player is inside a building (or a walled yard): out of reach, so not worth squaring up to.
@@ -651,7 +652,11 @@ func _best_heading(want: Vector3) -> float:
 	var look := maxf(2.5, species.body_len * 2.0)
 	var best := base
 	var best_score := -1e9
-	for off in [0.0, 0.5, -0.5, 1.0, -1.0, 1.6, -1.6, 2.4, -2.4]:
+	for off: float in [0.0, 0.5, -0.5, 1.0, -1.0, 1.6, -1.6, 2.4, -2.4]:
+		# A heading scores at best minus how far it turns (trees and rocks only take away), and they're tried from
+		# the straightest out: once none left could beat the best, stop looking (usually straight ahead is clear).
+		if -absf(off) <= best_score:
+			break
 		var a: float = base + off
 		var dir := Vector3(-sin(a), 0, -cos(a))
 		var p := position + dir * look
@@ -674,15 +679,7 @@ func _obstacle_penalty(p: Vector3) -> float:
 	var chunk = _world.get_chunk(_world.world_to_chunk(p))
 	if not chunk:
 		return 0.0
-	var penalty := 0.0
-	for r in chunk.resources:
-		if r.get("removed", false) or not FloraLibrary.KINDS[r.kind].solid:
-			continue
-		var o: Vector3 = r.transform.origin
-		var d := Vector2(o.x - p.x, o.z - p.z).length()
-		if d < 1.6:
-			penalty += (1.6 - d) * 2.0
-	return penalty
+	return (chunk as TerrainChunk).obstacle_penalty(p, 1.6)
 
 
 func _animate(delta: float, graze: float, alert: float) -> void:

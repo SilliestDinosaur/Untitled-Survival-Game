@@ -15,11 +15,40 @@ var busy_n := 0
 var pos := Vector3.ZERO
 var dir := Vector3.ZERO
 var turn := 0.0
+var draws: Array = []   # DRAW=1 (needs a real render, under xvfb-run): [draw calls, objects, primitives, where] per frame
+
+
+## Marks taken at the start and end of each frame's process and physics steps (nodes that run first and last), so a
+## slow frame shows which part of the frame it was in.
+class Mark extends Node:
+	var key := ""
+	var physics := false
+	func _process(_d: float) -> void:
+		if not physics:
+			Engine.set_meta(key, Time.get_ticks_usec())
+	func _physics_process(_d: float) -> void:
+		if physics:
+			var acc: int = Engine.get_meta(key + "_acc", 0)
+			if key.ends_with("end"):
+				Engine.set_meta("phys_acc", int(Engine.get_meta("phys_acc", 0)) + Time.get_ticks_usec() - int(Engine.get_meta("phys_start", 0)))
+			else:
+				Engine.set_meta(key, Time.get_ticks_usec())
+
+
+func _add_marks() -> void:
+	for spec in [["proc_start", false, -100000], ["proc_end", false, 100000], ["phys_start", true, -100000], ["phys_end", true, 100000]]:
+		var m := Mark.new()
+		m.key = spec[0]
+		m.physics = spec[1]
+		m.process_priority = spec[2]
+		m.process_physics_priority = spec[2]
+		root.add_child.call_deferred(m)
 
 
 func _initialize() -> void:
 	main = load("res://scenes/main.tscn").instantiate()
 	root.add_child(main)
+	_add_marks()
 
 
 func _process(_d: float) -> bool:
@@ -64,11 +93,17 @@ func _process(_d: float) -> bool:
 		busy_phys += Performance.get_monitor(Performance.TIME_PHYSICS_PROCESS) * 1000.0
 		busy_n += 1
 		var gw = root.get_node("Game").world_gen
-		all_frames.append([ms, f, Vector2i(int(pos.x), int(pos.z)), gw.BIOME_NAMES[gw.get_biome(pos.x, pos.z)]])
+		var proc_ms := (int(Engine.get_meta("proc_end", 0)) - int(Engine.get_meta("proc_start", 0))) / 1000.0
+		var phys_ms := int(Engine.get_meta("phys_acc", 0)) / 1000.0
+		Engine.set_meta("phys_acc", 0)
+		all_frames.append([ms, Engine.get_process_frames(), Vector2i(int(pos.x), int(pos.z)), gw.BIOME_NAMES[gw.get_biome(pos.x, pos.z)], proc_ms, phys_ms])
 		if ms > 33.0:
 			var g = root.get_node("Game").world_gen
 			notes.append("frame %d: %.1f ms at %s (%s%s)" % [f, ms, Vector2i(int(pos.x), int(pos.z)), g.BIOME_NAMES[g.get_biome(pos.x, pos.z)], ", in a cave" if root.get_node("Game").in_cave else ""])
 	last_us = now
+	if OS.get_environment("DRAW") != "" and f > 60:
+		draws.append([Performance.get_monitor(Performance.RENDER_TOTAL_DRAW_CALLS_IN_FRAME), Performance.get_monitor(Performance.RENDER_TOTAL_OBJECTS_IN_FRAME),
+			Performance.get_monitor(Performance.RENDER_TOTAL_PRIMITIVES_IN_FRAME), Vector2i(int(pos.x), int(pos.z))])
 	# MON=1: leak watch. Activity as in play (hit effects, panels, saves) and counts logged as it goes.
 	if OS.get_environment("MON") != "":
 		if f % 30 == 0:
@@ -121,11 +156,23 @@ func _process(_d: float) -> bool:
 		for k in keys:
 			print("WALK prof %-45s %.3f ms/frame" % [k, pd[k] / 1000.0 / maxf(f, 1)])
 		print("WALK busy: process %.2f ms  physics %.2f ms (mean per frame)" % [busy_proc / maxf(busy_n, 1), busy_phys / maxf(busy_n, 1)])
+		if not draws.is_empty():
+			var sum := [0.0, 0.0, 0.0]
+			for d: Array in draws:
+				for k in 3:
+					sum[k] += float(d[k])
+			print("WALK draw calls mean %.0f  objects %.0f  primitives %.0fk" % [sum[0] / draws.size(), sum[1] / draws.size(), sum[2] / draws.size() / 1000.0])
+			draws.sort_custom(func(a: Array, b: Array) -> bool: return a[0] > b[0])
+			for i in mini(5, draws.size()):
+				print("WALK most draws %d  objects %d  primitives %dk at %s" % [draws[i][0], draws[i][1], int(draws[i][2] / 1000), draws[i][3]])
+			draws.sort_custom(func(a: Array, b: Array) -> bool: return a[2] > b[2])
+			for i in mini(3, draws.size()):
+				print("WALK most primitives %dk  draws %d at %s" % [int(draws[i][2] / 1000), draws[i][0], draws[i][3]])
 		for line: String in notes:
 			print("WALK slow ", line)
 		all_frames.sort_custom(func(a: Array, b: Array) -> bool: return a[0] > b[0])
 		for i in mini(15, all_frames.size()):
-			print("WALK top %.1f ms frame %d at %s (%s)" % all_frames[i])
+			print("WALK top %.1f ms frame %d at %s (%s)  process %.1f  physics %.1f" % all_frames[i])
 		quit()
 		return true
 	return false

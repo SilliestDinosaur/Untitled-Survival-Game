@@ -45,18 +45,15 @@ static func generate(job: Dictionary) -> void:
 	var result: Dictionary
 	if not cave_segs.is_empty():
 		var vox := VoxelTerrain.build(gen, origin, size, VOXEL_STEP[tier], cave_segs)
-		# The collider is built here too: on the main thread its triangle tree cost a 20-50 ms hitch per chunk.
-		# (A shape not yet in the world is safe to build off the main thread: the physics server keeps its shapes
-		# in a thread-safe table, and filling one touches nothing else.)
-		var tri := ConcavePolygonShape3D.new()
-		tri.backface_collision = true   # solid from both sides: a steep face can't be walked through from behind
-		tri.set_faces(vox.faces)
+		# Its collider is the same triangles, in squares of the chunk (see _collision_pieces): the physics server
+		# builds a shape's triangle tree on the main thread, and the whole chunk at once was a 15-100 ms hitch. In
+		# pieces, a few go in each frame (TerrainChunk.build_collision).
 		result = {
 			"mesh": [vox.verts, vox.normals, vox.colors, vox.indices],
 			"collision": PackedFloat32Array(),
 			"collision_width": 0,
 			"collision_faces": vox.faces,
-			"collision_shape": tri,
+			"collision_pieces": _collision_pieces(vox.faces, size),
 			"step": step,
 		}
 	else:
@@ -82,6 +79,21 @@ static func generate(job: Dictionary) -> void:
 
 
 # --- Terrain ------------------------------------------------------------------
+
+const COLLISION_CELLS := 4   ## a voxel chunk's collider is this many squares a side (16 m each)
+
+## The triangles split into squares of the chunk (each where its middle is), for colliders a few at a time.
+static func _collision_pieces(faces: PackedVector3Array, size: float) -> Array[PackedVector3Array]:
+	var n := COLLISION_CELLS
+	var pieces: Array[PackedVector3Array] = []
+	pieces.resize(n * n)
+	for i in range(0, faces.size(), 3):
+		var m := (faces[i] + faces[i + 1] + faces[i + 2]) / 3.0
+		var k := clampi(int(m.z / size * n), 0, n - 1) * n + clampi(int(m.x / size * n), 0, n - 1)
+		pieces[k].append(faces[i])
+		pieces[k].append(faces[i + 1])
+		pieces[k].append(faces[i + 2])
+	return pieces.filter(func(p: PackedVector3Array) -> bool: return not p.is_empty())
 
 ## The height at a fine sample (key = fine grid coordinates), cached for the chunk being built.
 static func _fine_h(cache: Dictionary, gen: WorldGen, origin: Vector3, key: Vector2i) -> float:

@@ -14,6 +14,7 @@ var view_radius := 6
 
 var _chunks := {}     # Vector2i -> TerrainChunk
 var _jobs := {}       # Vector2i -> {task, job}
+var _finishing := {}  # Vector2i -> TerrainChunk built but still getting its solid ground (see TerrainChunk.build_collision)
 var _floors_seen := {}   # Rect2 -> true: the ground floors last seen (see _on_structures_changed)
 var _dirty := {}      # chunk coords whose ground changed and must be rebuilt
 var _water: MeshInstance3D
@@ -40,6 +41,7 @@ func _ready() -> void:
 
 func _exit_tree() -> void:
 	_wait_for_jobs()
+	_drop_all_finishing()
 
 
 var _stream_center := Vector2i(1 << 30, 1 << 30)   ## the chunk the streaming last looked at
@@ -69,6 +71,7 @@ func reset() -> void:
 	for c: Vector2i in _chunks:
 		_chunks[c].queue_free()
 	_chunks.clear()
+	_drop_all_finishing()
 	_build_water()
 	world_reset.emit()
 
@@ -128,6 +131,9 @@ func _update_chunks(pos: Vector3) -> void:
 		if _cheb(c, center) > view_radius + 1:
 			_chunks[c].queue_free()
 			_chunks.erase(c)
+	for c: Vector2i in _finishing.keys():
+		if _cheb(c, center) > view_radius + 1:
+			_drop_finishing(c)
 
 	if _jobs.size() >= MAX_JOBS:
 		return
@@ -137,7 +143,7 @@ func _update_chunks(pos: Vector3) -> void:
 	for z in range(-view_radius, view_radius + 1):
 		for x in range(-view_radius, view_radius + 1):
 			var c := center + Vector2i(x, z)
-			if _jobs.has(c):
+			if _jobs.has(c) or _finishing.has(c):
 				continue
 			var d := _cheb(c, center)
 			var want := _tier_for(d)
@@ -189,6 +195,15 @@ static var _timing := OS.get_environment("CHUNK_TIMING") != ""
 func _collect_jobs() -> void:
 	var applied := 0
 	var start := Time.get_ticks_usec()
+	# Chunks still getting their solid ground go on with it first (a few pieces a frame), and are swapped in once it's
+	# all there, so nobody falls through a chunk that's half built.
+	for c: Vector2i in _finishing.keys():
+		if Time.get_ticks_usec() - start > APPLY_BUDGET_US:
+			return
+		var ch: TerrainChunk = _finishing[c]
+		if ch.build_collision(start + APPLY_BUDGET_US):
+			_finishing.erase(c)
+			_swap_in(c, ch)
 	for c: Vector2i in _jobs.keys():
 		# A couple a frame, but stop early once the frame's share is used.
 		if applied >= APPLY_PER_FRAME or (applied > 0 and Time.get_ticks_usec() - start > APPLY_BUDGET_US):
@@ -208,13 +223,34 @@ func _collect_jobs() -> void:
 		chunk.apply(c, job.tier, job.result, Game.flora)
 		var t1 := Time.get_ticks_usec()
 		_dirty.erase(c)
-		if _chunks.has(c):
-			_chunks[c].queue_free()   # swap in the new detail level only once it's ready
-		_chunks[c] = chunk
-		add_child(chunk)
+		_drop_finishing(c)
+		if chunk.build_collision(start + APPLY_BUDGET_US):
+			_swap_in(c, chunk)
+		else:
+			_finishing[c] = chunk
 		if _timing:
-			print("CHUNK %s tier %d apply %.1f ms add %.1f ms" % [c, job.tier, (t1 - t0) / 1000.0, (Time.get_ticks_usec() - t1) / 1000.0])
+			print("CHUNK f%d %s tier %d apply %.1f ms collision+add %.1f ms%s" % [Engine.get_process_frames(), c, job.tier, (t1 - t0) / 1000.0, (Time.get_ticks_usec() - t1) / 1000.0, " (ground still coming)" if _finishing.has(c) else ""])
 		applied += 1
+
+
+## Put a finished chunk in the world, in place of the one that was there (the new detail level goes in only once it's
+## ready).
+func _swap_in(c: Vector2i, chunk: TerrainChunk) -> void:
+	if _chunks.has(c):
+		_chunks[c].queue_free()
+	_chunks[c] = chunk
+	add_child(chunk)
+
+
+func _drop_finishing(c: Vector2i) -> void:
+	if _finishing.has(c):
+		(_finishing[c] as TerrainChunk).free()   # never in the tree
+		_finishing.erase(c)
+
+
+func _drop_all_finishing() -> void:
+	for c: Vector2i in _finishing.keys():
+		_drop_finishing(c)
 
 
 ## The footprints (world xz) of floors at ground level over chunk c: nothing grows under them.
@@ -258,6 +294,7 @@ func _on_structures_changed() -> void:
 			for cx in range(floori(r.position.x / size), floori(r.end.x / size) + 1):
 				var c := Vector2i(cx, cz)
 				_dirty[c] = true
+				_drop_finishing(c)
 				if _jobs.has(c):
 					_jobs[c].job.stale = true
 
@@ -275,6 +312,7 @@ func _on_terrain_changed(cells: Array) -> void:
 				touched[c] = true
 	for c: Vector2i in touched:
 		_dirty[c] = true
+		_drop_finishing(c)
 		if _jobs.has(c):
 			_jobs[c].job.stale = true   # _collect_jobs drops it (the worker keeps its own copy of the data)
 
